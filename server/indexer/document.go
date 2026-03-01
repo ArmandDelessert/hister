@@ -22,6 +22,7 @@ type Document struct {
 	Favicon            string  `json:"favicon"`
 	Score              float64 `json:"score"`
 	Added              int64   `json:"added"`
+	Language           string  `json:"language"`
 	faviconURL         string
 	processed          bool
 	skipSensitiveCheck bool
@@ -106,6 +107,14 @@ func (d *Document) Process() error {
 		return err
 	}
 	d.Title = strings.ReplaceAll(sanitizer.Sanitize(d.Title), "&#34;", `"`)
+
+	lang, err := DetectLanguage(d.Text)
+	if err != nil {
+		d.Language = UnknownLanguage
+	} else {
+		d.Language = lang.IsoCode639_1().String()
+	}
+
 	d.processed = true
 	return nil
 }

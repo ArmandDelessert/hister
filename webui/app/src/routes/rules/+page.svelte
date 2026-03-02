@@ -141,7 +141,7 @@
   <!-- Header -->
   <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
     <div class="space-y-1">
-      <h1 class="flex items-center gap-2"><span class="w-1.5 h-8 bg-hister-coral"></span><span class="font-space text-lg md:text-xl tracking-[1px] font-extrabold text-text-brand">SEARCH RULES & ALIASES</span></h1>
+      <h1 class="flex items-center gap-2"><span class="w-1.5 h-8 bg-hister-coral"></span><span class="font-space text-lg md:text-xl tracking-[1px] font-extrabold text-text-brand uppercase">Search Rules & Aliases</span></h1>
       <p class="font-inter text-xs md:text-sm text-text-brand-secondary">Configure how Hister indexes and searches your browsing history</p>
     </div>
     <div class="flex items-center gap-2 md:gap-4">

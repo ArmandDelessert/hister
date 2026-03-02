@@ -46,7 +46,7 @@
 
 <div class="px-3 md:px-6 py-4 md:py-5 space-y-4 md:space-y-5 overflow-y-auto flex-1">
   <div class="space-y-1">
-    <h1 class="flex items-center gap-2"><span class="w-1.5 h-8 bg-hister-teal"></span><span class="font-space text-lg md:text-xl tracking-[1px] font-extrabold text-text-brand">API DOCUMENTATION</span></h1>
+    <h1 class="flex items-center gap-2"><span class="w-1.5 h-8 bg-hister-teal"></span><span class="font-space text-lg md:text-xl tracking-[1px] font-extrabold text-text-brand uppercase">API Documentation</span></h1>
     <p class="font-inter text-xs md:text-sm text-text-brand-secondary">Available HTTP endpoints for integrating with Hister</p>
   </div>
 

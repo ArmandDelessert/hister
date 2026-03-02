@@ -165,7 +165,7 @@
 </svelte:head>
 
 <header class="flex items-center justify-between px-3 md:px-6 py-3 bg-card-surface border-b-[3px] border-brutal-border shrink-0 gap-2">
-  <h1 class="flex items-center gap-2 shrink-0"><span class="w-1 h-6 bg-hister-indigo"></span><span class="font-space text-base md:text-lg tracking-[1px] font-extrabold text-text-brand">SEARCH HISTORY</span></h1>
+  <h1 class="flex items-center gap-2 shrink-0"><span class="w-1 h-6 bg-hister-indigo"></span><span class="font-space text-base md:text-lg tracking-[1px] font-extrabold text-text-brand uppercase">Search History</span></h1>
   <nav class="flex items-center gap-2 md:gap-3 min-w-0">
     <div class="flex items-center gap-2 h-8 px-3 border-[3px] border-brutal-border bg-page-bg min-w-0">
       <Search class="size-3.5 text-text-brand-muted shrink-0" />
@@ -200,9 +200,9 @@
     <!-- Timeline sidebar: hidden on mobile, shown on md+ -->
     <ScrollArea class="hidden md:block w-[280px] shrink-0 border-r-[3px] border-brutal-border pt-5 pr-3">
       <div class="space-y-1">
-        <span class="font-space text-xs font-bold tracking-[2px] text-text-brand-muted px-2.5 flex items-center gap-1.5">
+        <span class="font-space text-xs font-bold tracking-[2px] text-text-brand-muted px-2.5 flex items-center gap-1.5 uppercase">
           <Clock class="size-3" />
-          TIMELINE
+          Timeline
         </span>
         <Separator class="bg-border-brand-muted" />
 

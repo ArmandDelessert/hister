@@ -27,11 +27,11 @@
   ];
 
   const aliasCard = {
-    icon: Terminal, title: 'SEARCH ALIASES', desc: 'Create custom keyword shortcuts to simplify complex or frequently used queries.', bg: 'bg-hister-teal', textColor: 'text-white', descColor: 'text-white/80', iconBg: 'bg-[#f5f5f5]', iconColor: 'text-hister-teal',
+    icon: Terminal, title: 'SEARCH ALIASES', desc: 'Create custom keyword shortcuts to simplify complex or frequently used queries.', bg: 'bg-hister-cyan', textColor: 'text-white', descColor: 'text-white/80', iconBg: 'bg-[#f5f5f5]', iconColor: 'text-hister-teal',
   };
 </script>
 
-<section id="features" class="w-full bg-brutal-bg px-6 md:px-12 py-12 md:py-16 flex flex-col gap-10">
+<section id="features" class="max-w-[2000px] mx-auto bg-brutal-bg px-6 md:px-12 py-12 md:py-16 flex flex-col gap-10">
   <div class="flex items-center gap-6">
     <div class="w-1.5 h-10 bg-hister-coral"></div>
     <h2 class="font-space text-3xl md:text-5xl font-black tracking-[3px] text-[var(--text-primary)]">FEATURES</h2>

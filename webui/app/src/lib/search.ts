@@ -277,7 +277,7 @@ export class KeyHandler {
     );
   }
 
-  handle(e: KeyboardEvent): boolean {
+  handle(e: KeyboardEvent, isInputFocus: bool): boolean {
     if (!e.key) return false;
 
     const modifier = e.altKey
@@ -296,7 +296,7 @@ export class KeyHandler {
 
     const action = this.actions[this.hotkeys[key]];
     if (action) {
-      action(e);
+      action(e, isInputFocus);
       return true;
     }
     return false;

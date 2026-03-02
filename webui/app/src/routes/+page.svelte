@@ -108,7 +108,7 @@
 
   const hotkeyActions: Record<string, (e?: KeyboardEvent) => void> = {
     'open_result': openSelectedResult,
-    'open_result_in_new_tab': (e) => openSelectedResult(e, true),
+    'open_result_in_new_tab': (e, i) => openSelectedResult(e, true),
     'select_next_result': selectNextResult,
     'select_previous_result': selectPreviousResult,
     'open_query_in_search_engine': openQueryInSearchEngine,
@@ -286,16 +286,16 @@
     }
   }
 
-  function autocompleteQuery(e?: KeyboardEvent) {
+  function autocompleteQuery(e?: KeyboardEvent, isInputFocus?: bool) {
     if (e) e.preventDefault();
-    if (document.activeElement === inputEl && autocomplete && query !== autocomplete) {
+    if (isInputFocus && autocomplete && query !== autocomplete) {
       query = autocomplete;
       sendQuery(query);
     }
   }
 
   function openQueryInSearchEngine(e?: KeyboardEvent) { if (e) e.preventDefault(); openURL(getSearchUrl(config.searchUrl, query)); }
-  function focusSearchInput(e?: KeyboardEvent) { if (document.activeElement !== inputEl) { if (e) e.preventDefault(); inputEl?.focus(); } }
+  function focusSearchInput(e?: KeyboardEvent, isInputFocus?: bool) { if (!isInputFocus) { if (e) e.preventDefault(); inputEl?.focus(); } }
 
   function closePopup(): boolean { if (showPopup) { showPopup = false; return true; } return false; }
 
@@ -311,18 +311,16 @@
     'show_hotkeys': 'Show help'
   };
 
-  function showHotkeys(e?: KeyboardEvent) {
-    if (document.activeElement === inputEl) return;
+  function showHotkeys(e?: KeyboardEvent, isInputFocus?: bool) {
     if (showHelp) { showHelp = false; return; }
-    showHelp = true;
+    if (!isInputFocus) {
+        showHelp = true;
+    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    const isInput = document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement;
-    const hasModifier = e.altKey || e.ctrlKey || e.metaKey;
-    if (!isInput || hasModifier) {
-      if (keyHandler?.handle(e)) { e.preventDefault(); return; }
-    }
+    const isInputFocus = document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement;
+    keyHandler?.handle(e, isInputFocus);
     if (e.key === 'Escape') {
       if (showHelp) { showHelp = false; e.preventDefault(); return; }
       if (contextMenuSearch) { contextMenuSearch = null; e.preventDefault(); return; }

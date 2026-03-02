@@ -7,6 +7,12 @@
 
   let { children } = $props();
 
+  const navItems = [
+    { label: 'History', href: 'history' },
+    { label: 'Rules', href: 'rules' },
+    { label: 'Add', href: 'add' }
+  ];
+
   function applyTheme(theme: string) {
     document.documentElement.setAttribute('data-theme', theme);
     if (theme === 'dark') {
@@ -38,24 +44,14 @@
     </a>
   </h1>
   <nav class="flex items-center gap-6">
-    <a
-      class="font-space text-[13px] tracking-[1.5px] font-semibold no-underline hover:underline uppercase {$page.url.pathname === new URL('history', $page.url).pathname ? 'text-text-brand font-bold' : 'text-text-brand-secondary hover:text-text-brand'}"
-      href="history"
-    >
-      History
-    </a>
-    <a
-      class="font-space text-[13px] tracking-[1.5px] font-semibold no-underline hover:underline uppercase {$page.url.pathname === new URL('rules', $page.url).pathname ? 'text-text-brand font-bold' : 'text-text-brand-secondary hover:text-text-brand'}"
-      href="rules"
-    >
-      Rules
-    </a>
-    <a
-      class="font-space text-[13px] tracking-[1.5px] font-semibold no-underline hover:underline uppercase {$page.url.pathname === new URL('add', $page.url).pathname ? 'text-text-brand font-bold' : 'text-text-brand-secondary hover:text-text-brand'}"
-      href="add"
-    >
-      Add
-    </a>
+    {#each navItems as item (item.href)}
+      <a
+        class="font-space text-[13px] tracking-[1.5px] font-semibold no-underline hover:underline uppercase {$page.url.pathname === new URL(item.href, $page.url).pathname ? 'text-text-brand font-bold' : 'text-text-brand-secondary hover:text-text-brand'}"
+        href={item.href}
+      >
+        {item.label}
+      </a>
+    {/each}
   </nav>
   <Button
     variant="ghost"

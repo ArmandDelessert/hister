@@ -37,17 +37,17 @@
 </script>
 
 <div class="flex flex-col h-dvh overflow-hidden">
-<header class="h-12 md:h-16 px-3 md:px-6 bg-brutal-bg border-b-[3px] border-brutal-border flex items-center justify-between sticky top-0 z-50 gap-2 md:gap-4 shrink-0 overflow-hidden">
+<header class="h-12 md:h-16 px-3 md:px-6 bg-brutal-bg border-b-[3px] border-brutal-border md:grid md:grid-cols-[4rem_auto_4rem] md:justify-stretch justify-between flex items-center sticky top-0 z-50 gap-2 md:gap-4 shrink-0 overflow-hidden">
   <h1 class="flex items-center gap-1.5 md:gap-2 shrink-0">
     <img src="static/logo.png" alt="Hister logo" class="h-6 w-6 md:h-8 md:w-8" />
     <a data-sveltekit-reload href="./" class="font-space text-lg md:text-[28px] tracking-[1px] md:tracking-[2px] font-extrabold text-text-brand no-underline hover:underline uppercase">
       Hister
     </a>
   </h1>
-  <nav class="flex items-center gap-3 md:gap-6">
+  <nav class="justify-self-center flex items-center">
     {#each navItems as item (item.href)}
       <a
-        class="font-space text-[11px] md:text-[13px] tracking-[1px] md:tracking-[1.5px] font-semibold no-underline hover:underline uppercase {$page.url.pathname === new URL(item.href, $page.url).pathname ? 'text-text-brand font-bold' : 'text-text-brand-secondary hover:text-text-brand'}"
+        class="font-space p-3 md:p-6 text-[11px] md:text-[13px] tracking-[1px] md:tracking-[1.5px] font-semibold no-underline hover:underline uppercase {$page.url.pathname === new URL(item.href, $page.url).pathname ? 'text-text-brand font-bold' : 'text-text-brand-secondary hover:text-text-brand'}"
         href={item.href}
       >
         {item.label}

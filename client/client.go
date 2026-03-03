@@ -9,9 +9,10 @@ import (
 )
 
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	userAgent  string
+	baseURL     string
+	httpClient  *http.Client
+	userAgent   string
+	accessToken string
 }
 
 type Option func(*Client)
@@ -26,6 +27,10 @@ func WithTimeout(d time.Duration) Option {
 
 func WithUserAgent(ua string) Option {
 	return func(c *Client) { c.userAgent = ua }
+}
+
+func WithAccessToken(token string) Option {
+	return func(c *Client) { c.accessToken = token }
 }
 
 func New(baseURL string, opts ...Option) *Client {
@@ -60,6 +65,9 @@ func (c *Client) newRequest(method, path string, body io.Reader) (*http.Request,
 	req.Header.Set("Origin", "hister://")
 	if c.userAgent != "" {
 		req.Header.Set("User-Agent", c.userAgent)
+	}
+	if c.accessToken != "" {
+		req.Header.Set("X-Access-Token", c.accessToken)
 	}
 	return req, nil
 }

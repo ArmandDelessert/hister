@@ -573,7 +573,11 @@ func importHistory(cmd *cobra.Command, args []string) {
 }
 
 func newClient() *client.Client {
-	return client.New(cfg.BaseURL(""), client.WithUserAgent(UserAgent))
+	opts := []client.Option{client.WithUserAgent(UserAgent)}
+	if cfg.App.AccessToken != "" {
+		opts = append(opts, client.WithAccessToken(cfg.App.AccessToken))
+	}
+	return client.New(cfg.BaseURL(""), opts...)
 }
 
 func main() {

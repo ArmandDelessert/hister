@@ -548,6 +548,10 @@ func importHistory(cmd *cobra.Command, args []string) {
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 			continue
 		}
+		if cfg.Rules.IsSkip(u) {
+			log.Debug().Str("URL", u).Msg("skip importing URL by rule")
+			continue
+		}
 		exists, err := c.DocumentExists(u)
 		if err != nil {
 			log.Warn().Err(err).Str("URL", u).Msg("Failed to get info about URL, skipping")

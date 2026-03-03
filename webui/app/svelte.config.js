@@ -6,7 +6,7 @@ const baseDir = process.env.BASE_PATH || '';
 export default {
   kit: {
     paths: {
-      base: baseDir,
+      base: '/magic-string-that-we-replace-runtime-in-the-app',
     },
     adapter: adapter({
       pages: 'build',

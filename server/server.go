@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,7 @@ var (
 	errCSRFMismatch  = errors.New("CSRF token mismatch")
 	storeName        = "hister"
 	tokName          = "csrf_token"
+	staticTextFiles  map[string][]byte
 )
 
 type historyItem struct {
@@ -88,9 +90,45 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	staticTextFiles = make(map[string][]byte)
 	appSubFS = sub
 	spaFileServer = http.FileServerFS(appSubFS)
 	staticFileServer = http.StripPrefix("/static/", http.FileServerFS(appSubFS))
+}
+
+func parseStaticFiles(baseDir string) error {
+	files, err := static.FS.ReadDir("app")
+	if err != nil {
+		return err
+	}
+	return recParseStaticFiles(files, "app", baseDir)
+}
+
+func recParseStaticFiles(entries []iofs.DirEntry, dir, baseDir string) error {
+	for _, e := range entries {
+		if e.IsDir() {
+			subDir := filepath.Join(dir, e.Name())
+			sd, err := static.FS.ReadDir(subDir)
+			if err != nil {
+				return err
+			}
+			if err := recParseStaticFiles(sd, subDir, baseDir); err != nil {
+				return err
+			}
+			continue
+		}
+		fn := e.Name()
+		if strings.HasSuffix(fn, ".html") || strings.HasSuffix(fn, ".js") || strings.HasSuffix(fn, ".css") {
+			p := filepath.Join(dir, fn)
+			c, err := static.FS.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			k := strings.TrimPrefix(p, "app/")
+			staticTextFiles[k] = bytes.ReplaceAll(c, []byte("/magic-string-that-we-replace-runtime-in-the-app"), []byte(baseDir))
+		}
+	}
+	return nil
 }
 
 func Listen(cfg *config.Config) {
@@ -100,6 +138,18 @@ func Listen(cfg *config.Config) {
 		MaxAge:   60 * 60 * 24 * 365,
 		HttpOnly: true,
 	}
+
+	// This is an ugly hack required to set the base path dynamically in svelte files.
+	// Svelte only supports build time specification of the base path and it accepts
+	// only absolute paths: https://github.com/sveltejs/kit/issues/9569#issuecomment-3202269382
+	//
+	// Related issues for more details:
+	//  - https://codeberg.org/asciimoo/hister/issues/7
+	//  - https://github.com/asciimoo/hister/issues/147
+	if err := parseStaticFiles(cfg.BasePathPrefix()); err != nil {
+		panic(err)
+	}
+
 	handler := registerEndpoints(cfg)
 	handler = withLogging(handler)
 
@@ -151,17 +201,17 @@ func withOptionalBasePathPrefix(prefix string, next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if p == prefix || strings.HasPrefix(p, prefix+"/") {
-			r2 := r.Clone(r.Context())
-			r2.URL.Path = strings.TrimPrefix(p, prefix)
-			if r2.URL.Path == "" {
-				r2.URL.Path = "/"
-			}
-			r2.RequestURI = r2.URL.RequestURI()
-			next.ServeHTTP(w, r2)
+		if p != prefix && !strings.HasPrefix(p, prefix+"/") {
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		next.ServeHTTP(w, r)
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = strings.TrimPrefix(p, prefix)
+		if r2.URL.Path == "" {
+			r2.URL.Path = "/"
+		}
+		r2.RequestURI = r2.URL.RequestURI()
+		next.ServeHTTP(w, r2)
 	})
 }
 
@@ -274,6 +324,18 @@ func withLogging(h http.Handler) http.Handler {
 // serveSPA serves the SPA index.html for any route not matching a static file.
 func serveSPA(c *webContext) {
 	path := strings.TrimPrefix(c.Request.URL.Path, "/")
+	if content, ok := staticTextFiles[path]; ok {
+		ext := filepath.Ext(path)
+		if mimeType := mime.TypeByExtension(ext); mimeType != "" {
+			c.Response.Header().Set("Content-Type", mimeType)
+		} else {
+			// Default to application/octet-stream if we can't detect the type
+			c.Response.Header().Set("Content-Type", "application/octet-stream")
+		}
+		c.Response.WriteHeader(http.StatusOK)
+		c.Response.Write(content)
+		return
+	}
 	// If the exact file exists in the embedded app FS, serve it directly
 	if _, err := iofs.Stat(appSubFS, path); err == nil {
 		// Read the file and serve it with proper MIME type
@@ -330,8 +392,8 @@ func serveSPA(c *webContext) {
 	}
 
 	// Otherwise serve index.html for client-side routing
-	content, err := iofs.ReadFile(appSubFS, "index.html")
-	if err != nil {
+	content, ok := staticTextFiles["index.html"]
+	if !ok {
 		serve500(c)
 		return
 	}

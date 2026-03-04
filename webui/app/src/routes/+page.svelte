@@ -103,7 +103,7 @@
 
   const hotkeyActions: Record<string, (e?: KeyboardEvent) => void> = {
     'open_result': openSelectedResult,
-    'open_result_in_new_tab': (e, i) => openSelectedResult(e, true),
+    'open_result_in_new_tab': (e, i) => openSelectedResult(e, i, true),
     'select_next_result': selectNextResult,
     'select_previous_result': selectPreviousResult,
     'open_query_in_search_engine': openQueryInSearchEngine,
@@ -254,7 +254,7 @@
   function selectNextResult(e?: KeyboardEvent) { if (e) e.preventDefault(); selectNthResult(1); }
   function selectPreviousResult(e?: KeyboardEvent) { if (e) e.preventDefault(); selectNthResult(-1); }
 
-  function openSelectedResult(e?: KeyboardEvent, newWindow = false) {
+  function openSelectedResult(e?: KeyboardEvent, isInputFocus:bool, newWindow = false) {
     if (e) e.preventDefault();
     if (query.startsWith('!!')) {
       openURL(getSearchUrl(config.searchUrl, query.substring(2)), newWindow);

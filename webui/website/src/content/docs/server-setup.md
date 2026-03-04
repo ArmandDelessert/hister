@@ -75,6 +75,8 @@ location / {
         proxy_set_header        X-Forwarded-Proto $scheme;
         proxy_set_header        X-Scheme $scheme;
         proxy_pass http://127.0.0.1:4433/;
+
+        client_max_body_size 100m; # A *lot* of data is sometimes sent when indexing pages.
 }
 ```
 

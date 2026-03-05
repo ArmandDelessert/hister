@@ -7,7 +7,7 @@
         "types": ["chrome"]
     },
     "include": [
-        "src/*.ts",
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "src/**/*.svelte"
     ]
 }

@@ -1,28 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="style.css" type="text/css" media="screen" />
-  <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+  <link rel="stylesheet" href="style.css" />
   <title>Popup</title>
 </head>
 <body>
-    <main id="app">
-        <h1>Hister</h1>
-        <form>
-            Server URL:<br />
-            <input type="text" id="url" placeholder="Server URL..." /><br />
-            Access token (optional):<br />
-            <input type="text" id="token" placeholder="Token..." /><br />
-            <input type="submit" value="Save" />
-        </form>
-        <hr />
-		<div class="text-center mt-1">
-		    <button id="reindex">Reindex page</button>
-        </div>
-        <div id="msg" class="mt-1"></div>
-    </main>
+  <div id="app"></div>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

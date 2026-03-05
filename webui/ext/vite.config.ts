@@ -1,4 +1,6 @@
 import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "fs";
@@ -42,7 +44,7 @@ function extensionPlugin() {
       };
       writeFileSync(resolve(distDir, "manifest_ff.json"), JSON.stringify(ff));
 
-      // Copy static files
+      // Copy static HTML shells
       copyFileSync(
         resolve(__dirname, "src/popup/popup.html"),
         resolve(distDir, "popup.html"),
@@ -51,10 +53,8 @@ function extensionPlugin() {
         resolve(__dirname, "src/options/options.html"),
         resolve(distDir, "options.html"),
       );
-      copyFileSync(
-        resolve(__dirname, "src/style.css"),
-        resolve(distDir, "style.css"),
-      );
+
+      // Copy assets
       mkdirSync(resolve(distDir, "assets/icons"), { recursive: true });
       copyFileSync(
         resolve(__dirname, "assets/icon128.png"),
@@ -79,13 +79,23 @@ export default defineConfig(({ mode }) => ({
         background: resolve(__dirname, "src/background/background.ts"),
         content: resolve(__dirname, "src/content/content.ts"),
         popup: resolve(__dirname, "src/popup/popup.ts"),
+        options: resolve(__dirname, "src/options/options.ts"),
       },
       output: {
         entryFileNames: "[name].js",
-        chunkFileNames: "[name].js",
-        assetFileNames: "[name].[ext]",
+        chunkFileNames: "shared.js",
+        assetFileNames: (info) => {
+          if (info.names?.[0]?.endsWith(".css") || info.originalFileNames?.[0]?.endsWith(".css")) {
+            return "style.css";
+          }
+          return "[name].[ext]";
+        },
       },
     },
   },
-  plugins: [extensionPlugin()],
+  plugins: [
+    tailwindcss(),
+    svelte(),
+    extensionPlugin(),
+  ],
 }));

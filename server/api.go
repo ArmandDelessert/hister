@@ -54,7 +54,7 @@ func init() {
 			Method:       GET,
 			CSRFRequired: true,
 			Handler:      serveConfig,
-			Description:  "Index page",
+			Description:  "Serve config",
 		},
 		&Endpoint{
 			Name:         "Search",

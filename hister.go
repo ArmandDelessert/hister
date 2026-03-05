@@ -513,6 +513,19 @@ func importHistory(cmd *cobra.Command, args []string) {
 	}
 	defer db.Close()
 
+	// Fetch skip rules from the server.
+	c := newClient()
+	resp, err := c.FetchRules()
+	if err != nil {
+		log.Error().Err(err).Msg("Unable to obtain skip rules from server; using local ones instead")
+	} else {
+		// TODO: let the user know that their local rules are being overwritten?
+		cfg.Rules.Skip.ReStrs = resp.Skip
+		if err := cfg.Rules.Skip.Compile(); err != nil {
+			log.Fatal().Err(err).Msg("Unable to compile skip rules from server")
+		}
+	}
+
 	q := fmt.Sprintf("SELECT DISTINCT count(url) FROM %s WHERE url LIKE 'http://%%' OR url LIKE 'https://%%'", table)
 	if i, err := cmd.Flags().GetInt("min-visit"); err == nil && i > 1 {
 		q += fmt.Sprintf(" AND visit_count >= %d", i)
@@ -544,7 +557,6 @@ func importHistory(cmd *cobra.Command, args []string) {
 	}
 	defer rows.Close()
 	i := 1
-	c := newClient()
 	for rows.Next() {
 		var u string
 		err = rows.Scan(&u)

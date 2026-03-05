@@ -2,6 +2,9 @@
   "name": "hister",
   "private": true,
   "type": "module",
+  "scripts": {
+    "serve:app": "npm -w @hister/app run serve --"
+  },
   "workspaces": [
     "webui/app",
     "webui/website",

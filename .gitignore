@@ -11,3 +11,4 @@ dist/
 .svelte-kit/
 build/
 server/static/app
+tmp/

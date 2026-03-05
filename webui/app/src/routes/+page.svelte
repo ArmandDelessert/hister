@@ -485,8 +485,10 @@
   onMount(() => {
     (async () => {
       const appConfig = await fetchConfig();
+      const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = new URL(appConfig.wsUrl);
       config = {
-        wsUrl: appConfig.wsUrl,
+        wsUrl: `${wsProto}//${location.host}${wsUrl.pathname}`,
         searchUrl: appConfig.searchUrl,
         openResultsOnNewTab: appConfig.openResultsOnNewTab,
         hotkeys: appConfig.hotkeys,

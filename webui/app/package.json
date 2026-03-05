@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite dev",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "serve": "sh ../dev-serve.sh"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",

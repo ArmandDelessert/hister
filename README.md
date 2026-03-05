@@ -35,7 +35,7 @@ Execute `./hister` to see all available commands.
 
 ### Build for yourself
 
-**NPM is required**
+**Requirements**: Go 1.16 and NPM
 
 - Clone the repository
 - Build with `./manage.sh build` (or `go generate ./...; go build`)

@@ -556,8 +556,9 @@ func importHistory(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("Failed to execute database query")
 	}
 	defer rows.Close()
-	i := 1
+	i := 0
 	for rows.Next() {
+		i += 1
 		var u string
 		err = rows.Scan(&u)
 		if err != nil {
@@ -580,7 +581,6 @@ func importHistory(cmd *cobra.Command, args []string) {
 		if err := indexURL(u); err != nil {
 			log.Warn().Err(err).Msg("Failed to index URL")
 		}
-		i += 1
 	}
 
 	// TODO optional date filter

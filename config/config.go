@@ -340,9 +340,6 @@ func (c *Config) init() error {
 		return err
 	}
 
-	if c.App.AccessToken != "" && c.parsedBaseURL.Scheme != "https" {
-		log.Warn().Msg("Using authentication token without https. Token is sent plain-text in network requests.")
-	}
 	if strings.HasPrefix(c.App.Directory, "~/") {
 		u, _ := user.Current()
 		dir := u.HomeDir

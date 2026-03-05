@@ -69,6 +69,9 @@ var listenCmd = &cobra.Command{
 				exit(1, `Failed to set server address: `+err.Error())
 			}
 		}
+		if cfg.App.AccessToken != "" && strings.HasPrefix(cfg.BaseURL(""), "http://") {
+			log.Warn().Msg("Using authentication token without https. Token is sent plain-text in network requests.")
+		}
 		server.Listen(cfg)
 	},
 }
@@ -313,7 +316,7 @@ func initConfig() {
 	if v, _ := rootCmd.PersistentFlags().GetString("search-url"); v != "" && (rootCmd.Flags().Changed("search-url") || cfg.App.SearchURL == "") {
 		cfg.App.SearchURL = v
 	}
-	if v, _ := rootCmd.PersistentFlags().GetString("server-url"); v != "" && (rootCmd.Flags().Changed("server-url") || cfg.Server.BaseURL == "") {
+	if v, _ := rootCmd.PersistentFlags().GetString("server-url"); v != "" && rootCmd.Flags().Changed("server-url") {
 		if err := cfg.UpdateBaseURL(v); err != nil {
 			exit(1, "Failed to initialize config: "+err.Error())
 		}

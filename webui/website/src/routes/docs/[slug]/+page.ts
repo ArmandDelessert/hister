@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import type { Component } from 'svelte';
 import type { DocEntry } from '../+layout.js';
 
 export const prerender = true;
@@ -10,7 +11,7 @@ const docsMap = Object.fromEntries(
     const slug = path.split('/').pop()?.replace('.md', '') ?? path;
     return [slug, mod];
   })
-) as Record<string, { default: unknown; metadata?: Record<string, unknown> }>;
+) as Record<string, { default: Component; metadata?: Record<string, unknown> }>;
 
 export const entries = () => Object.keys(docsMap).map((slug) => ({ slug }));
 

@@ -5,9 +5,12 @@
    import { Input } from '@hister/components/ui/input';
    import { Badge } from '@hister/components/ui/badge';
    import * as Card from '@hister/components/ui/card';
-   import * as Alert from '@hister/components/ui/alert';
    import * as Table from '@hister/components/ui/table';
-   import { Shield, Link2, Plus, Trash2, AlertCircle, CheckCircle } from 'lucide-svelte';
+   import { Shield, Link2, Plus, Trash2 } from 'lucide-svelte';
+  import { PageHeader } from '@hister/components';
+  import * as Alert from '@hister/components/ui/alert';
+  import AlertCircle from '@lucide/svelte/icons/circle-alert';
+  import CheckCircle from '@lucide/svelte/icons/circle-check';
 
   interface RulesData {
     skip: string[];
@@ -138,21 +141,18 @@
 <div class="px-6 md:px-12 py-8 md:py-12 flex flex-col gap-8 md:gap-10 overflow-y-auto flex-1">
   <!-- Section Header -->
   <div class="flex flex-col gap-4">
-    <div class="flex items-center gap-6">
-      <div class="w-1.5 h-10 bg-hister-coral"></div>
-      <h1 class="font-space text-3xl md:text-5xl font-black tracking-[3px] text-text-brand">RULES & ALIASES</h1>
-    </div>
-    <p class="font-inter text-base md:text-lg text-text-brand-secondary leading-relaxed max-w-[700px]">
+    <PageHeader color="hister-coral" size="lg">RULES & ALIASES</PageHeader>
+    <p class="font-inter text-base md:text-lg text-text-brand-secondary leading-relaxed max-w-175">
       Configure how Hister indexes and searches your browsing history.
     </p>
     <div class="flex items-center gap-3 md:gap-4">
-      <div class="flex items-center gap-2 text-hister-coral border-[3px] border-brutal-border px-4 py-2 shadow-[3px_3px_0_var(--brutal-shadow)]">
-        <Shield class="size-[18px]" />
+      <div class="flex items-center gap-2 border-[3px] border-brutal-border px-4 py-2 shadow-brutal-sm" style="color: var(--hister-coral);">
+        <Shield class="size-4.5" />
         <span class="font-outfit text-xl font-extrabold">{ruleRows.length}</span>
         <span class="font-inter text-sm">rules</span>
       </div>
-      <div class="flex items-center gap-2 text-hister-indigo border-[3px] border-brutal-border px-4 py-2 shadow-[3px_3px_0_var(--brutal-shadow)]">
-        <Link2 class="size-[18px]" />
+      <div class="flex items-center gap-2 border-[3px] border-brutal-border px-4 py-2 shadow-brutal-sm" style="color: var(--hister-indigo);">
+        <Link2 class="size-4.5" />
         <span class="font-outfit text-xl font-extrabold">{Object.keys(rules.aliases).length}</span>
         <span class="font-inter text-sm">aliases</span>
       </div>
@@ -160,13 +160,13 @@
   </div>
 
   {#if message}
-    <Alert.Root class="border-[3px] rounded-none shadow-[4px_4px_0_var(--brutal-shadow)] {isError ? 'border-hister-rose bg-hister-rose/10 text-hister-rose' : 'border-hister-teal bg-hister-teal/10 text-hister-teal'}">
+    <Alert.Root variant={isError ? 'error' : 'success'} class="border-[3px] shadow-brutal">
       {#if isError}
-        <AlertCircle class="size-5" />
+        <AlertCircle class="size-5 shrink-0" />
       {:else}
-        <CheckCircle class="size-5" />
+        <CheckCircle class="size-5 shrink-0" />
       {/if}
-      <Alert.Description class="font-inter text-[15px]">{message}</Alert.Description>
+      <Alert.Description class="font-inter text-sm">{message}</Alert.Description>
     </Alert.Root>
   {/if}
 
@@ -177,8 +177,8 @@
   {:else}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Search Aliases Card -->
-      <Card.Root class="bg-card-surface border-[3px] border-brutal-border rounded-none py-0 gap-0 overflow-hidden shadow-[6px_6px_0_var(--brutal-shadow)] flex flex-col">
-        <Card.Header class="flex-row items-center gap-4 px-6 py-6 bg-hister-indigo">
+      <Card.Root>
+        <Card.Header color="hister-indigo">
           <div class="bg-white/20 w-12 h-12 flex items-center justify-center shrink-0">
             <Link2 class="size-6 text-white" />
           </div>
@@ -194,7 +194,7 @@
             <Table.Root>
               <Table.Header>
                 <Table.Row class="bg-muted-surface border-b-[3px] border-brutal-border hover:bg-muted-surface">
-                  <Table.Head class="font-space text-xs font-bold tracking-[1px] text-text-brand-muted w-[140px] px-5 py-3 h-auto">KEYWORD</Table.Head>
+                  <Table.Head class="font-space text-xs font-bold tracking-[1px] text-text-brand-muted w-35 px-5 py-3 h-auto">KEYWORD</Table.Head>
                   <Table.Head class="font-space text-xs font-bold tracking-[1px] text-text-brand-muted px-5 py-3 h-auto">EXPANDS TO</Table.Head>
                   <Table.Head class="w-10 px-5 py-3 h-auto"></Table.Head>
                 </Table.Row>
@@ -202,7 +202,7 @@
               <Table.Body>
                 {#each Object.entries(rules.aliases) as [keyword, value]}
                   <Table.Row class="border-b-[3px] border-brutal-border">
-                    <Table.Cell class="font-fira text-sm font-semibold text-text-brand w-[140px] px-5 py-3">{keyword}</Table.Cell>
+                    <Table.Cell class="font-fira text-sm font-semibold text-text-brand w-35 px-5 py-3">{keyword}</Table.Cell>
                     <Table.Cell class="font-fira text-sm text-text-brand-secondary truncate px-5 py-3 max-w-0">{value}</Table.Cell>
                     <Table.Cell class="w-10 px-5 py-3">
                       <Button
@@ -243,33 +243,35 @@
 
           {#if Object.keys(rules.aliases).length === 0}
             <div class="flex flex-col items-center justify-center py-10 gap-3">
-              <div class="bg-hister-indigo/10 w-12 h-12 flex items-center justify-center">
-                <Link2 class="size-5 text-hister-indigo" />
+              <div class="w-12 h-12 flex items-center justify-center" style="background-color: color-mix(in srgb, var(--hister-indigo) 10%, transparent); color: var(--hister-indigo);">
+                <Link2 class="size-5" />
               </div>
               <p class="font-inter text-sm text-text-brand-muted">No aliases defined yet.</p>
             </div>
           {/if}
         </Card.Content>
 
-        <Card.Footer class="px-4 md:px-5 py-4 md:py-5 bg-muted-surface border-t-[3px] border-brutal-border">
+        <Card.Footer>
           <form onsubmit={addAlias} class="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full">
             <div class="flex items-center gap-3 md:contents">
               <Input
                 type="text"
+                variant="brutal"
                 bind:value={newAliasKeyword}
                 placeholder="keyword..."
-                class="w-28 md:w-[140px] h-10 px-3 bg-card-surface border-[3px] border-brutal-border font-fira text-sm text-text-brand shadow-none focus-visible:ring-0 focus-visible:border-hister-indigo"
+                class="w-28 md:w-35 h-10 px-3 bg-card-surface focus-visible:border-hister-indigo"
               />
               <Input
                 type="text"
+                variant="brutal"
                 bind:value={newAliasValue}
                 placeholder="expands to..."
-                class="flex-1 h-10 px-3 bg-card-surface border-[3px] border-brutal-border font-fira text-sm text-text-brand shadow-none focus-visible:ring-0 focus-visible:border-hister-indigo"
+                class="flex-1 h-10 px-3 bg-card-surface focus-visible:border-hister-indigo"
               />
             </div>
             <Button
               type="submit"
-              class="bg-hister-indigo text-white font-space text-sm font-bold tracking-[1px] border-[3px] border-brutal-border h-10 px-5 shadow-[3px_3px_0_var(--brutal-shadow)] hover:shadow-[1px_1px_0_var(--brutal-shadow)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all gap-2"
+              class="bg-hister-indigo text-white font-space text-sm font-bold tracking-[1px] border-[3px] border-brutal-border h-10 px-5 brutal-press gap-2"
             >
               <Plus class="size-4 shrink-0" />
               ADD
@@ -279,8 +281,8 @@
       </Card.Root>
 
       <!-- Indexing Rules Card -->
-      <Card.Root class="bg-card-surface border-[3px] border-brutal-border rounded-none py-0 gap-0 overflow-hidden shadow-[6px_6px_0_var(--brutal-shadow)] flex flex-col">
-        <Card.Header class="flex-row items-center gap-4 px-6 py-6 bg-hister-coral">
+      <Card.Root>
+        <Card.Header color="hister-coral">
           <div class="bg-white/20 w-12 h-12 flex items-center justify-center shrink-0">
             <Shield class="size-6 text-white" />
           </div>
@@ -356,26 +358,27 @@
 
           {#if ruleRows.length === 0}
             <div class="flex flex-col items-center justify-center py-10 gap-3">
-              <div class="bg-hister-coral/10 w-12 h-12 flex items-center justify-center">
-                <Shield class="size-5 text-hister-coral" />
+              <div class="w-12 h-12 flex items-center justify-center" style="background-color: color-mix(in srgb, var(--hister-coral) 10%, transparent); color: var(--hister-coral);">
+                <Shield class="size-5" />
               </div>
               <p class="font-inter text-sm text-text-brand-muted">No rules defined yet.</p>
             </div>
           {/if}
         </Card.Content>
 
-        <Card.Footer class="px-4 md:px-5 py-4 md:py-5 bg-muted-surface border-t-[3px] border-brutal-border">
+        <Card.Footer>
           <div class="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full">
             <div class="flex items-center gap-3 md:contents">
               <Input
                 type="text"
+                variant="brutal"
                 bind:value={newRulePattern}
                 placeholder="Enter regex pattern..."
-                class="flex-1 h-10 px-3 bg-card-surface border-[3px] border-brutal-border font-fira text-sm text-text-brand shadow-none focus-visible:ring-0 focus-visible:border-hister-coral"
+                class="flex-1 h-10 px-3 bg-card-surface focus-visible:border-hister-coral"
               />
               <select
                 bind:value={newRuleType}
-                class="h-10 px-3 w-[100px] md:w-[110px] bg-card-surface border-[3px] border-brutal-border font-space text-xs font-bold tracking-[0.5px] text-text-brand outline-none cursor-pointer appearance-none text-center shrink-0"
+                class="h-10 px-3 w-25 md:w-27.5 bg-card-surface border-[3px] border-brutal-border font-space text-xs font-bold tracking-[0.5px] text-text-brand outline-none cursor-pointer appearance-none text-center shrink-0"
               >
                 <option value="skip">SKIP</option>
                 <option value="priority">PRIORITY</option>
@@ -384,7 +387,7 @@
             <Button
               type="button"
               onclick={addRule}
-              class="bg-hister-coral text-white font-space text-sm font-bold tracking-[1px] border-[3px] border-brutal-border h-10 px-5 shadow-[3px_3px_0_var(--brutal-shadow)] hover:shadow-[1px_1px_0_var(--brutal-shadow)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all gap-2"
+              class="bg-hister-coral text-white font-space text-sm font-bold tracking-[1px] border-[3px] border-brutal-border h-10 px-5 brutal-press gap-2"
             >
               <Plus class="size-4 shrink-0" />
               ADD

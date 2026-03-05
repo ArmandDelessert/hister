@@ -1,4 +1,5 @@
 import { error } from "@sveltejs/kit";
+import type { Component } from 'svelte';
 
 export const prerender = true;
 
@@ -9,7 +10,7 @@ const posts = Object.fromEntries(
     const slug = path.split('/').pop()?.replace('.md', '') ?? path;
     return [slug, mod];
   })
-) as Record<string, { default: unknown; metadata?: Record<string, unknown> }>;
+) as Record<string, { default: Component; metadata?: Record<string, unknown> }>;
 
 export function entries() {
   return Object.keys(posts).map(slug => ({ slug }));

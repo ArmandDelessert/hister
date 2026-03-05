@@ -7,7 +7,9 @@
   import { Button } from '@hister/components/ui/button';
   import * as Card from '@hister/components/ui/card';
   import * as Alert from '@hister/components/ui/alert';
-  import { Save, AlertCircle, CheckCircle } from 'lucide-svelte';
+  import AlertCircle from '@lucide/svelte/icons/circle-alert';
+  import CheckCircle from '@lucide/svelte/icons/circle-check';
+  import { Save } from 'lucide-svelte';
 
   let url = $state('');
   let title = $state('');
@@ -58,15 +60,15 @@
 </svelte:head>
 
 <div class="flex-1 flex items-start justify-center pt-12 px-6 overflow-y-auto">
-  <Card.Root class="w-full max-w-[640px] bg-card-surface border-[3px] border-hister-indigo shadow-[6px_6px_0px_var(--hister-indigo)] rounded-none py-0 gap-0 overflow-hidden">
-    <Card.Header class="flex-row items-center justify-between px-7 py-5 bg-hister-indigo gap-2">
+  <Card.Root color="hister-indigo" class="w-full max-w-160">
+    <Card.Header color="hister-indigo" class="justify-between px-7 py-5 gap-2">
       <Card.Title class="font-outfit font-black text-[22px] text-white">Add Entry</Card.Title>
       <Card.Description class="font-inter text-[13px] font-medium text-white/70">Manually index a page</Card.Description>
     </Card.Header>
 
-    <Card.Content class="p-7 space-y-6">
+    <Card.Content class="space-y-6">
       {#if message}
-        <Alert.Root class="border-[2px] rounded-none {isError ? 'border-hister-rose bg-hister-rose/10 text-hister-rose' : 'border-hister-teal bg-hister-teal/10 text-hister-teal'}">
+        <Alert.Root variant={isError ? 'error' : 'success'}>
           {#if isError}
             <AlertCircle class="size-4 shrink-0" />
           {:else}
@@ -81,10 +83,11 @@
           <Label class="font-outfit text-sm font-bold text-text-brand">URL</Label>
           <Input
             type="text"
+            variant="brutal"
             bind:value={url}
             placeholder="https://..."
             required
-            class="w-full h-12 px-4 bg-page-bg border-[3px] border-hister-indigo font-fira text-sm text-text-brand placeholder:text-text-brand-muted shadow-none focus-visible:ring-0 focus-visible:border-hister-coral transition-colors"
+            class="border-hister-indigo focus-visible:border-hister-coral"
           />
         </div>
 
@@ -92,9 +95,10 @@
           <Label class="font-outfit text-sm font-bold text-text-brand">Title</Label>
           <Input
             type="text"
+            variant="brutal"
             bind:value={title}
             placeholder="Page title..."
-            class="w-full h-12 px-4 bg-page-bg border-[3px] border-hister-indigo font-inter text-sm text-text-brand placeholder:text-text-brand-muted shadow-none focus-visible:ring-0 focus-visible:border-hister-coral transition-colors"
+            class="border-hister-indigo font-inter focus-visible:border-hister-coral"
           />
         </div>
 
@@ -103,7 +107,7 @@
           <Textarea
             bind:value={text}
             placeholder="Paste or type page content..."
-            class="w-full min-h-[180px] p-4 bg-page-bg border-[3px] border-hister-indigo font-inter text-sm text-text-brand placeholder:text-text-brand-muted rounded-none outline-none focus-visible:ring-0 focus-visible:border-hister-coral transition-colors resize-y"
+            class="w-full min-h-45 p-4 bg-page-bg border-[3px] border-hister-indigo font-inter text-sm text-text-brand placeholder:text-text-brand-muted rounded-none outline-none focus-visible:ring-0 focus-visible:border-hister-coral transition-colors resize-y"
           />
         </div>
 
@@ -111,7 +115,7 @@
           type="submit"
           disabled={submitting}
           size="lg"
-          class="w-full h-[52px] bg-hister-coral shadow-[4px_4px_0px_var(--hister-coral)] text-white font-outfit text-base font-extrabold tracking-[1px] hover:bg-hister-coral/90"
+          class="w-full h-13 bg-hister-coral shadow-[4px_4px_0px_var(--hister-coral)] text-white font-outfit text-base font-extrabold tracking-[1px] hover:bg-hister-coral/90"
         >
           <Save class="size-5 shrink-0" />
           <span>{submitting ? 'Saving...' : 'Save Entry'}</span>

@@ -8,6 +8,10 @@
 				default: "bg-card text-card-foreground",
 				destructive:
 					"text-destructive bg-card *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
+				success:
+					"border-[2px] rounded-none border-hister-teal bg-hister-teal/10 text-hister-teal",
+				error:
+					"border-[2px] rounded-none border-hister-rose bg-hister-rose/10 text-hister-rose",
 			},
 		},
 		defaultVariants: {

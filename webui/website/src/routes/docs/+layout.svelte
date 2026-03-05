@@ -20,7 +20,7 @@
   {@render children()}
 {:else}
   <!-- Dark header banner -->
-  <header class="w-full bg-[var(--text-primary)] px-6 py-10 md:py-14">
+  <header class="w-full bg-(--text-primary) px-6 py-10 md:py-14">
     <div class="max-w-7xl mx-auto">
       <nav class="flex items-center gap-2 font-space text-[11px] font-bold tracking-[2px] uppercase text-white/40 mb-4">
         <a
@@ -47,7 +47,7 @@
             <div class="flex items-center gap-2 mb-1">
               <div class="w-2 h-2 {categoryColors[category.name] ?? 'bg-brutal-border'}"></div>
               <span
-                class="font-space text-[10px] font-bold tracking-[2px] uppercase text-[var(--text-secondary)]"
+                class="font-space text-[10px] font-bold tracking-[2px] uppercase text-(--text-secondary)"
                 >{category.name}</span
               >
             </div>
@@ -55,8 +55,8 @@
               <a
                 href="/docs/{doc.slug}"
                 class="font-inter text-sm py-2 px-3 no-underline border-l-[3px] transition-colors {page.url.pathname === `/docs/${doc.slug}`
-                  ? 'border-hister-indigo text-[var(--text-primary)] font-semibold bg-hister-indigo/5'
-                  : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-brutal-border'}"
+                  ? 'border-hister-indigo text-(--text-primary) font-semibold bg-hister-indigo/5'
+                  : 'border-transparent text-(--text-secondary) hover:text-(--text-primary) hover:border-brutal-border'}"
               >
                 {doc.title}
               </a>

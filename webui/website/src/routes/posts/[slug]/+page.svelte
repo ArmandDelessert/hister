@@ -7,7 +7,7 @@
   {#if data.meta.description}
     <meta name="description" content={data.meta.description as string} />
   {/if}
-  <meta property="og:title" content={data.meta.title} />
+  <meta property="og:title" content={data.meta.title as string} />
   {#if data.meta.description}
     <meta property="og:description" content={data.meta.description as string} />
   {/if}
@@ -15,7 +15,7 @@
   <meta property="article:section" content="Post" />
 </svelte:head>
 
-<header class="w-full bg-[var(--text-primary)] px-6 py-12 md:py-16">
+<header class="w-full bg-(--text-primary) px-6 py-12 md:py-16">
   <div class="max-w-3xl mx-auto">
     {#if data.date}
       <time class="font-inter text-sm text-white/40" datetime={data.date}>{data.date}</time>

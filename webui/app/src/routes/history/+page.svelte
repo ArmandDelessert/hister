@@ -7,7 +7,8 @@
   import { Badge } from '@hister/components/ui/badge';
   import { Separator } from '@hister/components/ui/separator';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
-  import StatusMessage from '$lib/components/StatusMessage.svelte';
+  import { PageHeader } from '@hister/components';
+  import { StatusMessage } from '$lib/components';
   import { Search, Clock, Trash2 } from 'lucide-svelte';
 
   let items: HistoryItem[] = $state([]);
@@ -165,7 +166,7 @@
 </svelte:head>
 
 <header class="flex items-center justify-between px-3 md:px-6 py-3 bg-card-surface border-b-[3px] border-brutal-border shrink-0 gap-2 overflow-hidden">
-  <h1 class="flex items-center gap-2 shrink-0 min-w-0"><span class="w-1 h-6 bg-hister-indigo shrink-0"></span><span class="font-space text-sm md:text-lg tracking-[1px] font-extrabold text-text-brand truncate uppercase">Search History</span></h1>
+  <PageHeader color="hister-indigo" size="xs" class="shrink-0 min-w-0" truncate>Search History</PageHeader>
   <nav class="flex items-center gap-2 md:gap-3 min-w-0 shrink-0">
     <div class="flex items-center gap-2 h-8 px-2 md:px-3 border-[3px] border-brutal-border bg-page-bg min-w-0">
       <Search class="size-3.5 text-text-brand-muted shrink-0" />
@@ -179,7 +180,7 @@
       <Button
         variant="outline"
         size="sm"
-        class="border-[3px] border-hister-rose text-hister-rose hover:bg-hister-rose/10 font-inter text-xs font-semibold h-8 gap-1.5 shrink-0 shadow-[3px_3px_0_var(--brutal-shadow)] hover:shadow-[1px_1px_0_var(--brutal-shadow)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
+        class="border-[3px] border-hister-rose text-hister-rose hover:bg-hister-rose/10 font-inter text-xs font-semibold h-8 gap-1.5 shrink-0 brutal-press"
         onclick={deleteAllHistory}
       >
         <Trash2 class="size-3.5" />
@@ -192,13 +193,13 @@
 {#if loading}
   <StatusMessage message="Loading history..." type="loading" />
 {:else if error}
-  <StatusMessage message={error} type="error" className="mx-3 md:mx-6 mt-4" />
+  <StatusMessage message={error} type="error" class="mx-3 md:mx-6 mt-4" />
 {:else if filteredItems.length === 0}
   <StatusMessage message={filter ? 'No matching entries' : 'No history yet'} type="empty" />
 {:else}
   <div class="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
     <!-- Timeline sidebar: hidden on mobile, shown on md+ -->
-    <ScrollArea class="hidden md:block w-[280px] shrink-0 border-r-[3px] border-brutal-border pt-5 pr-3">
+    <ScrollArea class="hidden md:block w-70 shrink-0 border-r-[3px] border-brutal-border pt-5 pr-3">
       <div class="space-y-1">
         <span class="font-space text-xs font-bold tracking-[2px] text-text-brand-muted px-2.5 flex items-center gap-1.5 uppercase">
           <Clock class="size-3" />
@@ -208,7 +209,7 @@
 
         <Button
           variant="ghost"
-          class="flex items-center gap-2 w-full py-1.5 px-2.5 justify-start h-auto rounded-none {!filterByDate ? 'bg-[var(--hister-indigo)] text-white hover:bg-[var(--hister-indigo)]/90 hover:text-white' : 'hover:bg-muted-surface'}"
+          class="flex items-center gap-2 w-full py-1.5 px-2.5 justify-start h-auto rounded-none {!filterByDate ? 'bg-hister-indigo text-white hover:bg-(--hister-indigo)/90 hover:text-white' : 'hover:bg-muted-surface'}"
           onclick={showAll}
         >
           <span class="font-inter text-sm font-semibold" class:text-text-brand-secondary={!!filterByDate}>

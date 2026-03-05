@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Kbd } from '@hister/components/ui/kbd';
+  import { PageHeader } from '@hister/components';
 </script>
 
 <svelte:head>
@@ -7,11 +8,8 @@
 </svelte:head>
 
 <div class="px-4 md:px-12 py-6 md:py-10 overflow-y-auto flex-1">
-  <div class="max-w-3xl mx-auto">
-    <h1 class="flex items-center gap-3 mb-8"><span class="w-1.5 h-8 bg-hister-indigo"></span><span class="font-space text-2xl md:text-3xl tracking-[2px] font-extrabold text-text-brand uppercase">Help</span></h1>
-  </div>
+  <PageHeader color="hister-indigo" class="max-w-3xl mx-auto mb-8">Help</PageHeader>
   <div class="prose prose-neutral dark:prose-invert max-w-3xl mx-auto prose-headings:font-outfit prose-headings:font-extrabold prose-h1:text-text-brand prose-h2:text-text-brand prose-h3:text-text-brand prose-p:font-inter prose-p:text-text-brand-secondary prose-li:font-inter prose-li:text-text-brand-secondary prose-a:text-hister-indigo prose-a:no-underline hover:prose-a:underline prose-strong:text-text-brand prose-hr:border-border-brand-muted">
-
     <h2>Search Shortcuts</h2>
     <p>Press <Kbd>enter</Kbd> to open the first result. Alternatively press <Kbd>alt+enter</Kbd> to open in new tab.</p>
     <p>Navigate in results with <Kbd>alt+j</Kbd> and <Kbd>alt+k</Kbd>. <Kbd>Enter</Kbd>/<Kbd>alt+enter</Kbd> opens the selected result.</p>

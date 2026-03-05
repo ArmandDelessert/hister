@@ -56,7 +56,7 @@
   let query = $state('');
   let autocomplete = $state('');
   let connected = $state(false);
-  let lastResults: SearchResults | null = $state(null);
+  let lastResults = $state<SearchResults | null>(null);
   let highlightIdx = $state(0);
   let currentSort = $state('');
   let dateFrom = $state('');
@@ -101,9 +101,9 @@
     { border: 'border-hister-amber', bg: 'bg-hister-amber/10', text: 'text-hister-amber' },
   ];
 
-  const hotkeyActions: Record<string, (e?: KeyboardEvent) => void> = {
+  const hotkeyActions: Record<string, (e?: KeyboardEvent, isInputFocus?: boolean) => void | boolean> = {
     'open_result': openSelectedResult,
-    'open_result_in_new_tab': (e, i) => openSelectedResult(e, i, true),
+    'open_result_in_new_tab': (e?: KeyboardEvent, i?: boolean) => openSelectedResult(e, i, true),
     'select_next_result': selectNextResult,
     'select_previous_result': selectPreviousResult,
     'open_query_in_search_engine': openQueryInSearchEngine,
@@ -254,7 +254,7 @@
   function selectNextResult(e?: KeyboardEvent) { if (e) e.preventDefault(); selectNthResult(1); }
   function selectPreviousResult(e?: KeyboardEvent) { if (e) e.preventDefault(); selectNthResult(-1); }
 
-  function openSelectedResult(e?: KeyboardEvent, isInputFocus:bool, newWindow = false) {
+  function openSelectedResult(e?: KeyboardEvent, isInputFocus?: boolean, newWindow = false) {
     if (e) e.preventDefault();
     if (query.startsWith('!!')) {
       openURL(getSearchUrl(config.searchUrl, query.substring(2)), newWindow);
@@ -281,7 +281,7 @@
     }
   }
 
-  function autocompleteQuery(e?: KeyboardEvent, isInputFocus?: bool) {
+  function autocompleteQuery(e?: KeyboardEvent, isInputFocus?: boolean) {
     if (e) e.preventDefault();
     if (isInputFocus && autocomplete && query !== autocomplete) {
       query = autocomplete;
@@ -292,7 +292,7 @@
   }
 
   function openQueryInSearchEngine(e?: KeyboardEvent) { if (e) e.preventDefault(); openURL(getSearchUrl(config.searchUrl, query)); }
-  function focusSearchInput(e?: KeyboardEvent, isInputFocus?: bool) { if (!isInputFocus) { if (e) e.preventDefault(); inputEl?.focus(); } }
+  function focusSearchInput(e?: KeyboardEvent, isInputFocus?: boolean) { if (!isInputFocus) { if (e) e.preventDefault(); inputEl?.focus(); } }
 
   function closePopup(): boolean { if (showPopup) { showPopup = false; return true; } return false; }
 
@@ -308,7 +308,7 @@
     'show_hotkeys': 'Show help'
   };
 
-  function showHotkeys(e?: KeyboardEvent, isInputFocus?: bool) {
+  function showHotkeys(e?: KeyboardEvent, isInputFocus?: boolean) {
     if (showHelp) { showHelp = false; return; }
     if (!isInputFocus) {
         showHelp = true;
@@ -374,7 +374,7 @@
         historyCount = stats.doc_count;
         if(stats.recent_searches) {
           const deletedSearches: string[] = JSON.parse(localStorage.getItem('deletedSearches') || '[]');
-          recentSearches = stats.recent_searches.map(s => s.query).filter(q => !deletedSearches.includes(q));
+          recentSearches = stats.recent_searches.map((s: { query: string }) => s.query).filter((q: string) => !deletedSearches.includes(q));
         }
       }
 
@@ -547,7 +547,7 @@
 <Button
   variant="outline"
   size="icon"
-  class="hidden md:inline-flex fixed bottom-14 right-6 z-30 bg-card-surface border-[3px] border-brutal-border text-text-brand-muted hover:border-hister-indigo hover:text-hister-indigo shadow-[4px_4px_0_var(--brutal-shadow)] hover:shadow-[2px_2px_0_var(--brutal-shadow)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all rounded-none"
+  class="hidden md:inline-flex fixed bottom-14 right-6 z-30 bg-card-surface border-[3px] border-brutal-border text-text-brand-muted hover:border-hister-indigo hover:text-hister-indigo shadow-brutal hover:shadow-brutal-sm hover:translate-x-[2px] hover:translate-y-[2px] transition-all rounded-none"
   onclick={() => { showHelp = !showHelp; }}
   title="Keyboard shortcuts (?)"
   aria-label="Show keyboard shortcuts"
@@ -801,7 +801,7 @@
           {@const chip = chipColors[i % chipColors.length]}
           <Button
             variant="outline"
-            class="border-[3px] {chip.border} {chip.bg} px-3.5 py-1.5 font-inter text-sm font-semibold {chip.text} shadow-[3px_3px_0_var(--brutal-shadow)] hover:shadow-[1px_1px_0_var(--brutal-shadow)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all duration-200 h-auto rounded-none"
+            class="border-[3px] {chip.border} {chip.bg} px-3.5 py-1.5 font-inter text-sm font-semibold {chip.text} brutal-press h-auto rounded-none"
             onclick={() => clickChip(search)}
             oncontextmenu={(e) => showChipContextMenu(e, search)}
           >
@@ -850,18 +850,18 @@
     {/if}
 
     <div bind:this={statsRowEl} class="flex items-center gap-3 md:gap-8 flex-col md:flex-row">
-      <div class="flex items-center gap-2 text-hister-indigo border-[3px] border-brutal-border px-4 py-2 shadow-[3px_3px_0_var(--brutal-shadow)]">
-        <History class="size-[12px] md:size-[18px]" />
+      <div class="flex items-center gap-2 border-[3px] border-brutal-border px-4 py-2 shadow-brutal-sm" style="color: var(--hister-indigo);">
+        <History class="size-3 md:size-4.5" />
         <span class="font-outfit text-xl font-extrabold">{displayHistoryCount}</span>
         <span class="font-inter text-sm">indexed pages</span>
       </div>
-      <div class="flex items-center gap-2 text-hister-teal border-[3px] border-brutal-border px-4 py-2 shadow-[3px_3px_0_var(--brutal-shadow)]">
-        <Shield class="size-[12px] md:size-[18px]" />
+      <div class="flex items-center gap-2 border-[3px] border-brutal-border px-4 py-2 shadow-brutal-sm" style="color: var(--hister-teal);">
+        <Shield class="size-3 md:size-4.5" />
         <span class="font-outfit text-xl font-extrabold">{displayRulesCount}</span>
         <span class="font-inter text-sm">active rules</span>
       </div>
-      <div class="flex items-center gap-2 text-hister-coral border-[3px] border-brutal-border px-4 py-2 shadow-[3px_3px_0_var(--brutal-shadow)]">
-        <Link2 class="size-[12px] md:size-[18px]" />
+      <div class="flex items-center gap-2 border-[3px] border-brutal-border px-4 py-2 shadow-brutal-sm" style="color: var(--hister-coral);">
+        <Link2 class="size-3 md:size-4.5" />
         <span class="font-outfit text-xl font-extrabold">{displayAliasesCount}</span>
         <span class="font-inter text-sm">aliases</span>
       </div>

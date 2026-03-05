@@ -8,6 +8,8 @@
   import WifiOff from '@lucide/svelte/icons/wifi-off';
   import Download from '@lucide/svelte/icons/download';
   import Terminal from '@lucide/svelte/icons/terminal';
+  import { PageHeader } from '@hister/components';
+  import { FeatureCard } from '@hister/components';
 
   const rows = [
     [
@@ -32,35 +34,35 @@
 </script>
 
 <section id="features" class="max-w-[2000px] mx-auto bg-brutal-bg px-6 md:px-12 py-12 md:py-16 flex flex-col gap-10">
-  <div class="flex items-center gap-6">
-    <div class="w-1.5 h-10 bg-hister-coral"></div>
-    <h2 class="font-space text-3xl md:text-5xl font-black tracking-[3px] text-[var(--text-primary)]">FEATURES</h2>
-  </div>
+  <PageHeader color="hister-coral" size="lg" tag="h2">FEATURES</PageHeader>
 
   <div class="flex flex-col gap-6">
     {#each rows as row}
       <div class="grid grid-cols-1 gap-4 {row.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}">
         {#each row as card}
-          <div class="{card.bg} p-7 border-[3px] border-brutal-border shadow-[6px_6px_0_var(--brutal-shadow)] flex flex-col gap-4">
-            <div class="{card.iconBg} w-12 h-12 flex items-center justify-center">
-              <card.icon size={24} class="{card.iconColor ?? 'text-white'}" />
-            </div>
-            <h3 class="{card.textColor} font-space text-xl md:text-3xl font-extrabold tracking-[1px]">{card.title}</h3>
-            <p class="{card.descColor} font-inter text-sm md:text-lg leading-relaxed">{card.desc}</p>
-          </div>
+          <FeatureCard
+            icon={card.icon}
+            title={card.title}
+            description={card.desc}
+            bg={card.bg}
+            textColor={card.textColor}
+            descColor={card.descColor}
+            iconBg={card.iconBg}
+          />
         {/each}
       </div>
     {/each}
 
-    <!-- Row 4: Search Aliases (horizontal) -->
-    <div class="{aliasCard.bg} p-7 border-[3px] border-brutal-border shadow-[6px_6px_0_var(--brutal-shadow)] flex items-center gap-5">
-      <div class="{aliasCard.iconBg} w-12 h-12 flex items-center justify-center shrink-0">
-        <aliasCard.icon size={24} class="{aliasCard.iconColor}" />
-      </div>
-      <div class="flex flex-col gap-2">
-        <h3 class="{aliasCard.textColor} font-space text-xl md:text-3xl font-extrabold tracking-[1px]">{aliasCard.title}</h3>
-        <p class="{aliasCard.descColor} font-inter text-sm md:text-lg leading-relaxed">{aliasCard.desc}</p>
-      </div>
-    </div>
+    <FeatureCard
+      icon={aliasCard.icon}
+      title={aliasCard.title}
+      description={aliasCard.desc}
+      bg={aliasCard.bg}
+      textColor={aliasCard.textColor}
+      descColor={aliasCard.descColor}
+      iconBg={aliasCard.iconBg}
+      iconColor={aliasCard.iconColor}
+      horizontal
+    />
   </div>
 </section>

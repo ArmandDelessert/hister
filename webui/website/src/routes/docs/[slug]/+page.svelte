@@ -56,20 +56,20 @@
     </div>
 
     <!-- Prev / Next -->
-    <Separator class="mt-12 bg-brutal-border h-[3px]" />
+    <Separator class="mt-12 bg-brutal-border h-0.75" />
     <nav class="pt-8 flex items-center justify-between gap-4">
       {#if data.prev}
         <Button
           variant="ghost"
           href="/docs/{data.prev.slug}"
-          class="group flex items-center gap-3 no-underline text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors h-auto rounded-none px-2 py-2"
+          class="group flex items-center gap-3 no-underline text-(--text-secondary) hover:text-(--text-primary) transition-colors h-auto rounded-none px-2 py-2"
         >
           <ArrowLeft
             size={18}
             class="transition-transform group-hover:-translate-x-1"
           />
           <div class="flex flex-col items-start">
-            <span class="font-space text-[10px] font-bold tracking-[2px] uppercase text-[var(--text-secondary)]"
+            <span class="font-space text-[10px] font-bold tracking-[2px] uppercase text-(--text-secondary)"
               >Previous</span
             >
             <span class="font-inter text-sm font-semibold">{data.prev.title}</span>
@@ -83,10 +83,10 @@
         <Button
           variant="ghost"
           href="/docs/{data.next.slug}"
-          class="group flex items-center gap-3 no-underline text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-right h-auto rounded-none px-2 py-2"
+          class="group flex items-center gap-3 no-underline text-(--text-secondary) hover:text-(--text-primary) transition-colors text-right h-auto rounded-none px-2 py-2"
         >
           <div class="flex flex-col items-end">
-            <span class="font-space text-[10px] font-bold tracking-[2px] uppercase text-[var(--text-secondary)]"
+            <span class="font-space text-[10px] font-bold tracking-[2px] uppercase text-(--text-secondary)"
               >Next</span
             >
             <span class="font-inter text-sm font-semibold">{data.next.title}</span>
@@ -107,7 +107,7 @@
     <aside class="w-48 shrink-0 hidden xl:block">
       <nav class="sticky top-24 flex flex-col gap-0.5">
         <span
-          class="font-space text-[10px] font-bold tracking-[2px] uppercase text-[var(--text-secondary)] mb-3"
+          class="font-space text-[10px] font-bold tracking-[2px] uppercase text-(--text-secondary) mb-3"
           >On This Page</span
         >
         {#each toc as entry}
@@ -117,8 +117,8 @@
             class="justify-start font-inter text-[13px] py-1 no-underline transition-colors border-l-2 h-auto rounded-none
               {entry.level === 3 ? 'pl-5' : 'pl-3'}
               {activeId === entry.id
-              ? 'border-hister-indigo text-[var(--text-primary)] font-medium'
-              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-brutal-border'}"
+              ? 'border-hister-indigo text-(--text-primary) font-medium'
+              : 'border-transparent text-(--text-secondary) hover:text-(--text-primary) hover:border-brutal-border'}"
           >
             {entry.text}
           </Button>

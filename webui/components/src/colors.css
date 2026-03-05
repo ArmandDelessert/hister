@@ -184,3 +184,42 @@
     @apply bg-background text-foreground;
   }
 }
+
+@utility shadow-brutal-sm {
+  box-shadow: 3px 3px 0 var(--brutal-shadow);
+}
+
+@utility shadow-brutal {
+  box-shadow: 4px 4px 0 var(--brutal-shadow);
+}
+
+@utility shadow-brutal-lg {
+  box-shadow: 6px 6px 0 var(--brutal-shadow);
+}
+
+@utility brutal-press {
+  box-shadow: 3px 3px 0 var(--brutal-shadow);
+  transition: all 200ms;
+  &:hover {
+    box-shadow: 1px 1px 0 var(--brutal-shadow);
+    translate: 2px 2px;
+  }
+}
+
+@utility brutal-press-lg {
+  box-shadow: 5px 5px 0 var(--brutal-shadow);
+  transition: all 200ms;
+  &:hover {
+    box-shadow: 2px 2px 0 var(--brutal-shadow);
+    translate: 3px 3px;
+  }
+}
+
+@utility brutal-press-card {
+  box-shadow: 6px 6px 0 var(--brutal-shadow);
+  transition: all 200ms;
+  &:hover {
+    box-shadow: 3px 3px 0 var(--brutal-shadow);
+    translate: 3px 3px;
+  }
+}

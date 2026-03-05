@@ -4,19 +4,20 @@
 
 	let {
 		ref = $bindable(null),
+		color,
 		class: className,
 		children,
 		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
+	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
+		color?: string;
+	} = $props();
 </script>
 
 <div
 	bind:this={ref}
 	data-slot="card-header"
-	class={cn(
-		"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6",
-		className
-	)}
+	class={cn("flex items-center gap-4 px-6 py-6", className)}
+	style={color ? `background-color: var(--${color});` : undefined}
 	{...restProps}
 >
 	{@render children?.()}

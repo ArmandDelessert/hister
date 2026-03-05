@@ -1,13 +1,14 @@
+<script lang="ts">
+  import { PageHeader } from '@hister/components';
+</script>
+
 <svelte:head>
   <title>Hister - About</title>
 </svelte:head>
 
 <div class="px-4 md:px-12 py-6 md:py-10 overflow-y-auto flex-1">
-  <div class="max-w-3xl mx-auto">
-    <h1 class="flex items-center gap-3 mb-8"><span class="w-1.5 h-8 bg-hister-coral"></span><span class="font-space text-2xl md:text-3xl tracking-[2px] font-extrabold text-text-brand uppercase">About Hister</span></h1>
-  </div>
-  <div class="prose prose-neutral dark:prose-invert max-w-3xl mx-auto prose-headings:font-outfit prose-headings:font-extrabold prose-h1:text-text-brand prose-h2:text-text-brand prose-p:font-inter prose-p:text-text-brand-secondary prose-li:font-inter prose-li:text-text-brand-secondary prose-a:text-hister-indigo prose-a:no-underline hover:prose-a:underline prose-strong:text-text-brand prose-hr:border-border-brand-muted">
-
+  <PageHeader color="hister-coral" class="max-w-3xl mx-auto mb-8">About Hister</PageHeader>
+  <div class="prose prose-neutral dark:prose-invert max-w-3xl mx-auto prose-headings:font-outfit prose-headings:font-extrabold prose-h1:text-text-brand prose-h2:text-text-brand prose-h3:text-text-brand prose-p:font-inter prose-p:text-text-brand-secondary prose-li:font-inter prose-li:text-text-brand-secondary prose-a:text-hister-indigo prose-a:no-underline hover:prose-a:underline prose-strong:text-text-brand prose-hr:border-border-brand-muted">
     <p>Hister is a web history management tool that provides blazing fast, content-based search for visited websites. Unlike traditional browser history that only searches URLs and titles, Hister indexes the full content of web pages you visit, enabling deep and meaningful search across your browsing history.</p>
 
     <h2>Features</h2>

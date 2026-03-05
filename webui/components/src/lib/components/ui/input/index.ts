@@ -5,3 +5,5 @@ export {
 	//
 	Root as Input,
 };
+
+export type InputVariant = "default" | "brutal";

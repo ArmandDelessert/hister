@@ -262,11 +262,11 @@ export function apiRequest(options: APIRequestOptions): void {
 
 export class KeyHandler {
   private hotkeys: Record<string, string>;
-  private actions: Record<string, (e?: KeyboardEvent) => void>;
+  private actions: Record<string, (e?: KeyboardEvent, isInputFocus?: boolean) => void | boolean>;
 
   constructor(
     hotkeys: HotkeyConfig,
-    actions: Record<string, (e?: KeyboardEvent) => void>,
+    actions: Record<string, (e?: KeyboardEvent, isInputFocus?: boolean) => void | boolean>,
   ) {
     this.actions = actions;
     this.hotkeys = Object.fromEntries(
@@ -277,7 +277,7 @@ export class KeyHandler {
     );
   }
 
-  handle(e: KeyboardEvent, isInputFocus: bool): boolean {
+  handle(e: KeyboardEvent, isInputFocus: boolean): boolean {
     if (!e.key) return false;
 
     const modifier = e.altKey

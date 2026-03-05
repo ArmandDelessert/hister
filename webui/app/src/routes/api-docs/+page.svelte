@@ -4,6 +4,7 @@
   import { Badge } from '@hister/components/ui/badge';
   import * as Card from '@hister/components/ui/card';
   import * as Table from '@hister/components/ui/table';
+  import { PageHeader } from '@hister/components';
 
   interface EndpointArg {
     name: string;
@@ -43,7 +44,7 @@
 <div class="px-3 md:px-6 py-4 md:py-5 overflow-y-auto flex-1">
   <div class="max-w-4xl mx-auto space-y-4 md:space-y-5">
     <div class="space-y-1">
-      <h1 class="flex items-center gap-2"><span class="w-1.5 h-8 bg-hister-teal"></span><span class="font-space text-lg md:text-xl tracking-[1px] font-extrabold text-text-brand uppercase">API Documentation</span></h1>
+      <PageHeader color="hister-teal" size="sm">API Documentation</PageHeader>
       <p class="font-inter text-xs md:text-sm text-text-brand-secondary">Available HTTP endpoints for integrating with Hister</p>
     </div>
 
@@ -64,7 +65,7 @@
                 </Badge>
                 <code class="font-fira text-sm text-text-brand-secondary">{ep.path}</code>
                 {#if ep.csrf_required}
-                  <Badge variant="outline" class="text-[10px] font-semibold border-[2px] border-hister-amber text-hister-amber px-1.5 py-0 leading-5">
+                  <Badge variant="outline" class="text-[10px] font-semibold border-2 border-hister-amber text-hister-amber px-1.5 py-0 leading-5">
                     CSRF
                   </Badge>
                 {/if}
@@ -73,12 +74,12 @@
             </Card.Header>
 
             {#if ep.args && ep.args.length > 0}
-              <Card.Content class="px-4 py-3 border-t-[1px]">
+              <Card.Content class="px-4 py-3 border-t">
                 <h4 class="font-outfit text-xs font-bold text-text-brand-muted uppercase tracking-wider mb-2">Arguments</h4>
                 <div class="hidden md:block">
                   <Table.Root>
                     <Table.Header>
-                      <Table.Row class="bg-muted-surface border-b-[1px] border-brutal-border hover:bg-muted-surface">
+                      <Table.Row class="bg-muted-surface border-b border-brutal-border hover:bg-muted-surface">
                         <Table.Head class="font-inter text-xs font-bold text-text-brand-muted px-3 py-2 h-auto">Name</Table.Head>
                         <Table.Head class="font-inter text-xs font-bold text-text-brand-muted px-3 py-2 h-auto">Type</Table.Head>
                         <Table.Head class="font-inter text-xs font-bold text-text-brand-muted px-3 py-2 h-auto">Required</Table.Head>
@@ -119,7 +120,7 @@
                 </div>
               </Card.Content>
             {:else}
-              <Card.Content class="px-4 py-3 border-t-[1px] border-brutal-border">
+              <Card.Content class="px-4 py-3 border-t border-brutal-border">
                 <p class="font-inter text-xs text-text-brand-muted">No arguments</p>
               </Card.Content>
             {/if}

@@ -25,11 +25,40 @@
 
   function save(e: Event) {
     e.preventDefault();
-    chrome.storage.local
-      .set({ histerURL: url, histerToken: token, indexingEnabled: indexingEnabled })
-      .then(() => {
-        message = "Settings saved";
-        showTokenInput = !token;
+
+    let verifyURL = url;
+    if(!verifyURL.endsWith('/')) {
+      verifyURL += '/';
+    }
+
+    const headers: HeadersInit = {};
+    if (token) {
+      headers['X-Access-Token'] = token;
+    }
+
+    fetch(verifyURL + "api/config", { headers })
+      .then((response) => {
+        if (response.status !== 200) {
+          if (response.status == 403) {
+            message = `Error: Invalid access token`;
+            return
+          }
+          message = `Error: Server returned status ${response.status}`;
+          return;
+        }
+        return response.json().then((data) => {
+          chrome.storage.local
+            .set({ histerURL: url, histerToken: token, indexingEnabled: indexingEnabled })
+            .then(() => {
+              message = "Settings saved";
+              showTokenInput = !token;
+            });
+        }).catch(() => {
+          message = "Error: Server response is not valid JSON - probably invalid server URL.";
+        });
+      })
+      .catch((err) => {
+        message = `Error: ${err.message}`;
       });
   }
 

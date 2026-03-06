@@ -7,7 +7,7 @@ import (
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/ar"
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/bg"
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/ca"
-	_ "github.com/blevesearch/bleve/v2/analysis/lang/cs"
+	// _ "github.com/blevesearch/bleve/v2/analysis/lang/cs" // This is only a stopword list, bleve does not have a Czech language analyzer
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/da"
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/de"
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/el"
@@ -38,10 +38,10 @@ import (
 const UnknownLanguage = "unknown"
 
 var Languages = []lingua.Language{
-	lingua.Arabic,     // ar
-	lingua.Bulgarian,  // bg
-	lingua.Catalan,    // ca
-	lingua.Czech,      // cs
+	lingua.Arabic,    // ar
+	lingua.Bulgarian, // bg
+	lingua.Catalan,   // ca
+	// lingua.Czech,      // cs
 	lingua.Danish,     // da
 	lingua.German,     // de
 	lingua.Greek,      // el

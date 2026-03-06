@@ -157,4 +157,4 @@ If you don't want to use the module system, add the package directly:
 
 ## Docker
 
-Please reference the project's [Dockerfike](https://github.com/asciimoo/hister/blob/master/Dockerfile).
+We publish a [Docker container](https://github.com/asciimoo/hister/pkgs/container/hister).

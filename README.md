@@ -18,31 +18,14 @@ Hister is a general purpose web search engine providing automatic full-text inde
 - **Efficient retrieval**: Use keyword aliases to quickly find content
 - **Flexible content management**: Configure blacklist and priority rules for better control
 
-## Setup & run
+## Check out our [Documentation](https://hister.org/docs/) for more details
 
-### Install the extension
-
-Available for [Chrome](https://chromewebstore.google.com/detail/hister/cciilamhchpmbdnniabclekddabkifhb) and [Firefox](https://addons.mozilla.org/en-US/firefox/addon/hister/)
-
-### Download pre-built binary
-
-- **Stable:** Grab a versioned binary from the [releases page](https://github.com/asciimoo/hister/releases).
-- **Latest (HEAD):** Get the absolute latest build from our [Rolling Release](https://github.com/asciimoo/hister/releases/tag/rolling).
-
-Choose the binary for your architecture (e.g., `hister_linux_amd64`), make it executable (`chmod +x hister_linux_amd64`), and run it.
-
-Execute `./hister` to see all available commands.
-
-### Build for yourself
+## Development
 
 **Requirements**: Go 1.16 and NPM
 
 - Clone the repository
 - Build with `./manage.sh build` (or `go generate ./...; go build`)
-- Run `./hister help` to list the available commands
-- Execute `./hister listen` to start the web application
-
-### Development
 
 To work on the web app with hot reload and automatic Go rebuilds:
 
@@ -51,18 +34,6 @@ npm run serve:app
 ```
 
 This starts a Vite dev server (with HMR) and the Go backend (with auto-rebuild via [air](https://github.com/air-verse/air)) concurrently.
-
-### Use pre-built [Docker container](https://github.com/asciimoo/hister/pkgs/container/hister)
-
-## Configuration
-
-Settings can be configured in `~/.config/hister/config.yml` config file - don't forget to restart webapp after updating.
-
-TUI-specific settings are stored in a separate `~/.config/hister/tui.yaml` file that is automatically created when you first run `hister search`.
-
-Execute `./hister create-config config.yml` to generate a configuration file with the default configuration values.
-
-## Check out our [Documentation](https://hister.org/docs/) for more details
 
 ## Community
 

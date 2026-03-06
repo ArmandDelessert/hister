@@ -4,24 +4,6 @@ draft: false
 title: 'Getting Started'
 ---
 
-## First Run
-
-Check available commands:
-
-```bash
-./hister help
-```
-
-1. Start the Hister server:
-
-   ```bash
-   ./hister listen
-   ```
-
-2. Open your browser and navigate to `http://127.0.0.1:4433`
-
-3. You should see the Hister web interface
-
 ## Configuration
 
 Hister can be configured using a YAML configuration file located at `~/.config/hister/config.yml`.

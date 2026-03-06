@@ -70,6 +70,14 @@ var (
 	sanitizer           *bluemonday.Policy
 	bleveConfig         map[string]any = map[string]any{
 		"bolt_timeout": "2s",
+		// https://github.com/blevesearch/bleve/blob/master/docs/persister.md
+		"scorchPersisterOptions": map[string]any{
+			"NumPersisterWorkers":           4,
+			"MaxSizeInMemoryMergePerWorker": 80 * 1024 * 1024, // bytes
+		},
+		"scorchMergePlanOptions": map[string]any{
+			"FloorSegmentFileSize": 20 * 1024 * 1024, // bytes
+		},
 	}
 )
 
@@ -102,7 +110,7 @@ func initializeIndexer(basePath string) (*indexer, error) {
 			return nil, errors.New("cannot open index: index is already opened - close other Hister instances and try again")
 		}
 		mapping := createMapping("default")
-		idx, err = bleve.New(idxPath, mapping)
+		idx, err = bleve.NewUsing(idxPath, mapping, bleve.Config.DefaultIndexType, bleve.Config.DefaultMemKVStore, bleveConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -265,7 +273,7 @@ func (i *indexer) AddDocument(d *Document) error {
 
 func (i *indexer) addIndexer(name, lang string) error {
 	mapping := createMapping(lang)
-	idx, err := bleve.New(filepath.Join(i.dir, name), mapping)
+	idx, err := bleve.NewUsing(filepath.Join(i.dir, name), mapping, bleve.Config.DefaultIndexType, bleve.Config.DefaultMemKVStore, bleveConfig)
 	if err != nil {
 		return err
 	}

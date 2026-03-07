@@ -74,4 +74,4 @@ Bugs or suggestions? Visit the [issue tracker](https://github.com/asciimoo/histe
 
 ## License
 
-AGPLv3
+[AGPLv3](LICENSE) or any later version

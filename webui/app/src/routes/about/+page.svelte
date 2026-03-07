@@ -94,7 +94,7 @@
 
     <h2>License</h2>
 
-    <p>Hister is free and open-source software licensed under AGPLv3.</p>
+    <p>Hister is free and open-source software licensed under AGPLv3 or any later version.</p>
 
     <h2>Community</h2>
 

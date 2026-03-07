@@ -1,6 +1,6 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
 //
-// SPDX-License-Identifier: AGPLv3+
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 package model
 

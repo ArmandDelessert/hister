@@ -29,7 +29,7 @@ More advanced setups are described in the "Advanced Server Setup" category; they
 
 ## Installing a Browser Extension
 
-Install one or more of the following extensions to index any pages you *newly* visit:
+Install one or more of the following extensions to index any pages you _newly_ visit:
 
 - **Chrome**: [Install from Chrome Web Store](https://chromewebstore.google.com/detail/hister/cciilamhchpmbdnniabclekddabkifhb)
 - **Firefox**: [Install from Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/hister/) (also available on Firefox Mobile!)
@@ -39,7 +39,7 @@ Click the extension's icon to access its settings; the server URL should already
 The extensions also offer an option to use your Hister instance as a search engine.
 Feel free to make it the default: Hister's search interface has a button to forward your query to an external search engine like DuckDuckGo, Google, etc.
 
-Note that the browser extensions *do not* access the network except to talk to the Hister server!
+Note that the browser extensions _do not_ access the network except to talk to the Hister server!
 In particular, they will never make requests to any site you are visiting (they only look at what the browser itself has loaded), and thus they are completely transparent to the indexed websites.
 
 ## Accessing the Web Interface

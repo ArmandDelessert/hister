@@ -21,7 +21,9 @@
     <div class="mb-8">
       <div class="mb-3 flex items-center gap-2">
         <div class="h-2.5 w-2.5 bg-hister-{category.color}"></div>
-        <span class="font-space text-xs font-bold tracking-[2px] text-[var(--text-secondary)] uppercase">
+        <span
+          class="font-space text-xs font-bold tracking-[2px] text-[var(--text-secondary)] uppercase"
+        >
           {category.name}
         </span>
       </div>

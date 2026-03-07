@@ -13,7 +13,7 @@ services:
     cap_drop:
       - ALL
     ports:
-      - "4433:4433"
+      - '4433:4433'
     volumes:
       - hister_data:/hister/data
     tmpfs:

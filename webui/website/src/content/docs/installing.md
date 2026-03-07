@@ -6,19 +6,17 @@ title: 'Obtaining Hister'
 
 This page documents how to obtain the Hister program, which serves both as a command-line/TUI client and as the server; setting up the browser extensions is covered [later](quickstart#installing-a-browser-extension).
 
-If you are using a server already set up by someone else, and you aren't planning on using any of the client's features, then *you do not need to download this program*.
+If you are using a server already set up by someone else, and you aren't planning on using any of the client's features, then _you do not need to download this program_.
 
 ## Pre-built Binary
 
-1. Download the binary for your platform:
-		- For stable versions: [Releases](https://github.com/asciimoo/hister/releases)
-		- For the latest development version: [Rolling Release (latest)](https://github.com/asciimoo/hister/releases/tag/rolling)
+1. Download the binary for your platform: - For stable versions: [Releases](https://github.com/asciimoo/hister/releases) - For the latest development version: [Rolling Release (latest)](https://github.com/asciimoo/hister/releases/tag/rolling)
 
 2. Make the binary executable:
 
-	 ```bash
-	 chmod +x hister
-	 ```
+   ```bash
+   chmod +x hister
+   ```
 
 3. Optionally, move it to somewhere on your `PATH`; for example, `/usr/local/bin/` (system-wide) or `~/.local/bin/` (per-user).
 

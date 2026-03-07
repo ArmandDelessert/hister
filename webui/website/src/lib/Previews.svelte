@@ -1,9 +1,9 @@
 <script lang="ts">
   import { BrowserFrame } from '@hister/components';
-  
-  import landing_scrnshot from "$lib/assets/landing_screenshot.png";
-  import scrnshot from "$lib/assets/screenshot.png";
-  import demo from "$lib/assets/demo.gif";
+
+  import landing_scrnshot from '$lib/assets/landing_screenshot.png';
+  import scrnshot from '$lib/assets/screenshot.png';
+  import demo from '$lib/assets/demo.gif';
 </script>
 
 <section class="bg-brutal-bg flex w-full flex-col items-center gap-12 px-6 py-12 md:px-12 md:py-16">
@@ -18,11 +18,7 @@
       </h2>
     </figcaption>
     <BrowserFrame>
-      <img
-        src={landing_scrnshot}
-        alt="Hister Web UI Landing Page"
-        class="block h-auto w-full"
-      />
+      <img src={landing_scrnshot} alt="Hister Web UI Landing Page" class="block h-auto w-full" />
     </BrowserFrame>
   </figure>
   <figure class="m-0 flex w-full max-w-[1100px] flex-col items-center gap-6">

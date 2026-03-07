@@ -80,7 +80,8 @@
 
   <div class="flex flex-col items-start justify-between gap-2 md:flex-row md:items-center">
     <span class="font-inter text-[13px] text-white/25"
-      >2026 Hister. Open-source under <a href="https://www.gnu.org/licenses/#AGPL">AGPLv3 License</a>.</span
+      >2026 Hister. Open-source under <a href="https://www.gnu.org/licenses/#AGPL">AGPLv3 License</a
+      >.</span
     >
     <span class="font-space text-[13px] font-semibold tracking-[1px] text-white/25"
       >Built with Go</span

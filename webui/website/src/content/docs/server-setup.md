@@ -25,7 +25,8 @@ The [`server` configuration] needs to be edited to tell the Hister server to all
      base_url: http://localhost:4433
    ```
 
-   (*Optionally*, if you want to listen on a specific network interface, append `%<interface_name>` after the closing bracket `]` in `address`.)
+   (_Optionally_, if you want to listen on a specific network interface, append `%<interface_name>` after the closing bracket `]` in `address`.)
+
 2. To apply those changes, close the Hister server if it was already running, and restart it.
    Check that you can access the Hister Web interface at <http://localhost:4433>.
    If not, replace `[::]` in `address` with `0.0.0.0`, and retry this step.
@@ -39,7 +40,7 @@ Assign the Hister server's computer its permanent IP, then register it in `base_
 For example, for the IP `192.168.42.69`:
 
 ```yaml
-  base_url: http://192.168.42.69:4433
+base_url: http://192.168.42.69:4433
 ```
 
 It is also possible to access the Web interface using the computer's hostname even if it has a static IP, which may be easier to remember; but placing the IP in the config should remain more reliable.
@@ -51,10 +52,10 @@ This can be more finicky, because sharing hostnames between computers without so
 This can be less reliable, because if your computer's IP address may occasionally change while the server is up, which can cause short disruptions.
 
 1. Obtain the computer's hostname:
-
    - **Linux**, **macOS**: you can run the `hostname` command in the terminal, or find the hostname somewhere in system settings.
    - **Windows**: TODO (note also that you may need to [enable network discovery](https://superuser.com/questions/1560557/can-access-shared-network-files-by-ip-but-not-by-host-name#answer-1560563) for your PC to announce its hostname).
-2. Replace `localhost` in `base_url:` with the hostname *suffixed by `.local`.
+
+2. Replace `localhost` in `base_url:` with the hostname \*suffixed by `.local`.
    For example, let's use my laptop's hostname `zonai-goat`, though it can be something like `DESKTOP-D9JCP0Q`.
 
    ```yaml
@@ -62,6 +63,7 @@ This can be less reliable, because if your computer's IP address may occasionall
      address: '[::]:4433'
      base_url: http://zonai-goat.local:4433
    ```
+
 3. Restart the Hister server, then try accessing the Hister Web interface (preferably from another device!) at the address specified in the `base_url` field.
    If your browser reports being unable to connect to the server, check your firewall settings.
 
@@ -71,10 +73,10 @@ This can be less reliable, because if your computer's IP address may occasionall
 
 ## Over the Internet
 
-*Since this implies administration a system exposed to the Internet and **owning a domain name**, this section assumes more technical knowledge than the previous one.*
+_Since this implies administration a system exposed to the Internet and **owning a domain name**, this section assumes more technical knowledge than the previous one._
 
 Careful! **<mark>Security</mark>** considerations start rearing their head.
-Hister transmits your entire browsing history, *with page contents*, to and from the server.
+Hister transmits your entire browsing history, _with page contents_, to and from the server.
 This is not something you want circulating unencrypted on the public Internet; therefore, we **strongly** recommend connecting to the server using HTTPS.
 
 Hister's server does not support HTTPS itself, which is solved by using a [reverse proxy].
@@ -111,12 +113,12 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
    ```nginx
    # Make sure you have a good TLS configuration!
    # https://ssl-config.mozilla.org/#server=nginx
-   
+
    # You will also need to point Nginx at your TLS certificate,
    # https://nginx.org/en/docs/http/configuring_https_servers.html
    # and likely also set up auto-renewal, assuming you're using Let's Encrypt.
    # https://letsencrypt.org/docs/client-options/
-   
+
    server {
    	server_name hister.example.com;
    	listen 443 ssl; listen [::]:443 ssl;
@@ -134,7 +136,7 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
 
    		# More secure and performant than the default.
    		proxy_http_version 1.1;
-   		
+
    		# Uncomment this if you know what you're doing.
    		# add_header Access-Control-Allow-Origin *;
    		proxy_set_header        Host              $http_host;
@@ -142,12 +144,12 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
    		proxy_set_header        X-Forwarded-For   $proxy_add_x_forwarded_for;
    		proxy_set_header        X-Forwarded-Proto $scheme;
    		proxy_set_header        X-Scheme          $scheme;
-   		
+
    		# Configuration necessary for the /search endpoint.
    		proxy_set_header   Upgrade    $http_upgrade;
    		proxy_set_header   Connection $hister_connection; # This variable is defined in a `map` below.
    		proxy_read_timeout 86400;
-   		
+
    		# Some pages are larger than the default of 1 MiB, causing `413` errors.
    		# 100 MiB should be reasonably large, adjust to taste.
    		client_max_body_size 100m;
@@ -168,7 +170,7 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
    }
    ```
 
-   **Note**: if search doesn't work, there likely is a problem with WebSocket connections; troubleshooting info can be gathered from Nginx's `access.log` (tells you whether requests reached Nginx) and `error.log` (tells if you if any errors occurred *within* Nginx).
+   **Note**: if search doesn't work, there likely is a problem with WebSocket connections; troubleshooting info can be gathered from Nginx's `access.log` (tells you whether requests reached Nginx) and `error.log` (tells if you if any errors occurred _within_ Nginx).
 
    </details>
 

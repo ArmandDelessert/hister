@@ -104,7 +104,7 @@ hotkeys:
 
 | Key        | Type   | Default                | Description                                                                                                  |
 | ---------- | ------ | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `address`  | string | `127.0.0.1:4433`       | Host and port to listen on. Use `[::]:4433` or `0.0.0.0:4433` to listen on all interfaces.                                  |
+| `address`  | string | `127.0.0.1:4433`       | Host and port to listen on. Use `[::]:4433` or `0.0.0.0:4433` to listen on all interfaces.                   |
 | `base_url` | string | derived from `address` | Public URL of the Hister instance. Required when `address` uses `0.0.0.0`. Must match how you access Hister. |
 | `database` | string | `db.sqlite3`           | SQLite database filename (relative to `app.directory`).                                                      |
 

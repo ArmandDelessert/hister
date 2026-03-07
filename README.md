@@ -6,9 +6,9 @@
 
 Hister is a general purpose web search engine providing automatic full-text indexing for visited websites.
 
-![hister screenshot](webui/website/static/screenshot.png)
+![hister screenshot](webui/website/src/lib/assets/screenshot.png)
 
-![hister screencast](webui/website/static/demo.gif)
+![hister screencast](webui/website/src/lib/assets/demo.gif)
 
 ## Features
 

@@ -61,7 +61,7 @@ jobs:
 
       - name: Clean-up dist dir
         run: |
-          for i in dist/*/hister; do mv $i `echo "$i" | sed "s/build/hister/" | sed "s/_v[0-9].\+//"`; done
+          for i in dist/*/hister*; do mv $i `echo "$i" | sed "s/build/hister/" | sed "s/_v[0-9].\+//"`; done
           rm dist/metadata.json dist/artifacts.json dist/config.yaml
 
       - name: Update Latest Release

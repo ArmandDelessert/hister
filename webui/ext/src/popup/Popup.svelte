@@ -117,14 +117,14 @@
         <SettingsInput
           label="Server URL"
           bind:value={url}
-          placeholder="http://127.0.0.1:4433/"
+          placeholder="Server URL..."
         />
 
         {#if showTokenInput}
           <SettingsInput
             label="Access Token"
             bind:value={token}
-            placeholder="Optional..."
+            placeholder="Token..."
           />
         {:else}
           <div class="space-y-2">

@@ -192,15 +192,20 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 	total := idx.Total()
 	batchSize := 50
 	page := 0
+	latest := ""
+	req := bleve.NewSearchRequest(q)
+	req.Fields = allFields
+	req.Size = batchSize
+	req.SortBy([]string{"_id"})
 	for {
-		req := bleve.NewSearchRequest(q)
-		req.Size = batchSize
-		req.From = page * batchSize
-		req.Fields = allFields
+		if latest != "" {
+			req.SetSearchAfter([]string{latest})
+		}
 		res, err := idx.idx.Search(req)
 		if err != nil || len(res.Hits) < 1 {
 			break
 		}
+		n := len(res.Hits)
 		b := newMultiBatch(tmpIdx)
 		for _, h := range res.Hits {
 			d := docFromHit(h)
@@ -244,6 +249,7 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 		}
 		runtime.GC()
 		page += 1
+		latest = res.Hits[n-1].Fields["url"].(string)
 		log.Info().Msg(fmt.Sprintf("Reindexed [%d/%d]", page*batchSize, total))
 	}
 	idx.Close()

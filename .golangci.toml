@@ -10,3 +10,10 @@ module-path = "github.com/asciimoo/hister"
 
 [formatters.settings.goimports]
 local-prefixes = ["github.com/asciimoo"]
+
+[linters.settings.errcheck]
+exclude-functions = [
+  "(net/http.ResponseWriter).Write",
+  "(*os.File).Write",
+  "github.com/pkg/browser.OpenURL",
+]

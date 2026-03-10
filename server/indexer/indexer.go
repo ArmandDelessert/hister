@@ -206,7 +206,9 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool) err
 					continue
 				} else {
 					tmpIdx.Close()
-					_ = os.RemoveAll(tmpBasePath)
+					if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
+						log.Warn().Err(rerr).Msg("failed to clean up temp index path")
+					}
 					return err
 				}
 			}
@@ -217,13 +219,17 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool) err
 			d.Added = origDate
 			if err := b.Add(d); err != nil {
 				tmpIdx.Close()
-				_ = os.RemoveAll(tmpBasePath)
+				if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
+					log.Warn().Err(rerr).Msg("failed to clean up temp index path")
+				}
 				return err
 			}
 		}
 		if err := b.Save(); err != nil {
 			tmpIdx.Close()
-			_ = os.RemoveAll(tmpBasePath)
+			if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
+				log.Warn().Err(rerr).Msg("failed to clean up temp index path")
+			}
 			return err
 		}
 		runtime.GC()
@@ -309,8 +315,10 @@ func (i *indexer) addIndexer(name, lang string) error {
 }
 
 func (i *indexer) Close() {
-	for _, idx := range i.indexers {
-		_ = idx.Close()
+	for name, idx := range i.indexers {
+		if err := idx.Close(); err != nil {
+			log.Warn().Err(err).Str("index", name).Msg("failed to close index")
+		}
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 	"github.com/asciimoo/hister/server/indexer"
 )
 
-func (c *Client) AddDocumentJSON(doc *indexer.Document) error {
+func (c *Client) AddDocumentJSON(doc *indexer.Document) (err error) {
 	data, err := json.Marshal(doc)
 	if err != nil {
 		return err
@@ -24,11 +24,11 @@ func (c *Client) AddDocumentJSON(doc *indexer.Document) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }
 
-func (c *Client) AddPage(u, title, text string) error {
+func (c *Client) AddPage(u, title, text string) (err error) {
 	formData := url.Values{"url": {u}, "title": {title}, "text": {text}}
 	req, err := c.newRequest("POST", "/api/add", strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -39,11 +39,11 @@ func (c *Client) AddPage(u, title, text string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }
 
-func (c *Client) DocumentExists(u string) (bool, error) {
+func (c *Client) DocumentExists(u string) (_ bool, err error) {
 	req, err := c.newRequest("HEAD", "/api/document?url="+url.QueryEscape(u), nil)
 	if err != nil {
 		return false, err
@@ -52,11 +52,11 @@ func (c *Client) DocumentExists(u string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_ = resp.Body.Close()
+	defer closeBody(resp, &err)
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-func (c *Client) DeleteDocument(u string) error {
+func (c *Client) DeleteDocument(u string) (err error) {
 	formData := url.Values{"url": {u}}
 	req, err := c.newRequest("POST", "/api/delete", strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -67,6 +67,6 @@ func (c *Client) DeleteDocument(u string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func (c *Client) FetchRules() (*RulesResponse, error) {
+func (c *Client) FetchRules() (_ *RulesResponse, err error) {
 	req, err := c.newRequest("GET", "/api/rules", nil)
 	if err != nil {
 		return nil, err
@@ -15,7 +15,7 @@ func (c *Client) FetchRules() (*RulesResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	if err := checkStatus(resp); err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (c *Client) FetchRules() (*RulesResponse, error) {
 	return &data, err
 }
 
-func (c *Client) SaveRules(skip, priority string) error {
+func (c *Client) SaveRules(skip, priority string) (err error) {
 	formData := url.Values{"skip": {skip}, "priority": {priority}}
 	req, err := c.newRequest("POST", "/api/rules", strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -35,11 +35,11 @@ func (c *Client) SaveRules(skip, priority string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }
 
-func (c *Client) AddAlias(keyword, value string) error {
+func (c *Client) AddAlias(keyword, value string) (err error) {
 	formData := url.Values{"alias-keyword": {keyword}, "alias-value": {value}}
 	req, err := c.newRequest("POST", "/api/add_alias", strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -50,11 +50,11 @@ func (c *Client) AddAlias(keyword, value string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }
 
-func (c *Client) DeleteAlias(alias string) error {
+func (c *Client) DeleteAlias(alias string) (err error) {
 	formData := url.Values{"alias": {alias}}
 	req, err := c.newRequest("POST", "/api/delete_alias", strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -65,6 +65,6 @@ func (c *Client) DeleteAlias(alias string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }

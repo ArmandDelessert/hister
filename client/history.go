@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func (c *Client) FetchHistory() ([]HistoryItem, error) {
+func (c *Client) FetchHistory() (_ []HistoryItem, err error) {
 	req, err := c.newRequest("GET", "/api/history", nil)
 	if err != nil {
 		return nil, err
@@ -14,7 +14,7 @@ func (c *Client) FetchHistory() ([]HistoryItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	if err := checkStatus(resp); err != nil {
 		return nil, err
 	}
@@ -23,7 +23,7 @@ func (c *Client) FetchHistory() ([]HistoryItem, error) {
 	return items, err
 }
 
-func (c *Client) PostHistory(query, urlStr, title string) error {
+func (c *Client) PostHistory(query, urlStr, title string) (err error) {
 	body := historyRequest{URL: urlStr, Title: title, Query: query}
 	data, _ := json.Marshal(body)
 	req, err := c.newRequest("POST", "/api/history", strings.NewReader(string(data)))
@@ -35,11 +35,11 @@ func (c *Client) PostHistory(query, urlStr, title string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }
 
-func (c *Client) DeleteHistoryEntry(query, urlStr string) error {
+func (c *Client) DeleteHistoryEntry(query, urlStr string) (err error) {
 	body := historyRequest{URL: urlStr, Query: query, Delete: true}
 	data, _ := json.Marshal(body)
 	req, err := c.newRequest("POST", "/api/history", strings.NewReader(string(data)))
@@ -51,6 +51,6 @@ func (c *Client) DeleteHistoryEntry(query, urlStr string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	return checkStatus(resp)
 }

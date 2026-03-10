@@ -241,7 +241,7 @@ func executeContextMenuAction(m *model.Model) tea.Cmd {
 	switch m.MenuSelIdx {
 	case model.MenuOpen:
 		if u := m.GetSelectedURL(); u != "" {
-			_ = browser.OpenURL(u)
+			browser.OpenURL(u)
 			return m.PostHistoryCmd(u)
 		}
 	case model.MenuDelete:

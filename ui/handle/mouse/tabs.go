@@ -95,7 +95,7 @@ func historyClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	idx := (msg.Y - model.RowVPStart) / historyItemHeight
 	if idx >= 0 && idx < len(m.HistoryItems) && (msg.Y-model.RowVPStart)%historyItemHeight < historyClickableRows {
 		if idx == m.HistoryIdx {
-			_ = browser.OpenURL(m.HistoryItems[idx].URL)
+			browser.OpenURL(m.HistoryItems[idx].URL)
 		} else {
 			m.HistoryIdx = idx
 		}

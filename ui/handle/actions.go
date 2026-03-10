@@ -77,7 +77,7 @@ func ExecuteAction(m *model.Model, action config.Action) tea.Cmd {
 	case config.ActionOpenResult:
 		if m.SelectedIdx >= 0 {
 			if u := m.GetSelectedURL(); u != "" {
-				_ = browser.OpenURL(u)
+				browser.OpenURL(u)
 				return tea.Batch(m.FlashHint(config.ActionOpenResult), m.PostHistoryCmd(u))
 			}
 		}

@@ -43,7 +43,7 @@ func InputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 				render.RefreshAndScroll(m)
 				return startSearch(m, m.FlashHint(config.ActionOpenResult))
 			} else if u := m.GetSelectedURL(); u != "" {
-				_ = browser.OpenURL(u)
+				browser.OpenURL(u)
 				return tea.Batch(m.FlashHint(config.ActionOpenResult), m.PostHistoryCmd(u))
 			}
 		}
@@ -80,7 +80,7 @@ func ResultsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 			render.RefreshAndScroll(m)
 			return startSearch(m, m.FlashHint(config.ActionOpenResult))
 		} else if u := m.GetSelectedURL(); u != "" {
-			_ = browser.OpenURL(u)
+			browser.OpenURL(u)
 			return tea.Batch(m.FlashHint(config.ActionOpenResult), m.PostHistoryCmd(u))
 		}
 		return m.FlashHint(config.ActionOpenResult)

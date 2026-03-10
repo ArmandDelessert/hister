@@ -380,7 +380,7 @@ func yesNoPrompt(label string, def bool) bool {
 	var s string
 
 	for {
-		_, _ = os.Stderr.Write(prompt)
+		os.Stderr.Write(prompt)
 		s, _ = r.ReadString('\n')
 		s = strings.TrimSpace(s)
 		if s == "" {
@@ -467,7 +467,11 @@ func indexURL(u string) error {
 	if err != nil {
 		return errors.New(`failed to download file: ` + err.Error())
 	}
-	defer func() { _ = r.Body.Close() }()
+	defer func() {
+		if cerr := r.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close response body")
+		}
+	}()
 	if r.StatusCode != http.StatusOK {
 		return fmt.Errorf("invalid response code: %d", r.StatusCode)
 	}
@@ -520,7 +524,11 @@ func importHistory(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to open database")
 	}
-	defer func() { _ = db.Close() }()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close database")
+		}
+	}()
 
 	// Fetch skip rules from the server.
 	c := newClient()
@@ -567,7 +575,11 @@ func importHistory(cmd *cobra.Command, args []string) {
 		log.Error().Err(err).Msg("Failed to execute database query")
 		return
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close database rows")
+		}
+	}()
 	i := 0
 	skipped := 0
 	for rows.Next() {

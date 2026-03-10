@@ -8,7 +8,7 @@ import (
 	"github.com/asciimoo/hister/server/indexer"
 )
 
-func (c *Client) Search(query string) (*indexer.Results, error) {
+func (c *Client) Search(query string) (_ *indexer.Results, err error) {
 	req, err := c.newRequest("GET", "/search?q="+url.QueryEscape(query), nil)
 	if err != nil {
 		return nil, err
@@ -17,7 +17,7 @@ func (c *Client) Search(query string) (*indexer.Results, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(resp, &err)
 	if err := checkStatus(resp); err != nil {
 		return nil, err
 	}

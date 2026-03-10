@@ -239,7 +239,7 @@ func (h *Handler) viewportClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 			render.RefreshAndScroll(m)
 			return h.StartSearch(m)
 		} else if u := m.GetSelectedURL(); u != "" {
-			_ = browser.OpenURL(u)
+			browser.OpenURL(u)
 			return m.PostHistoryCmd(u)
 		}
 	} else {

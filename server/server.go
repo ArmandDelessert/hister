@@ -336,7 +336,7 @@ func serveIndex(c *webContext) {
 	}
 	c.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.Response.Header().Set("Content-Security-Policy", fmt.Sprintf("script-src 'strict-dynamic' 'nonce-%s'", c.nonce))
-	_, _ = c.Response.Write(bytes.ReplaceAll(content, []byte("<script>"), []byte(fmt.Sprintf(`<script nonce="%s">`, c.nonce))))
+	c.Response.Write(bytes.ReplaceAll(content, []byte("<script>"), []byte(fmt.Sprintf(`<script nonce="%s">`, c.nonce))))
 }
 
 // serveSPA serves the SPA index.html for any route not matching a static file.
@@ -355,7 +355,7 @@ func serveSPA(c *webContext) {
 			c.Response.Header().Set("Content-Type", "application/octet-stream")
 		}
 		c.Response.WriteHeader(http.StatusOK)
-		_, _ = c.Response.Write(content)
+		c.Response.Write(content)
 		return
 	}
 	// If the exact file exists in the embedded app FS, serve it directly
@@ -375,7 +375,7 @@ func serveSPA(c *webContext) {
 			c.Response.Header().Set("Content-Type", "application/octet-stream")
 		}
 		c.Response.WriteHeader(http.StatusOK)
-		_, _ = c.Response.Write(content)
+		c.Response.Write(content)
 		return
 	}
 
@@ -469,7 +469,7 @@ func serveSearch(c *webContext) {
 			return
 		}
 		c.Response.Header().Add("Content-Type", "application/json")
-		_, _ = c.Response.Write(jr)
+		c.Response.Write(jr)
 		return
 	}
 	conn, err := ws.Upgrade(c.Response, c.Request, nil)
@@ -477,7 +477,11 @@ func serveSearch(c *webContext) {
 		log.Error().Err(err).Msg("failed to upgrade websocket request")
 		return
 	}
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close websocket connection")
+		}
+	}()
 	for {
 		_, q, err := conn.ReadMessage()
 		if err != nil {
@@ -764,7 +768,7 @@ func serveOpensearch(c *webContext) {
   <Url type="text/html" template="%s/?q={searchTerms}"/>
 </OpenSearchDescription>`, baseURL)
 	c.Response.Header().Set("Content-Type", "application/xml")
-	_, _ = c.Response.Write([]byte(xml))
+	c.Response.Write([]byte(xml))
 }
 
 func serveAddAlias(c *webContext) {
@@ -825,7 +829,7 @@ func serveFavicon(c *webContext) {
 		return
 	}
 	c.Response.Header().Add("Content-Type", "image/vnd.microsoft.icon")
-	_, _ = c.Response.Write(i)
+	c.Response.Write(i)
 }
 
 func serveStatic(c *webContext) {

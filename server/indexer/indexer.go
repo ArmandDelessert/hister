@@ -165,7 +165,7 @@ func init() {
 }
 
 func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages bool) error {
-	idx, err := initializeIndexer(basePath, detectLanguages)
+	idx, err := initializeIndexer(basePath, true)
 	if err != nil {
 		return err
 	}

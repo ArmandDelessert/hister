@@ -135,7 +135,6 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 	}
 	if !detectLanguages {
 		i.langDetector = NewNullLanguageDetector()
-		return i, nil
 	} else {
 		i.langDetector = NewLanguageDetector()
 	}
@@ -147,6 +146,10 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 		fn := e.Name()
 		// TODO do more precise name check
 		if !strings.HasPrefix(fn, "index_") || !strings.HasSuffix(fn, ".db") {
+			continue
+		}
+		if !detectLanguages {
+			log.Warn().Str("Index", fn).Msg("Language specific index database found while language detection is turned off. Run hister reindex to be able to use the content of this index.")
 			continue
 		}
 		langIdx, err := bleve.OpenUsing(filepath.Join(basePath, fn), bleveConfig)

@@ -432,22 +432,25 @@ func GetByURL(u string) *Document {
 
 func Iterate(fn func(*Document)) {
 	q := query.NewMatchAllQuery()
-	resultNum := 20
-	page := 0
+	req := bleve.NewSearchRequest(q)
+	req.Fields = []string{"url"}
+	req.Size = 20
+	req.SortBy([]string{"_id"})
+	latest := ""
 	for {
-		req := bleve.NewSearchRequest(q)
-		req.Size = resultNum
-		req.From = page * resultNum
-		req.Fields = allFields
+		if latest != "" {
+			req.SetSearchAfter([]string{latest})
+		}
 		res, err := i.idx.Search(req)
-		if err != nil || len(res.Hits) < 1 {
+		n := len(res.Hits)
+		if err != nil || n < 1 {
 			return
 		}
 		for _, h := range res.Hits {
 			d := docFromHit(h)
 			fn(d)
 		}
-		page += 1
+		latest = res.Hits[n-1].Fields["url"].(string)
 	}
 }
 

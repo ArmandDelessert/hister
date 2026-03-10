@@ -608,7 +608,7 @@
 <svelte:window onkeydown={handleKeydown} onpopstate={handlePopState} />
 
 <Dialog.Root bind:open={showPopup}>
-  <Dialog.Content
+  <Dialog.Content escapeKeydownBehavior="ignore"
     class="border-border-brand bg-card-surface max-h-[80vh] max-w-2xl overflow-auto rounded-none border-[3px] p-6 shadow-[6px_6px_0px_var(--hister-indigo)]"
   >
     <Dialog.Header class="border-border-brand-muted border-b-[3px] pb-4">

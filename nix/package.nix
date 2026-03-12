@@ -18,6 +18,9 @@ let
     npmDeps = importNpmLock { npmRoot = ../.; };
     npmConfigHook = importNpmLock.npmConfigHook;
     dontNpmBuild = false;
+    preBuild = ''
+      patchShebangs webui
+    '';
     installPhase = ''
       runHook preInstall
       mkdir -p $out

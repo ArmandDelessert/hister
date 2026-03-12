@@ -29,7 +29,6 @@ import (
 	simpleHighlighter "github.com/blevesearch/bleve/v2/search/highlight/highlighter/simple"
 	"github.com/blevesearch/bleve/v2/search/query"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/microcosm-cc/bluemonday"
 	"github.com/rs/zerolog/log"
 )
 
@@ -76,7 +75,6 @@ var (
 	allFields           []string = []string{"url", "title", "text", "favicon", "html", "domain", "added"}
 	ErrSensitiveContent          = errors.New("document contains sensitive data")
 	sensitiveContentRe  *regexp.Regexp
-	sanitizer           *bluemonday.Policy
 	bleveConfig         map[string]any = map[string]any{
 		"bolt_timeout": "2s",
 		// https://github.com/blevesearch/bleve/blob/master/docs/persister.md
@@ -167,10 +165,6 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 		i.indexers[fn] = langIdx
 	}
 	return i, nil
-}
-
-func init() {
-	sanitizer = bluemonday.StrictPolicy()
 }
 
 func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages bool) error {

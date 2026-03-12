@@ -66,6 +66,7 @@ type Server struct {
 type Indexer struct {
 	DetectLanguages bool     `yaml:"detect_languages" mapstructure:"detect_languages"`
 	Directories     []string `yaml:"directories" mapstructure:"directories"`
+	MaxFileSize     int64    `yaml:"max_file_size_mb" mapstructure:"max_file_size_mb"`
 }
 
 type Hotkeys struct {
@@ -287,6 +288,7 @@ func CreateDefaultConfig() *Config {
 		},
 		Indexer: Indexer{
 			DetectLanguages: true,
+			MaxFileSize:     1,
 		},
 		Hotkeys: Hotkeys{
 			Web: map[string]string{

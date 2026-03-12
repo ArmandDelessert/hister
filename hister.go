@@ -18,6 +18,7 @@ import (
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
@@ -73,7 +74,12 @@ var listenCmd = &cobra.Command{
 			log.Warn().Msg("Using authentication token without https. Token is sent plain-text in network requests.")
 		}
 		if len(cfg.Indexer.Directories) > 0 {
-			go indexer.WatchDirectories(cfg.Indexer.Directories, 30*time.Second)
+			indexer.IndexAll(cfg.Indexer.Directories)
+			go files.WatchDirectories(cfg.Indexer.Directories, func(path string) {
+				if err := indexer.IndexFile(path); err != nil {
+					log.Debug().Err(err).Str("path", path).Msg("Failed to index file")
+				}
+			})
 		}
 		server.Listen(cfg)
 	},

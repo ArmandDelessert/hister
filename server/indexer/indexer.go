@@ -94,6 +94,9 @@ var (
 )
 
 func Init(cfg *config.Config) error {
+	if cfg.Indexer.MaxFileSize > 0 {
+		maxFileSize = cfg.Indexer.MaxFileSize * 1024 * 1024 // bytes
+	}
 	sp := make([]string, 0, len(cfg.SensitiveContentPatterns))
 	for _, v := range cfg.SensitiveContentPatterns {
 		sp = append(sp, v)

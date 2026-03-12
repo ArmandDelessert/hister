@@ -6,40 +6,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode/utf8"
 
+	"github.com/asciimoo/hister/files"
 	"github.com/rs/zerolog/log"
 )
 
-const maxFileSize = 1024 * 1024 // 1MB
+var maxFileSize int64 = 1024 * 1024 // 1MB default
 
-func WatchDirectories(dirs []string, interval time.Duration) {
-	indexAll(dirs)
-	ticker := time.NewTicker(interval)
-	for range ticker.C {
-		indexAll(dirs)
-	}
-}
-
-func indexAll(dirs []string) {
+func IndexAll(dirs []string) {
 	for _, dir := range dirs {
-		dir = expandHome(dir)
+		dir = files.ExpandHome(dir)
 		if err := indexDirectory(dir); err != nil {
 			log.Error().Err(err).Str("directory", dir).Msg("Failed to index directory")
 		}
 	}
-}
-
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, path[2:])
-	}
-	return path
 }
 
 func indexDirectory(dir string) error {
@@ -70,7 +51,7 @@ func indexDirectory(dir string) error {
 		if strings.HasPrefix(d.Name(), ".") {
 			return nil
 		}
-		if err := indexFile(path); err != nil {
+		if err := IndexFile(path); err != nil {
 			log.Debug().Err(err).Str("path", path).Msg("Skipping file")
 			skipped++
 		} else {
@@ -79,11 +60,11 @@ func indexDirectory(dir string) error {
 		return nil
 	})
 
-	log.Info().Str("directory", dir).Int("indexed", indexed).Int("skipped", skipped).Msg("Directory indexing complete")
+	log.Debug().Str("directory", dir).Int("indexed", indexed).Int("skipped", skipped).Msg("Directory indexing complete")
 	return err
 }
 
-func indexFile(path string) error {
+func IndexFile(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err

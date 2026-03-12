@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/static"
@@ -741,14 +742,7 @@ func serveFile(c *webContext) {
 	// Verify the file is within a configured directory
 	allowed := false
 	for _, dir := range c.Config.Indexer.Directories {
-		if strings.HasPrefix(dir, "~/") {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				continue
-			}
-			dir = filepath.Join(home, dir[2:])
-		}
-		dir = filepath.Clean(dir)
+		dir = filepath.Clean(files.ExpandHome(dir))
 		if strings.HasPrefix(filePath, dir+"/") || filePath == dir {
 			allowed = true
 			break

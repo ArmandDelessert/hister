@@ -10,3 +10,9 @@ module-path = "github.com/asciimoo/hister"
 
 [formatters.settings.goimports]
 local-prefixes = ["github.com/asciimoo"]
+
+[linters]
+enable = ["modernize"]
+
+[linters.exclusions]
+paths = ["node_modules"]

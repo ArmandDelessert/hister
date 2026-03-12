@@ -7,4 +7,9 @@ export default defineConfig({
   ssr: {
     noExternal: ['@hister/components', 'bits-ui', 'svelte-toolbelt', 'runed'],
   },
+  build: {
+    rolldownOptions: {
+      checks: { pluginTimings: false },
+    },
+  },
 });

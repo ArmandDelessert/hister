@@ -17,7 +17,7 @@
     "shiki": "^4.0.2",
     "svelte": "^5.53.9",
     "tailwindcss": "^4.2.1",
-    "vite": "^7.3.1"
+    "vite": "^8.0.0"
   },
   "dependencies": {
     "@fontsource/fira-code": "^5.2.7",

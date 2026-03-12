@@ -7,6 +7,9 @@ export default defineConfig(({ mode }) => ({
   build: {
     minify: mode !== 'development',
     cssMinify: mode !== 'development',
+    rolldownOptions: {
+      checks: { pluginTimings: false },
+    },
   },
   server: {
     proxy: {

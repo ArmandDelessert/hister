@@ -59,7 +59,7 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     sourcemap: true,
     minify: mode === 'production',
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         background: resolve(import.meta.dirname, 'src/background/background.ts'),
         content: resolve(import.meta.dirname, 'src/content/content.ts'),

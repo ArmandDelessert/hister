@@ -12,10 +12,9 @@
   </h1>
 
   <p
-    class="font-inter max-w-[700px] text-center text-base leading-relaxed text-[var(--text-secondary)] md:text-lg"
+    class="font-inter text-center text-base leading-relaxed text-[var(--text-secondary)] md:text-2xl"
   >
-    Hister automatically indexes every page you visit.<br />
-    Full-text search across your entire browsing history and beyond.<br />
+    Full-text search across your files, browsing history and beyond.<br />
     Private. Fast. Yours.
   </p>
 

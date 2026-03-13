@@ -25,7 +25,7 @@
       {
         icon: FileText,
         title: 'Full-text Indexing',
-        desc: "Search through the actual content of web pages you've visited, not just URLs and titles.",
+        desc: "Search through the actual content of web pages and your local files.",
         bg: 'bg-brutal-card',
         textColor: 'text-[var(--text-primary)]',
         descColor: 'text-[var(--text-secondary)]',
@@ -65,7 +65,7 @@
       {
         icon: Puzzle,
         title: 'Browser Extensions',
-        desc: 'Available for Chrome and Firefox.',
+        desc: 'Available for <a class="underline" href="https://chromewebstore.google.com/detail/hister/cciilamhchpmbdnniabclekddabkifhb">Chrome</a> and <a class="underline" href="https://addons.mozilla.org/en-US/firefox/addon/hister/">Firefox</a> to automatically index websites you visit.',
         bg: 'bg-hister-lime',
         textColor: 'text-white',
         descColor: 'text-white/80',

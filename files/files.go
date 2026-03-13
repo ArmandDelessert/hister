@@ -4,12 +4,14 @@
 package files
 
 import (
+	"context"
+	"fmt"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/asciimoo/hister/config"
@@ -69,83 +71,89 @@ func findMatchingDir(dirs []config.Directory, filePath string) *config.Directory
 	return nil
 }
 
-func WatchDirectories(dirs []config.Directory, callback func(string)) {
+func WatchDirectories(ctx context.Context, dirs []config.Directory, callback func(string)) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to start file watcher")
+		return fmt.Errorf("failed to create file watcher: %w", err)
 	}
 
 	defer func() {
 		if err := watcher.Close(); err != nil {
-			log.Error().Err(err).Msg("Failed to stop file watcher")
+			log.Error().Err(err).Msg("Failed to close file watcher")
 		}
 	}()
 
-	go func() {
-		log.Debug().Msg("Starting file watcher")
-		debounced := make(map[string]time.Timer)
-		go func() {
-			for path, timer := range maps.All(debounced) {
-				<-timer.C
-				callback(path)
-			}
-		}()
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if event.Has(fsnotify.Write) {
-					if dir := findMatchingDir(dirs, event.Name); dir != nil {
-						if MatchesFilters(filepath.Base(event.Name), dir.Filetypes, dir.Patterns, dir.Excludes) {
-							if debounceTimer, ok := debounced[event.Name]; ok {
-								debounceTimer.Reset(debounceTime)
-							} else {
-								debounced[event.Name] = *time.NewTimer(debounceTime)
-							}
-						}
-					}
-				}
-				if event.Has(fsnotify.Create) {
-					st, err := os.Stat(event.Name)
-					if err == nil {
-						if st.IsDir() && !slices.Contains(watcher.WatchList(), event.Name) {
-							if err := watcher.Add(event.Name); err != nil {
-								log.Error().Err(err).Str("path", event.Name).Msg("Watcher failed to add path")
-							}
-						} else if dir := findMatchingDir(dirs, event.Name); dir != nil {
-							if MatchesFilters(filepath.Base(event.Name), dir.Filetypes, dir.Patterns, dir.Excludes) {
-								callback(event.Name)
-							}
-						}
-					}
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Error().Err(err).Msg("Watcher failed to process event")
-			}
-		}
-	}()
+	var mu sync.Mutex
+	debounced := make(map[string]*time.Timer)
+
+	log.Debug().Msg("Starting file watcher")
+
+	// Add configured directories and their subdirectories to the watcher
 	for _, dir := range dirs {
 		expanded := ExpandHome(dir.Path)
-		err = watcher.Add(expanded)
-		if err != nil {
+		if err := watcher.Add(expanded); err != nil {
 			log.Error().Err(err).Str("path", expanded).Msg("Failed to add path to file watcher")
 		}
-		err = filepath.WalkDir(expanded, func(path string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(expanded, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				log.Warn().Err(err).Str("path", path).Msg("Error walking directory")
+				return nil
+			}
 			if d.IsDir() {
 				if err := watcher.Add(path); err != nil {
-					log.Error().Err(err).Str("path", path).Msg("Watcher failed to add path")
+					log.Warn().Err(err).Str("path", path).Msg("Failed to watch subdirectory")
 				}
 			}
 			return nil
 		})
-		if err != nil {
-			log.Error().Err(err).Str("path", expanded).Msg("Failed to list directory")
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return nil
+			}
+			if event.Has(fsnotify.Write) {
+				if dir := findMatchingDir(dirs, event.Name); dir != nil {
+					if MatchesFilters(filepath.Base(event.Name), dir.Filetypes, dir.Patterns, dir.Excludes) {
+						name := event.Name
+						mu.Lock()
+						if t, ok := debounced[name]; ok {
+							t.Reset(debounceTime)
+						} else {
+							debounced[name] = time.AfterFunc(debounceTime, func() {
+								mu.Lock()
+								delete(debounced, name)
+								mu.Unlock()
+								callback(name)
+							})
+						}
+						mu.Unlock()
+					}
+				}
+			}
+			if event.Has(fsnotify.Create) {
+				st, err := os.Stat(event.Name)
+				if err == nil {
+					if st.IsDir() && !slices.Contains(watcher.WatchList(), event.Name) {
+						if err := watcher.Add(event.Name); err != nil {
+							log.Warn().Err(err).Str("path", event.Name).Msg("Failed to watch new directory")
+						}
+					} else if dir := findMatchingDir(dirs, event.Name); dir != nil {
+						if MatchesFilters(filepath.Base(event.Name), dir.Filetypes, dir.Patterns, dir.Excludes) {
+							callback(event.Name)
+						}
+					}
+				}
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
+			}
+			log.Error().Err(err).Msg("Watcher failed to process event")
 		}
 	}
-	<-make(chan struct{})
 }

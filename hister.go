@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -75,11 +76,15 @@ var listenCmd = &cobra.Command{
 		}
 		if len(cfg.Indexer.Directories) > 0 {
 			indexer.IndexAll(cfg.Indexer.Directories)
-			go files.WatchDirectories(cfg.Indexer.Directories, func(path string) {
-				if err := indexer.IndexFile(path); err != nil {
-					log.Debug().Err(err).Str("path", path).Msg("Failed to index file")
+			go func() {
+				if err := files.WatchDirectories(context.Background(), cfg.Indexer.Directories, func(path string) {
+					if err := indexer.IndexFile(path); err != nil {
+						log.Debug().Err(err).Str("path", path).Msg("Failed to index file")
+					}
+				}); err != nil {
+					log.Error().Err(err).Msg("File watcher failed")
 				}
-			})
+			}()
 		}
 		server.Listen(cfg)
 	},

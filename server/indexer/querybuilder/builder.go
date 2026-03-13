@@ -8,10 +8,11 @@ import (
 )
 
 var weights = map[string]float64{
-	"text":   1,
-	"url":    4,
-	"domain": 8,
-	"title":  12,
+	"text":     1,
+	"language": 1,
+	"url":      4,
+	"domain":   8,
+	"title":    12,
 }
 
 func Build(s string) query.Query {

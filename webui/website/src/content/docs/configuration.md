@@ -102,7 +102,7 @@ Each entry in `directories` is an object with the following keys:
 
 | Key         | Type     | Default | Description                                                                                          |
 | ----------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `path`      | string   | —       | **(required)** Directory path to index. Paths starting with `~/` are expanded to your home directory. |
+| `path`      | string   | ""      | **(required)** Directory path to index. Paths starting with `~/` are expanded to your home directory. |
 | `filetypes` | string[] | (none)  | Only index files with these extensions (without the dot). e.g. `['txt', 'md']`.                      |
 | `patterns`  | string[] | (none)  | Only index files whose names match at least one glob pattern. e.g. `['doc_*', 'README*']`.           |
 | `excludes`  | string[] | (none)  | Skip files whose names match any of these glob patterns. e.g. `['*secret*', '*.tmp']`.               |
@@ -132,9 +132,9 @@ Files are indexed recursively, with the following rules:
 - Files larger than 1 MB are skipped
 - Files matching `sensitive_content_patterns` are skipped
 
-Changes to indexed directories are picked up automatically by the file watcher — no server restart is needed. On server start, only files that have been modified since they were last indexed are re-processed. File results appear with the domain `local` and are served through the Hister web interface directly.
+Changes to indexed directories are picked up automatically by the file watcher, no server restart is needed. On server start, only files that have been modified since they were last indexed are re-processed. File results appear with the domain `local` and are served through the Hister web interface directly.
 
-No reindex is required when adding or removing files — they are detected and indexed automatically.
+No reindex is required when adding or removing files. Files are detected and indexed automatically.
 
 ## Access Token
 

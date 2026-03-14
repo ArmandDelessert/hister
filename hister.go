@@ -143,9 +143,9 @@ var importCmd = &cobra.Command{
 	Long: `
 The Firefox URL database file is usually located at /home/[USER]/.mozilla/[PROFILE]/places.sqlite
 The Chrome/Chromium URL database fiel is usually located at /home/[USER]/.config/chromium/Default/History
-Use auto-detect for auto detecting history of most browers
+Leave BROWSER_TYPE and DB_PATH empty for auto detection
 `,
-	Args: cobra.RangeArgs(1, 2),
+	Args: cobra.RangeArgs(0, 2),
 	Run:  importHistory,
 }
 
@@ -561,10 +561,8 @@ func importHistory(cmd *cobra.Command, args []string) {
 	case "chrome":
 		table = "urls"
 		dbFiles = append(dbFiles, args[1])
-	case "auto-detect":
-		table = "auto-detect"
 	default:
-		log.Fatal().Str("expected", "'firefox', 'chrome' or auto-detect").Str("got", browser).Msg("Invalid browser type")
+		table = "auto-detect"
 	}
 
 	if table == "auto-detect" {

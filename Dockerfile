@@ -58,7 +58,7 @@ ENV HISTER__SERVER__BASE_URL=http://localhost:4433
 EXPOSE 4433
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:4433/api/stats || exit 1
+    CMD wget -qO /dev/null http://localhost:4433/api || exit 1
 
 ENTRYPOINT ["/hister/hister"]
 CMD ["listen"]
@@ -81,7 +81,7 @@ ENV HISTER__SERVER__BASE_URL=http://localhost:4433
 EXPOSE 4433
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:4433/api/stats || exit 1
+    CMD wget -qO /dev/null http://localhost:4433/api || exit 1
 
 ENTRYPOINT ["/hister/hister"]
 CMD ["listen"]
@@ -105,7 +105,7 @@ ENV HISTER__SERVER__BASE_URL=http://localhost:4433
 EXPOSE 4433
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:4433/api/stats || exit 1
+    CMD wget -qO /dev/null http://localhost:4433/api || exit 1
 
 ENTRYPOINT ["/hister/hister"]
 CMD ["listen"]

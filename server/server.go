@@ -673,7 +673,7 @@ func serveGet(c *webContext) {
 	u := c.Request.URL.Query().Get("url")
 	doc := indexer.GetByURL(u)
 	if doc == nil {
-		serve500(c)
+		http.Error(c.Response, "document not found", http.StatusNotFound)
 		return
 	}
 	// We skip generating the body on HEAD requests, since those only check the status.
@@ -884,6 +884,98 @@ func serveDeleteDocument(c *webContext) {
 	serve200(c)
 }
 
+type batchOp struct {
+	Op    string `json:"op"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
+	Text  string `json:"text"`
+}
+
+type batchOpResult struct {
+	Status   int               `json:"status"`
+	Error    string            `json:"error,omitempty"`
+	Document *indexer.Document `json:"document,omitempty"`
+}
+
+type batchRequest struct {
+	Ops []batchOp `json:"ops"`
+}
+
+type batchResponse struct {
+	Results []batchOpResult `json:"results,omitempty"`
+	Error   string          `json:"error,omitempty"`
+}
+
+const maxBatchOps = 100
+
+func serveBatch(c *webContext) {
+	c.Request.Body = http.MaxBytesReader(c.Response, c.Request.Body, 5<<20) // 5 MB
+	var req batchRequest
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		c.JSONStatus(http.StatusBadRequest, batchResponse{Error: "invalid JSON"})
+		return
+	}
+
+	if len(req.Ops) == 0 {
+		c.JSONStatus(http.StatusBadRequest, batchResponse{Error: "empty batch"})
+		return
+	}
+
+	if len(req.Ops) > maxBatchOps {
+		c.JSONStatus(http.StatusBadRequest, batchResponse{Error: "too many operations (max 100)"})
+		return
+	}
+
+	results := make([]batchOpResult, len(req.Ops))
+	for i, op := range req.Ops {
+		switch op.Op {
+		case "add":
+			if op.URL == "" {
+				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
+				continue
+			}
+			d := &indexer.Document{URL: op.URL, Title: op.Title, Text: op.Text}
+			if c.Config.Rules.IsSkip(d.URL) || strings.HasPrefix(d.URL, c.Config.BaseURL("/")) {
+				results[i] = batchOpResult{Status: http.StatusNotAcceptable, Error: "url skipped by rules"}
+				continue
+			}
+			if err := indexer.Add(d); err != nil {
+				log.Error().Err(err).Str("URL", op.URL).Msg("batch add error")
+				results[i] = batchOpResult{Status: http.StatusInternalServerError, Error: "internal error"}
+			} else {
+				results[i] = batchOpResult{Status: http.StatusCreated}
+			}
+		case "delete":
+			if op.URL == "" {
+				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
+				continue
+			}
+			if err := indexer.Delete(op.URL); err != nil {
+				log.Error().Err(err).Str("URL", op.URL).Msg("batch delete error")
+				results[i] = batchOpResult{Status: http.StatusInternalServerError, Error: "internal error"}
+			} else {
+				results[i] = batchOpResult{Status: http.StatusOK}
+			}
+		case "get":
+			if op.URL == "" {
+				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
+				continue
+			}
+			d := indexer.GetByURL(op.URL)
+			if d == nil {
+				results[i] = batchOpResult{Status: http.StatusNotFound, Error: "document not found"}
+			} else {
+				results[i] = batchOpResult{Status: http.StatusOK, Document: d}
+			}
+		default:
+			results[i] = batchOpResult{Status: http.StatusBadRequest, Error: fmt.Sprintf("unknown op: %q", op.Op)}
+		}
+	}
+
+	log.Debug().Int("ops", len(req.Ops)).Msg("batch request processed")
+	c.JSON(batchResponse{Results: results})
+}
+
 func serveFavicon(c *webContext) {
 	i, err := iofs.ReadFile(appSubFS, "favicon.ico")
 	if err != nil {
@@ -914,6 +1006,14 @@ func serve500(c *webContext) {
 
 func (c *webContext) JSON(o any) {
 	c.Response.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(c.Response).Encode(o); err != nil {
+		log.Error().Err(err).Msg("failed to encode JSON response")
+	}
+}
+
+func (c *webContext) JSONStatus(status int, o any) {
+	c.Response.Header().Set("Content-Type", "application/json")
+	c.Response.WriteHeader(status)
 	if err := json.NewEncoder(c.Response).Encode(o); err != nil {
 		log.Error().Err(err).Msg("failed to encode JSON response")
 	}

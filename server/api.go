@@ -195,6 +195,17 @@ func init() {
 			},
 		},
 		{
+			Name:         "Batch",
+			Path:         "/api/batch",
+			Method:       POST,
+			CSRFRequired: true,
+			Handler:      serveBatch,
+			Description:  "Execute multiple operations (add/delete/get) in a single request",
+			Args: []*EndpointArg{
+				{Name: "ops", Description: "Array of operations", Required: true},
+			},
+		},
+		{
 			Name:         "API",
 			Path:         "/api",
 			Method:       GET,

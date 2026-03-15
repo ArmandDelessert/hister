@@ -14,7 +14,7 @@ updates:
     schedule:
       interval: weekly
     groups:
-      go-deps:
+      npm-deps:
         patterns:
           - '*'
 
@@ -23,6 +23,6 @@ updates:
     schedule:
       interval: weekly
     groups:
-      go-deps:
+      gha-deps:
         patterns:
           - '*'

@@ -26,7 +26,7 @@
   import * as Dialog from '@hister/components/ui/dialog';
   import * as Card from '@hister/components/ui/card';
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
-  import * as Tooltip from  '@hister/components/ui/tooltip';
+  import * as Tooltip from '@hister/components/ui/tooltip';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
   import { Kbd } from '@hister/components/ui/kbd';
   import {
@@ -690,13 +690,11 @@
         bind:value={query}
         placeholder="Search..."
         class="font-inter text-text-brand placeholder:text-text-brand-muted h-full flex-1 border-0 bg-transparent p-0 text-lg font-medium shadow-none focus-visible:ring-0 md:text-2xl"
-        />
+      />
       <Tooltip.Provider delayDuration={0}>
         <Tooltip.Root>
           <Tooltip.Trigger>
-            <div
-                class="h-3 w-3 shrink-0 {connected ? 'bg-hister-lime' : 'bg-hister-rose'}"
-            ></div>
+            <div class="h-3 w-3 shrink-0 {connected ? 'bg-hister-lime' : 'bg-hister-rose'}"></div>
           </Tooltip.Trigger>
           <Tooltip.Portal>
             <Tooltip.Content>
@@ -1135,18 +1133,16 @@
           class="font-inter text-text-brand placeholder:text-text-brand-muted h-full min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 md:text-lg"
         />
         <Tooltip.Provider delayDuration={0}>
-            <Tooltip.Root>
+          <Tooltip.Root>
             <Tooltip.Trigger class="mr-4">
-                <div
-                    class="h-3 w-3 shrink-0 {connected ? 'bg-hister-lime' : 'bg-hister-rose'}"
-                ></div>
+              <div class="h-3 w-3 shrink-0 {connected ? 'bg-hister-lime' : 'bg-hister-rose'}"></div>
             </Tooltip.Trigger>
             <Tooltip.Portal>
-                <Tooltip.Content>
+              <Tooltip.Content>
                 Server: {connected ? 'Connected' : 'Disconnected'}
-                </Tooltip.Content>
+              </Tooltip.Content>
             </Tooltip.Portal>
-            </Tooltip.Root>
+          </Tooltip.Root>
         </Tooltip.Provider>
       </div>
     </div>

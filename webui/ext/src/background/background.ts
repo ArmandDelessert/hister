@@ -39,7 +39,7 @@ function cjsMsgHandler(request, sender, sendResponse) {
           .then((r) => {
             if (r.status === 201) {
               clearErrorBadge(sender.tab.id);
-            } else {
+            } else if (r.status != 406) {
               setErrorBadge(sender.tab.id);
             }
             sendResponse({ status: 'ok', status_code: r.status });
@@ -55,7 +55,7 @@ function cjsMsgHandler(request, sender, sendResponse) {
           .then((r) => {
             if (r.status === 201) {
               clearErrorBadge(sender.tab.id);
-            } else {
+            } else if (r.status != 406) {
               setErrorBadge(sender.tab.id);
             }
             sendResponse({ status: 'ok', status_code: r.status });

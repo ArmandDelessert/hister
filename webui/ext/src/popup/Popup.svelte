@@ -103,6 +103,7 @@
 
   function toggleIndexing() {
     chrome.storage.local.set({ indexingEnabled: indexingEnabled });
+    setSuccessMessage(`Automatic indexing ${indexingEnabled ? 'enabled' : 'disabled'}`);
   }
 
   function reindex() {

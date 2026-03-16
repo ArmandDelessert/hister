@@ -22,6 +22,16 @@
     token = data['histerToken'] || '';
     indexingEnabled = data['indexingEnabled'] !== false;
     showTokenInput = !token;
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs?.length) return;
+      chrome.action.getBadgeText({ tabId: tabs[0].id! }, (badgeText) => {
+        if (badgeText === '!') {
+          message = 'Failed to send page data to server';
+          messageType = 'error';
+        }
+      });
+    });
   });
 
   function save(e: Event) {
@@ -58,6 +68,12 @@
                 message = 'Settings saved';
                 messageType = 'success';
                 showTokenInput = !token;
+
+                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                  if (tabs?.length) {
+                    chrome.action.setBadgeText({ text: '', tabId: tabs[0].id! });
+                  }
+                });
               });
           })
           .catch(() => {

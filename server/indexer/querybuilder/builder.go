@@ -3,6 +3,8 @@ package querybuilder
 import (
 	"strings"
 
+	"github.com/asciimoo/hister/server/indexer/types"
+
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/search/query"
 )
@@ -65,6 +67,14 @@ func getTokenQuery(t Token) (query.Query, bool) {
 			t.Value = t.Value[1:]
 		}
 		var field string
+		if v, ok := strings.CutPrefix(t.Value, "type:"); ok {
+			if t, ok := types.DocTypeNames[v]; ok {
+				from := float64(t)
+				to := float64(t + 1)
+				q := bleve.NewNumericRangeQuery(&from, &to)
+				return q, negated
+			}
+		}
 		for f := range weights {
 			if strings.HasPrefix(t.Value, f+":") {
 				field = f

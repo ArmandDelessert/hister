@@ -13,27 +13,22 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/asciimoo/hister/server/indexer/types"
+
 	"github.com/rs/zerolog/log"
 )
 
-type DocType int
-
-const (
-	Web DocType = iota
-	Local
-)
-
 type Document struct {
-	URL                string  `json:"url"`
-	Domain             string  `json:"domain"`
-	HTML               string  `json:"html"`
-	Title              string  `json:"title"`
-	Text               string  `json:"text"`
-	Favicon            string  `json:"favicon"`
-	Score              float64 `json:"score"`
-	Added              int64   `json:"added"`
-	Type               DocType `json:"type"`
-	Language           string  `json:"language"`
+	URL                string        `json:"url"`
+	Domain             string        `json:"domain"`
+	HTML               string        `json:"html"`
+	Title              string        `json:"title"`
+	Text               string        `json:"text"`
+	Favicon            string        `json:"favicon"`
+	Score              float64       `json:"score"`
+	Added              int64         `json:"added"`
+	Type               types.DocType `json:"type"`
+	Language           string        `json:"language"`
 	faviconURL         string
 	processed          bool
 	skipSensitiveCheck bool
@@ -123,7 +118,7 @@ func (d *Document) Process(ld LanguageDetector) error {
 		pu.RawQuery = q.Encode()
 		d.URL = pu.String()
 	}
-	d.Type = Web
+	d.Type = types.Web
 	d.Domain = pu.Host
 	if err := d.extractHTML(); err != nil {
 		return err
@@ -152,7 +147,7 @@ func (d *Document) processFile(ld LanguageDetector, pu *url.URL) error {
 	if !d.skipSensitiveCheck && sensitiveContentRe != nil && sensitiveContentRe.MatchString(d.Text) {
 		return ErrSensitiveContent
 	}
-	d.Type = Local
+	d.Type = types.Local
 	d.Domain = "local"
 	d.Title = filepath.Base(pu.Path)
 	if d.Added == 0 {

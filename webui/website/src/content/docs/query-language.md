@@ -44,6 +44,8 @@ You can search within specific fields using the `field:value` syntax:
 - **text:** - Search in page content only
 - **url:** - Search in URLs only
 - **domain:** - Search in domain names only
+- **language:** - Filter by detected language (e.g., `en`, `de`, `fr`. Use `unknown` for languages Hister doesn't support)
+- **type:** - Filter by document type (`web` for websites, `file` or `local` for local files)
 
 **Examples:**
 
@@ -71,6 +73,24 @@ text:"GDPR compliance"
 
 Finds pages with "GDPR compliance" in the body text.
 
+```textplain
+language:en
+```
+
+Finds pages detected as English language.
+
+```textplain
+type:file
+```
+
+Finds local files (indexed from filesystem).
+
+```textplain
+type:web
+```
+
+Finds web pages (indexed from URLs).
+
 ### Privacy & Security Examples
 
 ```textplain
@@ -78,6 +98,7 @@ title:privacy domain:mozilla.org
 title:"security audit" text:vulnerability
 url:*/privacy-policy
 domain:privacyguides.org text:encryption
+language:en type:web
 ```
 
 ## Wildcard Searches
@@ -123,9 +144,11 @@ Finds pages about encryption but not those with "tutorial" in the title.
 **Field-specific negation:**
 
 ```textplain
-security domain:-facebook.com
-title:hister url:-*/issues/*
+security -domain:facebook.com
+title:hister -url:*/issues/*
 privacy -"social media"
+-language:en
+-type:file
 ```
 
 ## Alternation Expressions
@@ -178,13 +201,13 @@ This finds pages where:
 **Finding privacy tools:**
 
 ```textplain
-(privacy|security) tools "open source" -commercial
+(privacy|security) tools "open source" -commercial type:web
 ```
 
 **Research on specific topics:**
 
 ```textplain
-"threat model" (encryption|authentication|authorization) -tutorial
+"threat model" (encryption|authentication|authorization) -tutorial language:en
 ```
 
 **Documentation searches:**
@@ -193,10 +216,16 @@ This finds pages where:
 title:(setup|installation|configuration) domain:(*.io|*.dev) hister
 ```
 
+**Local code documentation:**
+
+```textplain
+type:file (README|documentation) language:en
+```
+
 **Security vulnerabilities:**
 
 ```textplain
-(CVE|vulnerability|exploit) (2024|2025|2026) -"not affected"
+(CVE|vulnerability|exploit) (2024|2025|2026) -"not affected" type:web
 ```
 
 **Self-hosting resources:**
@@ -318,5 +347,6 @@ domain:mozilla.org (firefox|thunderbird) "release notes"
 
 - Ensure quotes are properly closed
 - Check that parentheses are balanced
-- Verify field names are spelled correctly (title, text, url, domain)
+- Verify field names are spelled correctly (title, text, url, domain, language, type)
 - Remember searches are case-insensitive
+- For type filter, use "web" or "file" (also accepts "local" for files)

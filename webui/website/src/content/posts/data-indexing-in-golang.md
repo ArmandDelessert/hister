@@ -11,6 +11,8 @@ Luckily, Go has an excellent library for exactly this purpose: [Bleve](https://b
 
 Bleve is a file-based indexer that can handle millions of records. It supports concurrent reads and writes, hot-swapping of indexes, match highlighting, and much more.
 
+[Hister](https://github.com/asciimoo/hister) is built on top of Bleve and uses a wide range of its features: custom field mappings with language-specific analyzers, a hand-crafted query language with per-field boosting, cursor-based pagination, multi-language index aliases, and fine-grained Scorch tuning. The examples through this post are inspired from our codebase and the knowledge we collected during the development.
+
 
 ## Creating a Simple Indexer
 

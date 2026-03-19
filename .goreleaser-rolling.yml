@@ -18,6 +18,8 @@ builds:
       - arm64
     flags:
       - -tags=netgo,osusergo
+    ldflags:
+      - -s -w
     ignore:
       - goos: windows
         goarch: arm64

@@ -1,42 +1,20 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { ModeWatcher, toggleMode, mode } from 'mode-watcher';
   import { Button } from '@hister/components/ui/button';
   import { Sun, Moon } from 'lucide-svelte';
   import '../style.css';
 
   let { children } = $props();
-  let theme = $state('');
 
   const navItems = [
     { label: 'History', href: 'history' },
     { label: 'Rules', href: 'rules' },
     { label: 'Add', href: 'add' },
   ];
-
-  function applyTheme() {
-    document.documentElement.setAttribute('data-theme', theme);
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }
-
-  onMount(() => {
-    theme =
-      localStorage.getItem('theme') ||
-      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    applyTheme();
-  });
-
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    theme = current === 'dark' ? 'light' : 'dark';
-    applyTheme();
-    localStorage.setItem('theme', theme);
-  }
 </script>
+
+<ModeWatcher />
 
 <div class="flex h-dvh flex-col overflow-hidden">
   <header
@@ -70,9 +48,9 @@
       size="icon"
       class="text-text-brand-muted hover:text-hister-indigo size-8 shrink-0 transition-all hover:scale-110 md:size-10"
       title="Toggle theme"
-      onclick={toggleTheme}
+      onclick={toggleMode}
     >
-      {#if theme === 'dark'}<Sun class="size-6" />{:else}<Moon class="size-6" />{/if}
+      {#if mode.current === 'dark'}<Sun class="size-6" />{:else}<Moon class="size-6" />{/if}
     </Button>
   </header>
 

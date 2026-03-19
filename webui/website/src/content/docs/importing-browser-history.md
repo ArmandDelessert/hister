@@ -55,6 +55,12 @@ Examples for Chrome: (note that some parts _will_ be different for you!)
 
 ## Importing the History
 
+### Auto Detection
+
+Run `hister import` without any browser or path arguments, this will find histories for Firefox, Firefox Developer Edition, Zen, Waterfox, Chrome, Chromium, Brave, Vivaldi, Edge and Opera if they are in the normal places.
+
+### Manuel
+
 Run `hister import <browser> <path>`, where `<browser>` is either `firefox` or `chrome` (depending on which section above you followed), and `<path>` is the path determined in the previous step.
 
 This will print a count of how many (unique) URLs have been detected, and ask for confirmation before proceeding (press Enter to submit your choice, `Y` being the default).

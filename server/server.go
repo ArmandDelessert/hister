@@ -906,7 +906,12 @@ type batchResponse struct {
 	Error   string          `json:"error,omitempty"`
 }
 
-const maxBatchOps = 100
+const (
+	maxBatchOps = 100
+	batchOpAdd  = "add"
+	batchOpDel  = "delete"
+	batchOpGet  = "get"
+)
 
 func serveBatch(c *webContext) {
 	c.Request.Body = http.MaxBytesReader(c.Response, c.Request.Body, 5<<20) // 5 MB
@@ -929,7 +934,7 @@ func serveBatch(c *webContext) {
 	results := make([]batchOpResult, len(req.Ops))
 	for i, op := range req.Ops {
 		switch op.Op {
-		case "add":
+		case batchOpAdd:
 			if op.URL == "" {
 				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
 				continue
@@ -945,7 +950,7 @@ func serveBatch(c *webContext) {
 			} else {
 				results[i] = batchOpResult{Status: http.StatusCreated}
 			}
-		case "delete":
+		case batchOpDel:
 			if op.URL == "" {
 				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
 				continue
@@ -956,7 +961,7 @@ func serveBatch(c *webContext) {
 			} else {
 				results[i] = batchOpResult{Status: http.StatusOK}
 			}
-		case "get":
+		case batchOpGet:
 			if op.URL == "" {
 				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
 				continue

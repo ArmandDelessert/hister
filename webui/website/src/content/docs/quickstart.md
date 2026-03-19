@@ -39,7 +39,7 @@ Click the extension's icon to access its settings; the server URL should already
 The extensions also offer an option to use your Hister instance as a search engine.
 Feel free to make it the default: Hister's search interface has a button to forward your query to an external search engine like DuckDuckGo, Google, etc.
 
-Note that the browser extensions _do not_ access the network except to talk to the Hister server!
+Note that the browser extensions _do not_ access the network except for downloading the page's favicon while collecting page data.
 In particular, they will never make requests to any site you are visiting (they only look at what the browser itself has loaded), and thus they are completely transparent to the indexed websites.
 
 ## Accessing the Web Interface

@@ -461,7 +461,12 @@ func serveSearch(c *webContext) {
 		for param, field := range map[string]*int64{"date_from": &query.DateFrom, "date_to": &query.DateTo} {
 			if v := c.Request.URL.Query().Get(param); v != "" {
 				if t, err := time.Parse("2006-01-02", v); err == nil {
-					*field = t.Unix()
+					ts := t.Unix()
+					if param == "date_to" {
+						// Include the entire end date by advancing to end of day (23:59:59)
+						ts += 24*60*60 - 1
+					}
+					*field = ts
 				}
 			}
 		}

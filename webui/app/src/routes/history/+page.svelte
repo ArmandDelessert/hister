@@ -18,7 +18,15 @@
   let openedLastID = $state(0);
   let activeGroup = $state('');
   let filterByDate = $state('');
-  let openedOnly = $state(false);
+  let openedOnly = $state(
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('historyOpenedOnly') === 'true'
+      : false,
+  );
+
+  $effect(() => {
+    localStorage.setItem('historyOpenedOnly', String(openedOnly));
+  });
 
   const groupColors = [
     'hister-indigo',

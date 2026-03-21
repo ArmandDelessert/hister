@@ -14,6 +14,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/indexer/querybuilder"
+	"github.com/asciimoo/hister/server/indexer/types"
 	"github.com/asciimoo/hister/server/model"
 
 	"github.com/blevesearch/bleve/v2"
@@ -213,6 +214,9 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 			if err := d.Process(tmpIdx.langDetector); err != nil {
 				if errors.Is(err, ErrSensitiveContent) {
 					log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, sensitive content")
+					continue
+				} else if d.Type == types.Local && errors.Is(err, os.ErrNotExist) {
+					log.Warn().Str("URL", d.URL).Msg("Skipping document, file not found")
 					continue
 				} else if errors.Is(err, ErrNoExtractor) {
 					log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't extract content")

@@ -12,8 +12,9 @@ import (
 
 type History struct {
 	CommonFields
-	Query string  `gorm:"unique" json:"query"`
-	Links []*Link `gorm:"many2many:history_links;" json:"urls"`
+	UserID uint    `gorm:"uniqueIndex:useridqueryidx;default:0" json:"user_id"`
+	Query  string  `gorm:"uniqueIndex:useridqueryidx" json:"query"`
+	Links  []*Link `gorm:"many2many:history_links;" json:"urls"`
 }
 
 type Link struct {
@@ -62,11 +63,12 @@ func GetOrCreateLink(u, title string) *Link {
 	return ret
 }
 
-func GetOrCreateHistory(q string) *History {
+func GetOrCreateHistory(userID uint, q string) *History {
 	var ret *History
-	if err := DB.Model(&History{}).Where("query = ?", q).First(&ret).Error; err != nil {
+	if err := DB.Model(&History{}).Where("user_id = ? AND query = ?", userID, q).First(&ret).Error; err != nil {
 		ret = &History{
-			Query: q,
+			UserID: userID,
+			Query:  q,
 		}
 		if err := DB.Create(ret).Error; err != nil {
 			return nil
@@ -75,7 +77,7 @@ func GetOrCreateHistory(q string) *History {
 	return ret
 }
 
-func DeleteHistoryItem(query, url string) error {
+func DeleteHistoryItem(userID uint, query, url string) error {
 	return DB.Delete(
 		&HistoryLink{},
 		"id in (?)",
@@ -83,16 +85,16 @@ func DeleteHistoryItem(query, url string) error {
 			Select("history_links.id").
 			Joins("JOIN histories ON history_links.history_id = histories.id").
 			Joins("JOIN links ON history_links.link_id = links.id").
-			Where("histories.query = ? and links.url = ?", query, url),
+			Where("histories.user_id = ? AND histories.query = ? AND links.url = ?", userID, query, url),
 	).Error
 }
 
-func UpdateHistory(query, url, title string) error {
+func UpdateHistory(userID uint, query, url, title string) error {
 	if query == "" || url == "" || title == "" {
 		return errors.New("missing data")
 	}
 	l := GetOrCreateLink(url, title)
-	h := GetOrCreateHistory(query)
+	h := GetOrCreateHistory(userID, query)
 	if l == nil || h == nil {
 		return errors.New("failed to get link or query")
 	}
@@ -109,24 +111,25 @@ func UpdateHistory(query, url, title string) error {
 	return DB.Save(hu).Error
 }
 
-func GetURLsByQuery(q string) ([]*URLCount, error) {
+func GetURLsByQuery(userID uint, q string) ([]*URLCount, error) {
 	var us []*URLCount
 	err := DB.Select("links.url as url, links.title as title, history_links.count as count").
 		Table("history_links").
 		Joins("JOIN links ON history_links.link_id = links.id").
 		Joins("JOIN histories ON history_links.history_id = histories.id").
-		Where("histories.query = ?", q).
+		Where("histories.user_id = ? AND histories.query = ?", userID, q).
 		Order("history_links.count DESC, history_links.updated_at DESC").
 		Limit(20).Find(&us).Error
 	return us, err
 }
 
-func GetLatestHistoryItems(limit int, lastID uint) ([]*HistoryItem, error) {
+func GetLatestHistoryItems(userID uint, limit int, lastID uint) ([]*HistoryItem, error) {
 	var hs []*HistoryItem
 	q := DB.Select("history_links.id as id, links.url as url, links.title as title, histories.query as query, history_links.updated_at as updated_at").
 		Table("history_links").
 		Joins("JOIN links ON history_links.link_id = links.id").
 		Joins("JOIN histories ON history_links.history_id = histories.id").
+		Where("histories.user_id = ?", userID).
 		Order("history_links.updated_at DESC")
 	if lastID > 0 {
 		q = q.Where("history_links.id < ?", lastID)
@@ -135,12 +138,12 @@ func GetLatestHistoryItems(limit int, lastID uint) ([]*HistoryItem, error) {
 	return hs, err
 }
 
-func GetQuerySuggestion(q string) string {
+func GetQuerySuggestion(userID uint, q string) string {
 	var r string
 	DB.Select("histories.query as query").
 		Table("history_links").
 		Joins("JOIN histories ON history_links.history_id = histories.id").
-		Where("LOWER(histories.query) LIKE ?", strings.ToLower(q+"%")).
+		Where("histories.user_id = ? AND LOWER(histories.query) LIKE ?", userID, strings.ToLower(q+"%")).
 		Order("history_links.count DESC").
 		Limit(1).Find(&r)
 	return r

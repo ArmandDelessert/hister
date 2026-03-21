@@ -46,6 +46,7 @@ type App struct {
 	Directory           string `yaml:"directory" mapstructure:"directory"`
 	SearchURL           string `yaml:"search_url" mapstructure:"search_url"`
 	AccessToken         string `yaml:"access_token" mapstructure:"access_token"`
+	UserHandling        bool   `yaml:"user_handling" mapstructure:"user_handling"`
 	LogLevel            string `yaml:"log_level" mapstructure:"log_level"`
 	DebugSQL            bool   `yaml:"debug_sql" mapstructure:"debug_sql"`
 	OpenResultsOnNewTab bool   `yaml:"open_results_on_new_tab" mapstructure:"open_results_on_new_tab"`
@@ -345,6 +346,10 @@ func parseConfig(rawConfig []byte) (*Config, error) {
 func (c *Config) init() error {
 	if dataDir := os.Getenv("HISTER_DATA_DIR"); dataDir != "" {
 		c.App.Directory = dataDir
+	}
+
+	if c.App.AccessToken != "" && c.App.UserHandling {
+		return errors.New("cannot use both access_token and user_handling in configuration")
 	}
 
 	if envPort := os.Getenv("HISTER_PORT"); envPort != "" {

@@ -29,6 +29,7 @@ type Document struct {
 	Added              int64         `json:"added"`
 	Type               types.DocType `json:"type"`
 	Language           string        `json:"language"`
+	UserID             uint          `json:"user_id"`
 	faviconURL         string
 	processed          bool
 	skipSensitiveCheck bool

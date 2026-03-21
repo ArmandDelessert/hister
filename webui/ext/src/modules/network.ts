@@ -14,20 +14,32 @@ async function fetchFavicon(url) {
   });
 }
 
-async function sendPageData(url, doc, tok, customHeaders = []) {
+async function getServerCookies(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['histerCookies'], (data) => {
+      resolve(data['histerCookies'] || '');
+    });
+  });
+}
+
+async function sendPageData(url, doc, customHeaders = []) {
   try {
     doc['favicon'] = await fetchFavicon(doc.faviconURL);
   } catch (e) {
     doc['favicon'] = '';
   }
-  return sendResult(url, doc, tok, customHeaders);
+  return sendResult(url, doc, customHeaders);
 }
 
-async function sendResult(url, res, tok, customHeaders = []) {
+async function sendResult(url, res, customHeaders = []) {
+  const cookieHeader = await getServerCookies();
+
   const headers: Record<string, string> = {
     'Content-type': 'application/json; charset=UTF-8',
-    'X-Access-Token': tok,
   };
+  if (cookieHeader) {
+    headers['Cookie'] = cookieHeader;
+  }
   for (const h of customHeaders) {
     if (h.name) {
       headers[h.name] = h.value || '';

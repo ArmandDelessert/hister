@@ -2,10 +2,26 @@
   import { page } from '$app/stores';
   import { ModeWatcher, toggleMode, mode } from 'mode-watcher';
   import { Button } from '@hister/components/ui/button';
-  import { Sun, Moon } from 'lucide-svelte';
+  import { Sun, Moon, LogIn, LogOut } from 'lucide-svelte';
   import '../style.css';
+  import { fetchConfig, logout, resetConfig, type AppConfig } from '$lib/api';
 
   let { children } = $props();
+
+  let config = $state<AppConfig | null>(null);
+
+  $effect(() => {
+    fetchConfig()
+      .then((c) => (config = c))
+      .catch(() => {});
+  });
+
+  async function handleLogout() {
+    await logout();
+    resetConfig();
+    config = null;
+    window.location.href = '/';
+  }
 
   const navItems = [
     { label: 'History', href: 'history' },
@@ -43,15 +59,31 @@
         </a>
       {/each}
     </nav>
-    <Button
-      variant="ghost"
-      size="icon"
-      class="text-text-brand-muted hover:text-hister-indigo size-8 shrink-0 transition-all hover:scale-110 md:size-10"
-      title="Toggle theme"
-      onclick={toggleMode}
-    >
-      {#if mode.current === 'dark'}<Sun class="size-6" />{:else}<Moon class="size-6" />{/if}
-    </Button>
+    <div class="flex items-center justify-self-end">
+      {#if config?.authMode === 'user'}
+        {#if config?.username}
+          <Button
+            variant="ghost"
+            size="icon"
+            class="text-text-brand-muted hover:text-hister-indigo size-8 shrink-0 transition-all hover:scale-110 md:size-10"
+            title="Logout {config.username}"
+            onclick={handleLogout}
+          >
+            <LogOut class="size-5" />
+          </Button>
+        {:else}
+          <Button
+            variant="ghost"
+            size="icon"
+            class="text-text-brand-muted hover:text-hister-indigo size-8 shrink-0 transition-all hover:scale-110 md:size-10"
+            title="Login"
+            onclick={() => (window.location.href = '/auth')}
+          >
+            <LogIn class="size-5" />
+          </Button>
+        {/if}
+      {/if}
+    </div>
   </header>
 
   <main class="flex min-h-0 flex-1 flex-col overflow-clip">
@@ -82,5 +114,14 @@
       target="_blank"
       rel="noopener">GitHub</a
     >
+    <Button
+      variant="ghost"
+      size="icon"
+      class="text-text-brand-muted hover:text-hister-indigo size-8 shrink-0 transition-all hover:scale-110"
+      title="Toggle theme"
+      onclick={toggleMode}
+    >
+      {#if mode.current === 'dark'}<Sun class="size-5" />{:else}<Moon class="size-5" />{/if}
+    </Button>
   </footer>
 </div>

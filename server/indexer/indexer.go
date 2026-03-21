@@ -56,6 +56,7 @@ type Query struct {
 	Sort      string `json:"sort"`
 	DateFrom  int64  `json:"date_from"`
 	DateTo    int64  `json:"date_to"`
+	UserID    uint   `json:"user_id"`
 	cfg       *config.Config
 }
 
@@ -76,7 +77,7 @@ type MultiBatch struct {
 
 var (
 	i                   *indexer
-	allFields           []string = []string{"url", "title", "text", "favicon", "html", "domain", "added", "type"}
+	allFields           []string = []string{"url", "title", "text", "favicon", "html", "domain", "added", "type", "user_id"}
 	ErrSensitiveContent          = errors.New("document contains sensitive data")
 	sensitiveContentRe  *regexp.Regexp
 	bleveConfig         map[string]any = map[string]any{
@@ -549,6 +550,8 @@ func Iterate(fn func(*Document)) {
 	}
 }
 
+func boolPtr(b bool) *bool { return &b }
+
 func docFromHit(h *search.DocumentMatch) *Document {
 	d := &Document{}
 	if t, ok := h.Fragments["title"]; ok {
@@ -577,6 +580,9 @@ func docFromHit(h *search.DocumentMatch) *Document {
 	if t, ok := h.Fields["type"].(float64); ok {
 		d.Type = types.DocType(t)
 	}
+	if t, ok := h.Fields["user_id"].(float64); ok {
+		d.UserID = uint(t)
+	}
 	return d
 }
 
@@ -600,6 +606,17 @@ func (q *Query) create() query.Query {
 		dateQuery := bleve.NewNumericRangeQuery(min, max)
 		dateQuery.SetField("added")
 		sq = bleve.NewConjunctionQuery(sq, dateQuery)
+	}
+
+	if q.UserID > 0 {
+		uid := float64(q.UserID)
+		userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, boolPtr(true), boolPtr(true))
+		userQuery.SetField("user_id")
+		zeroF := float64(0)
+		globalQuery := bleve.NewNumericRangeInclusiveQuery(&zeroF, &zeroF, boolPtr(true), boolPtr(true))
+		globalQuery.SetField("user_id")
+		userOrGlobal := bleve.NewDisjunctionQuery(userQuery, globalQuery)
+		sq = bleve.NewConjunctionQuery(sq, userOrGlobal)
 	}
 
 	return sq
@@ -662,6 +679,7 @@ func createMapping(lang string) mapping.IndexMapping {
 	docMapping.AddFieldMappingsAt("html", noIdxMap)
 	docMapping.AddFieldMappingsAt("added", bleve.NewNumericFieldMapping())
 	docMapping.AddFieldMappingsAt("type", bleve.NewNumericFieldMapping())
+	docMapping.AddFieldMappingsAt("user_id", bleve.NewNumericFieldMapping())
 
 	im.DefaultMapping = docMapping
 

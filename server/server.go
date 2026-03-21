@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,9 +87,12 @@ type webContext struct {
 	Config   *config.Config
 	nonce    string
 	csrf     string
+	UserID   uint
+	Username string
 }
 
 func init() {
+	gob.Register(uint(0))
 	sub, err := iofs.Sub(static.FS, "app")
 	if err != nil {
 		panic(err)
@@ -174,7 +178,8 @@ func Listen(cfg *config.Config) {
 
 func registerEndpoints(cfg *config.Config) http.Handler {
 	mux := http.NewServeMux()
-	auth := cfg.App.AccessToken != ""
+	tokenAuth := cfg.App.AccessToken != ""
+	userHandling := cfg.App.UserHandling
 
 	for _, e := range Endpoints {
 		log.Debug().Str("Endpoint", e.Pattern()).Msg("Registering endpoint")
@@ -182,8 +187,10 @@ func registerEndpoints(cfg *config.Config) http.Handler {
 		if e.CSRFRequired {
 			h = withCSRF(h)
 		}
-		if auth {
-			h = withAuth(h)
+		if tokenAuth {
+			h = withTokenAuth(h)
+		} else if userHandling && !e.NoAuth {
+			h = withUserAuth(h)
 		}
 		mux.HandleFunc(e.Pattern(), createHandler(cfg, h))
 	}
@@ -233,11 +240,14 @@ func createHandler(cfg *config.Config, h func(*webContext)) func(w http.Response
 			Config:   cfg,
 			nonce:    rand.Text(),
 		}
+		if cfg.App.UserHandling {
+			populateUserContext(c)
+		}
 		h(c)
 	}
 }
 
-func withAuth(handler endpointHandler) endpointHandler {
+func withTokenAuth(handler endpointHandler) endpointHandler {
 	return func(c *webContext) {
 		session, err := sessionStore.Get(c.Request, storeName)
 		if err != nil {
@@ -256,6 +266,29 @@ func withAuth(handler endpointHandler) endpointHandler {
 		err = session.Save(c.Request, c.Response)
 		if err != nil {
 			serve500(c)
+			return
+		}
+		handler(c)
+	}
+}
+
+func populateUserContext(c *webContext) {
+	session, err := sessionStore.Get(c.Request, storeName)
+	if err != nil {
+		return
+	}
+	if uid, ok := session.Values["user_id"].(uint); ok && uid > 0 {
+		c.UserID = uid
+	}
+	if name, ok := session.Values["username"].(string); ok {
+		c.Username = name
+	}
+}
+
+func withUserAuth(handler endpointHandler) endpointHandler {
+	return func(c *webContext) {
+		if c.UserID == 0 {
+			serve403(c)
 			return
 		}
 		handler(c)
@@ -403,12 +436,13 @@ func serveSPA(c *webContext) {
 	// redirect to configured search engine if query string exists but we have no matching results
 	if q != "" {
 		res, err := indexer.Search(c.Config, &indexer.Query{
-			Text: c.Config.Rules.ResolveAliases(q),
+			Text:   c.Config.Rules.ResolveAliases(q),
+			UserID: c.UserID,
 		})
 		if err != nil {
 			res = &indexer.Results{}
 		}
-		hr, err := model.GetURLsByQuery(q)
+		hr, err := model.GetURLsByQuery(c.UserID, q)
 		if err == nil && len(hr) > 0 {
 			res.History = hr
 		}
@@ -425,6 +459,60 @@ func serveSPA(c *webContext) {
 	serveIndex(c)
 }
 
+func serveLogin(c *webContext) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		serve500(c)
+		return
+	}
+	user, err := model.AuthenticateUser(req.Username, req.Password)
+	if err != nil {
+		http.Error(c.Response, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	session, err := sessionStore.Get(c.Request, storeName)
+	if err != nil {
+		serve500(c)
+		return
+	}
+	session.Values["user_id"] = user.ID
+	session.Values["username"] = user.Username
+	if err := session.Save(c.Request, c.Response); err != nil {
+		serve500(c)
+		return
+	}
+	c.JSON(map[string]string{"username": user.Username})
+}
+
+func serveLogout(c *webContext) {
+	session, err := sessionStore.Get(c.Request, storeName)
+	if err != nil {
+		serve500(c)
+		return
+	}
+	delete(session.Values, "user_id")
+	delete(session.Values, "username")
+	if err := session.Save(c.Request, c.Response); err != nil {
+		serve500(c)
+		return
+	}
+	serve200(c)
+}
+
+func serveUserInfo(c *webContext) {
+	if c.Config.App.UserHandling {
+		c.JSON(map[string]any{
+			"user_id":  c.UserID,
+			"username": c.Username,
+		})
+		return
+	}
+	serve200(c)
+}
+
 // serveConfig returns app configuration as JSON and refreshes CSRF token.
 func serveConfig(c *webContext) {
 	type configResponse struct {
@@ -434,6 +522,14 @@ func serveConfig(c *webContext) {
 		SearchURL           string            `json:"searchUrl"`
 		OpenResultsOnNewTab bool              `json:"openResultsOnNewTab"`
 		Hotkeys             map[string]string `json:"hotkeys"`
+		AuthMode            string            `json:"authMode"`
+		Username            string            `json:"username,omitempty"`
+	}
+	authMode := "none"
+	if c.Config.App.AccessToken != "" {
+		authMode = "token"
+	} else if c.Config.App.UserHandling {
+		authMode = "user"
 	}
 	hotkeys := c.Config.Hotkeys.Web
 	if hotkeys == nil {
@@ -446,6 +542,8 @@ func serveConfig(c *webContext) {
 		SearchURL:           c.Config.App.SearchURL,
 		OpenResultsOnNewTab: c.Config.App.OpenResultsOnNewTab,
 		Hotkeys:             hotkeys,
+		AuthMode:            authMode,
+		Username:            c.Username,
 	})
 }
 
@@ -471,7 +569,7 @@ func serveSearch(c *webContext) {
 				}
 			}
 		}
-		r, err := doSearch(query, c.Config)
+		r, err := doSearch(query, c.Config, c.UserID)
 		if err != nil {
 			fmt.Println(err)
 			serve500(c)
@@ -510,7 +608,7 @@ func serveSearch(c *webContext) {
 			log.Error().Err(err).Msg("failed to parse query")
 			continue
 		}
-		res, err := doSearch(query, c.Config)
+		res, err := doSearch(query, c.Config, c.UserID)
 		if err != nil {
 			log.Error().Err(err).Msg("search error")
 			continue
@@ -526,10 +624,11 @@ func serveSearch(c *webContext) {
 	}
 }
 
-func doSearch(query *indexer.Query, cfg *config.Config) (*indexer.Results, error) {
+func doSearch(query *indexer.Query, cfg *config.Config, userID uint) (*indexer.Results, error) {
 	start := time.Now()
 	oq := query.Text
 	query.Text = cfg.Rules.ResolveAliases(query.Text)
+	query.UserID = userID
 	res, err := indexer.Search(cfg, query)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to get indexer results")
@@ -537,12 +636,12 @@ func doSearch(query *indexer.Query, cfg *config.Config) (*indexer.Results, error
 	if res == nil {
 		res = &indexer.Results{}
 	}
-	hr, err := model.GetURLsByQuery(oq)
+	hr, err := model.GetURLsByQuery(userID, oq)
 	if err == nil && len(hr) > 0 {
 		res.History = hr
 	}
 	if oq != "" {
-		res.QuerySuggestion = model.GetQuerySuggestion(oq)
+		res.QuerySuggestion = model.GetQuerySuggestion(userID, oq)
 	}
 	if len(cfg.Indexer.Directories) > 0 {
 		for _, doc := range res.Documents {
@@ -587,6 +686,7 @@ func serveAdd(c *webContext) {
 		d.Text = f.Get("text")
 	}
 	if !c.Config.Rules.IsSkip(d.URL) && !strings.HasPrefix(d.URL, c.Config.BaseURL("/")) {
+		d.UserID = c.UserID
 		err := indexer.Add(d)
 		log.Debug().Str("URL", d.URL).Msg("item added to index")
 		if err != nil {
@@ -613,7 +713,7 @@ func serveHistory(c *webContext) {
 				lastID = uint(parsed)
 			}
 		}
-		items, err := model.GetLatestHistoryItems(100, lastID)
+		items, err := model.GetLatestHistoryItems(c.UserID, 100, lastID)
 		if err != nil {
 			serve500(c)
 			return
@@ -658,12 +758,12 @@ func serveSaveHistory(c *webContext) {
 		return
 	}
 	if h.Delete {
-		if err := model.DeleteHistoryItem(h.Query, h.URL); err != nil {
+		if err := model.DeleteHistoryItem(c.UserID, h.Query, h.URL); err != nil {
 			serve500(c)
 		}
 		return
 	}
-	err = model.UpdateHistory(strings.TrimSpace(h.Query), strings.TrimSpace(h.URL), strings.TrimSpace(h.Title))
+	err = model.UpdateHistory(c.UserID, strings.TrimSpace(h.Query), strings.TrimSpace(h.URL), strings.TrimSpace(h.Title))
 	if err != nil {
 		log.Error().Err(err).Msg("failed to update history")
 		serve500(c)
@@ -856,7 +956,7 @@ func serveAPI(c *webContext) {
 }
 
 func serveStats(c *webContext) {
-	hs, _ := model.GetLatestHistoryItems(5, 0)
+	hs, _ := model.GetLatestHistoryItems(c.UserID, 5, 0)
 	c.JSON(map[string]any{
 		"doc_count":       indexer.DocumentCount(),
 		"rule_count":      c.Config.Rules.Count(),

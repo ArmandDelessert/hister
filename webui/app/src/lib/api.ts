@@ -3,6 +3,8 @@ export interface AppConfig {
   searchUrl: string;
   openResultsOnNewTab: boolean;
   hotkeys: Record<string, string>;
+  authMode: 'token' | 'user' | 'none';
+  username?: string;
 }
 
 let _config: AppConfig | null = null;
@@ -16,6 +18,18 @@ export function setCsrf(tok: string): void {
   _csrf = tok;
 }
 
+export function getAuthMode(): string {
+  return _config?.authMode ?? 'none';
+}
+
+export function getUsername(): string {
+  return _config?.username ?? '';
+}
+
+export function resetConfig(): void {
+  _config = null;
+}
+
 export async function fetchConfig(): Promise<AppConfig> {
   if (_config) return _config;
   const headers: Record<string, string> = {};
@@ -23,7 +37,7 @@ export async function fetchConfig(): Promise<AppConfig> {
   if (token) {
     headers['X-Access-Token'] = token;
   }
-  const res = await fetch('api/config', { headers });
+  const res = await fetch('api/config', { headers, credentials: 'include' });
   if (res.status === 403) {
     window.location.href = '/auth';
     throw new Error('Authentication required');
@@ -32,6 +46,25 @@ export async function fetchConfig(): Promise<AppConfig> {
   if (tok) _csrf = tok;
   _config = await res.json();
   return _config!;
+}
+
+export async function login(username: string, password: string): Promise<{ username: string }> {
+  const res = await fetch('api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    throw new Error('Invalid credentials');
+  }
+  _config = null;
+  return res.json();
+}
+
+export async function logout(): Promise<void> {
+  await apiFetch('/logout', { method: 'POST' });
+  _config = null;
 }
 
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -45,7 +78,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   if (token) {
     headers['X-Access-Token'] = token;
   }
-  const res = await fetch('api' + url, { ...options, headers });
+  const res = await fetch('api' + url, { ...options, headers, credentials: 'include' });
   if (res.status === 403) {
     window.location.href = '/auth';
     throw new Error('Authentication required');

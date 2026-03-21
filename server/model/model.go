@@ -80,6 +80,7 @@ func automigrate() error {
 		&Link{},
 		&HistoryLink{},
 		&IndexerVersion{},
+		&User{},
 	)
 }
 

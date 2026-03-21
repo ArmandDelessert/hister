@@ -3,17 +3,54 @@
   import { Input } from '@hister/components/ui/input';
   import * as Card from '@hister/components/ui/card';
   import { Lock } from 'lucide-svelte';
+  import { login, resetConfig } from '$lib/api';
 
+  let authMode = $state<'token' | 'user' | 'none'>('token');
   let token = $state('');
+  let username = $state('');
+  let password = $state('');
+  let error = $state('');
+  let loading = $state(false);
 
-  function handleSave() {
+  // Detect auth mode from config endpoint (no credentials required)
+  $effect(() => {
+    fetch('api/config', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((cfg) => {
+        authMode = cfg.authMode ?? 'token';
+        if (authMode === 'none') {
+          window.location.href = '/';
+        }
+      })
+      .catch(() => {});
+  });
+
+  function handleTokenSave() {
     localStorage.setItem('access-token', token);
     window.location.href = '/';
   }
 
+  async function handleLogin() {
+    error = '';
+    loading = true;
+    try {
+      await login(username, password);
+      resetConfig();
+      window.location.href = '/';
+    } catch {
+      error = 'Invalid username or password';
+    } finally {
+      loading = false;
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
-      handleSave();
+      if (authMode === 'user') {
+        handleLogin();
+      } else {
+        handleTokenSave();
+      }
     }
   }
 </script>
@@ -41,39 +78,95 @@
         Authentication Required
       </Card.Title>
       <Card.Description class="font-inter text-text-brand-secondary">
-        Please enter your access token.
+        {#if authMode === 'user'}
+          Please sign in with your username and password.
+        {:else}
+          Please enter your access token.
+        {/if}
       </Card.Description>
     </Card.Header>
     <Card.Content class="space-y-6">
-      <div class="space-y-2">
-        <label
-          for="token"
-          class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
+      {#if error}
+        <p class="text-hister-rose font-inter text-sm">{error}</p>
+      {/if}
+      {#if authMode === 'user'}
+        <div class="space-y-2">
+          <label
+            for="username"
+            class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
+          >
+            Username
+          </label>
+          <Input
+            id="username"
+            type="text"
+            variant="brutal"
+            bind:value={username}
+            onkeydown={handleKeydown}
+            placeholder="Enter your username"
+            class="focus-visible:border-hister-indigo"
+            autofocus
+          />
+        </div>
+        <div class="space-y-2">
+          <label
+            for="password"
+            class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
+          >
+            Password
+          </label>
+          <Input
+            id="password"
+            type="password"
+            variant="brutal"
+            bind:value={password}
+            onkeydown={handleKeydown}
+            placeholder="Enter your password"
+            class="focus-visible:border-hister-indigo font-mono"
+          />
+        </div>
+        <Button
+          onclick={handleLogin}
+          disabled={!username.trim() || !password.trim() || loading}
+          class="bg-hister-indigo hover:bg-hister-indigo/90 border-brutal-border font-space h-12 w-full rounded-none border-[3px] font-bold tracking-wider uppercase shadow-[4px_4px_0px_var(--brutal-shadow)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_var(--brutal-shadow)] active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Token
-        </label>
-        <Input
-          id="token"
-          type="password"
-          variant="brutal"
-          bind:value={token}
-          onkeydown={handleKeydown}
-          placeholder="Enter your token"
-          class="focus-visible:border-hister-indigo font-mono"
-          autofocus
-        />
-      </div>
-      <Button
-        onclick={handleSave}
-        disabled={!token.trim()}
-        class="bg-hister-indigo hover:bg-hister-indigo/90 border-brutal-border font-space h-12 w-full rounded-none border-[3px] font-bold tracking-wider uppercase shadow-[4px_4px_0px_var(--brutal-shadow)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_var(--brutal-shadow)] active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Save Token
-      </Button>
+          {loading ? 'Signing in…' : 'Sign In'}
+        </Button>
+      {:else}
+        <div class="space-y-2">
+          <label
+            for="token"
+            class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
+          >
+            Token
+          </label>
+          <Input
+            id="token"
+            type="password"
+            variant="brutal"
+            bind:value={token}
+            onkeydown={handleKeydown}
+            placeholder="Enter your token"
+            class="focus-visible:border-hister-indigo font-mono"
+            autofocus
+          />
+        </div>
+        <Button
+          onclick={handleTokenSave}
+          disabled={!token.trim()}
+          class="bg-hister-indigo hover:bg-hister-indigo/90 border-brutal-border font-space h-12 w-full rounded-none border-[3px] font-bold tracking-wider uppercase shadow-[4px_4px_0px_var(--brutal-shadow)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_var(--brutal-shadow)] active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Save Token
+        </Button>
+      {/if}
     </Card.Content>
     <Card.Footer class="bg-muted-surface/50">
       <p class="text-text-brand-muted font-inter w-full text-center text-xs">
-        Your token will be stored locally and used for API requests.
+        {#if authMode === 'user'}
+          Your session will be stored as a secure cookie.
+        {:else}
+          Your token will be stored locally and used for API requests.
+        {/if}
       </p>
     </Card.Footer>
   </Card.Root>

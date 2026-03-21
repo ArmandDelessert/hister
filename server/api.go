@@ -33,6 +33,7 @@ type Endpoint struct {
 	Path         string
 	Method       string
 	CSRFRequired bool
+	NoAuth       bool
 	Handler      endpointHandler `json:"-"`
 	Description  string
 	Args         []*EndpointArg
@@ -53,6 +54,7 @@ func init() {
 			Path:         "/api/config",
 			Method:       GET,
 			CSRFRequired: true,
+			NoAuth:       true,
 			Handler:      serveConfig,
 			Description:  "Serve config",
 		},
@@ -224,6 +226,31 @@ func init() {
 			CSRFRequired: false,
 			Handler:      serveAPI,
 			Description:  "API documentation",
+		},
+		{
+			Name:         "Login",
+			Path:         "/api/login",
+			Method:       POST,
+			CSRFRequired: false,
+			NoAuth:       true,
+			Handler:      serveLogin,
+			Description:  "Login with username and password",
+		},
+		{
+			Name:         "Logout",
+			Path:         "/api/logout",
+			Method:       POST,
+			CSRFRequired: true,
+			Handler:      serveLogout,
+			Description:  "Logout current user",
+		},
+		{
+			Name:         "Userinfo",
+			Path:         "/api/userinfo",
+			Method:       GET,
+			CSRFRequired: false,
+			Handler:      serveUserInfo,
+			Description:  "Get current user info",
 		},
 	}
 }

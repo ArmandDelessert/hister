@@ -27,6 +27,8 @@ import (
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/ui"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog"
@@ -250,6 +252,9 @@ var indexCmd = &cobra.Command{
 	Long:  "Index one or more URLs",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if cfg.App.UserHandling {
+			exit(1, "Cannot use 'index' command when user_handling is enabled. Use the web interface or browser extension instead.")
+		}
 		for _, u := range args {
 			if err := indexURL(u); err != nil {
 				exit(1, "Failed to index URL: "+err.Error())
@@ -281,6 +286,60 @@ var deleteCmd = &cobra.Command{
 				exit(1, "Failed to delete URL: "+err.Error())
 			}
 		}
+	},
+}
+
+var createUserCmd = &cobra.Command{
+	Use:   "create-user USERNAME",
+	Short: "Create a new user",
+	Long:  "Create a new user account (requires user_handling to be enabled)",
+	Args:  cobra.ExactArgs(1),
+	PreRun: func(_ *cobra.Command, _ []string) {
+		if !cfg.App.UserHandling {
+			exit(1, "user_handling is not enabled in configuration")
+		}
+		initDB()
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		username := args[0]
+		password, err := promptPassword("Password: ")
+		if err != nil {
+			exit(1, "Failed to read password: "+err.Error())
+		}
+		if password == "" {
+			exit(1, "password must not be empty")
+		}
+		confirm, err := promptPassword("Confirm password: ")
+		if err != nil {
+			exit(1, "Failed to read password: "+err.Error())
+		}
+		if password != confirm {
+			exit(1, "passwords do not match")
+		}
+		if err := model.CreateUser(username, password); err != nil {
+			exit(1, "Failed to create user: "+err.Error())
+		}
+		fmt.Println(cliSuccessStyle.Render("✓") + " User created: " + cliInfoStyle.Render(username))
+	},
+}
+
+var deleteUserCmd = &cobra.Command{
+	Use:   "delete-user USERNAME",
+	Short: "Delete a user",
+	Long:  "Delete a user account (requires user_handling to be enabled)",
+	Args:  cobra.ExactArgs(1),
+	PreRun: func(_ *cobra.Command, _ []string) {
+		if !cfg.App.UserHandling {
+			exit(1, "user_handling is not enabled in configuration")
+		}
+		initDB()
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		username := args[0]
+		if err := model.DeleteUser(username); err != nil {
+			exit(1, "Failed to delete user: "+err.Error())
+		}
+		fmt.Println(cliSuccessStyle.Render("✓") + " User deleted: " + cliInfoStyle.Render(username))
 	},
 }
 
@@ -325,6 +384,8 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(reindexCmd)
 	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(createUserCmd)
+	rootCmd.AddCommand(deleteUserCmd)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")
 
@@ -448,6 +509,61 @@ func initIndex() {
 		log.Warn().Msg(cliWarningStyle.Render("There is a new indexer version. Run `hister reindex` to update your index."))
 	}
 	log.Debug().Msg("Indexer initialization complete")
+}
+
+type passwordModel struct {
+	input textinput.Model
+	done  bool
+	err   error
+}
+
+func (m passwordModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m passwordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyEnter:
+			m.done = true
+			return m, tea.Quit
+		case tea.KeyCtrlC, tea.KeyEsc:
+			m.err = errors.New("cancelled")
+			return m, tea.Quit
+		}
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m passwordModel) View() string {
+	if m.done || m.err != nil {
+		return ""
+	}
+	return m.input.View() + "\n"
+}
+
+func promptPassword(prompt string) (string, error) {
+	ti := textinput.New()
+	ti.Placeholder = ""
+	ti.EchoMode = textinput.EchoPassword
+	ti.EchoCharacter = '*'
+	ti.Prompt = prompt
+	ti.Focus()
+
+	m := passwordModel{input: ti}
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return "", err
+	}
+	final := result.(passwordModel)
+	if final.err != nil {
+		return "", final.err
+	}
+	return final.input.Value(), nil
 }
 
 func yesNoPrompt(label string, def bool) bool {

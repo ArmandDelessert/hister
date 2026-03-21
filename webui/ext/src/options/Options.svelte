@@ -10,17 +10,15 @@
   const defaultURL = 'http://127.0.0.1:4433/';
 
   let url = $state(defaultURL);
-  let token = $state('');
   let customHeaders: { name: string; value: string }[] = $state([]);
   let message = $state('');
   let messageType: 'success' | 'error' = $state('success');
 
-  chrome.storage.local.get(['histerURL', 'histerToken', 'histerCustomHeaders'], (data) => {
+  chrome.storage.local.get(['histerURL', 'histerCustomHeaders'], (data) => {
     if (!data['histerURL']) {
       chrome.storage.local.set({ histerURL: defaultURL });
     }
     url = data['histerURL'] || defaultURL;
-    token = data['histerToken'] || '';
     customHeaders = Array.isArray(data['histerCustomHeaders']) ? data['histerCustomHeaders'] : [];
   });
 
@@ -38,7 +36,6 @@
     chrome.storage.local
       .set({
         histerURL: url,
-        histerToken: token,
         histerCustomHeaders: $state.snapshot(headersToSave),
       })
       .then(() => {
@@ -46,6 +43,25 @@
         message = 'Settings saved';
         messageType = 'success';
       });
+  }
+
+  function authenticate() {
+    let authURL = url;
+    if (!authURL.endsWith('/')) {
+      authURL += '/';
+    }
+    chrome.cookies.getAll({ url: authURL }, (cookies) => {
+      if (!cookies.length) {
+        message = 'No cookies found for server URL. Make sure you are logged in to the Hister web app.';
+        messageType = 'error';
+        return;
+      }
+      const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+      chrome.storage.local.set({ histerCookies: cookieStr }).then(() => {
+        message = 'Authentication successful';
+        messageType = 'success';
+      });
+    });
   }
 </script>
 
@@ -105,13 +121,6 @@
             description="The full URL of your Hister server, including the port number."
           />
 
-          <SettingsInput
-            label="Access Token"
-            bind:value={token}
-            placeholder="Token..."
-            description="If your server requires authentication, enter your access token here."
-          />
-
           <!-- Custom Headers -->
           <div class="space-y-3">
             <div>
@@ -160,6 +169,16 @@
             class="bg-hister-coral border-brutal-border font-outfit h-12 w-full border-[3px] text-base font-bold tracking-wide text-white shadow-[4px_4px_0_var(--brutal-shadow)] transition-all hover:translate-x-px hover:translate-y-px hover:shadow-[2px_2px_0_var(--brutal-shadow)]"
           >
             Save Settings
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onclick={authenticate}
+            class="border-brutal-border font-outfit hover:border-hister-indigo h-12 w-full border-[3px] text-base font-bold tracking-wide transition-all"
+          >
+            Authenticate Extension
           </Button>
         </form>
       </Card.Content>

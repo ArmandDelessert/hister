@@ -11,10 +11,8 @@
   const defaultURL = 'http://127.0.0.1:4433/';
 
   let url = $state(defaultURL);
-  let token = $state('');
   let customHeaders: { name: string; value: string }[] = $state([]);
   let indexingEnabled = $state(true);
-  let showTokenInput = $state(false);
   let message = $state('');
   let messageType: 'success' | 'error' = $state('success');
   let showSettings = $state(false);
@@ -34,17 +32,49 @@
     setMessage('success', msg);
   }
 
+  let isAuthenticated = $state<boolean | null>(null);
+
+  function checkAuth(serverURL: string, cookieStr?: string): Promise<boolean> {
+    let authURL = serverURL;
+    if (!authURL.endsWith('/')) {
+      authURL += '/';
+    }
+    const doCheck = (cookies: string) => {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (cookies) {
+        headers['Cookie'] = cookies;
+      }
+      return fetch(authURL + 'api/userinfo', { headers })
+        .then((r) => {
+          isAuthenticated = r.status === 200;
+          return isAuthenticated;
+        })
+        .catch(() => {
+          isAuthenticated = false;
+          return false;
+        });
+    };
+    if (cookieStr !== undefined) {
+      return doCheck(cookieStr);
+    }
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['histerCookies'], (data) => {
+        resolve(doCheck(data['histerCookies'] || ''));
+      });
+    });
+  }
+
   chrome.storage.local.get(
-    ['histerURL', 'histerToken', 'histerCustomHeaders', 'indexingEnabled'],
+    ['histerURL', 'histerCustomHeaders', 'indexingEnabled', 'histerCookies'],
     (data) => {
       if (!data['histerURL']) {
         chrome.storage.local.set({ histerURL: defaultURL });
       }
       url = data['histerURL'] || defaultURL;
-      token = data['histerToken'] || '';
       customHeaders = Array.isArray(data['histerCustomHeaders']) ? data['histerCustomHeaders'] : [];
       indexingEnabled = data['indexingEnabled'] !== false;
-      showTokenInput = !token;
+
+      checkAuth(url, data['histerCookies'] || '');
 
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs?.length) return;
@@ -66,9 +96,6 @@
     }
 
     const headers: HeadersInit = {};
-    if (token) {
-      headers['X-Access-Token'] = token;
-    }
     for (const h of customHeaders) {
       if (h.name) {
         headers[h.name] = h.value || '';
@@ -78,10 +105,6 @@
     fetch(verifyURL + 'api/config', { headers })
       .then((response) => {
         if (response.status !== 200) {
-          if (response.status == 403) {
-            setErrorMessage('Invalid access token');
-            return;
-          }
           setErrorMessage(`Server returned status ${response.status}`);
           return;
         }
@@ -91,12 +114,10 @@
             chrome.storage.local
               .set({
                 histerURL: url,
-                histerToken: token,
                 histerCustomHeaders: $state.snapshot(customHeaders),
               })
               .then(() => {
                 setSuccessMessage('Settings saved');
-                showTokenInput = !token;
 
                 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                   if (tabs?.length) {
@@ -114,13 +135,32 @@
       });
   }
 
-  function changeToken() {
-    showTokenInput = true;
-  }
-
   function toggleIndexing() {
     chrome.storage.local.set({ indexingEnabled: indexingEnabled });
     setSuccessMessage(`Automatic indexing ${indexingEnabled ? 'enabled' : 'disabled'}`);
+  }
+
+  function authenticate() {
+    let authURL = url;
+    if (!authURL.endsWith('/')) {
+      authURL += '/';
+    }
+    chrome.cookies.getAll({ url: authURL }, (cookies) => {
+      if (!cookies.length) {
+        setErrorMessage('No cookies found for server URL. Make sure you are logged in to the Hister web app.');
+        return;
+      }
+      const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+      chrome.storage.local.set({ histerCookies: cookieStr }).then(() => {
+        checkAuth(url, cookieStr).then((ok) => {
+          if (ok) {
+            setSuccessMessage('Authentication successful');
+          } else {
+            setErrorMessage('Authentication failed. Make sure you are logged in to the Hister web app.');
+          }
+        });
+      });
+    });
   }
 
   function reindex() {
@@ -136,7 +176,7 @@
           msg += ': ' + r.error;
         }
         if (r?.status_code === 403) {
-          msg += ': Unauthorized - invalid access token';
+          msg += ': Unauthorized';
         }
         setErrorMessage(msg);
       });
@@ -176,22 +216,6 @@
       <Card.Content class="space-y-4 p-5">
         <form onsubmit={save} class="space-y-4">
           <SettingsInput label="Server URL" bind:value={url} placeholder="Server URL..." />
-
-          {#if showTokenInput}
-            <SettingsInput label="Access Token" bind:value={token} placeholder="Token..." />
-          {:else}
-            <div class="space-y-2">
-              <Label class="font-outfit text-text-brand text-sm font-bold">Access Token</Label>
-              <Button
-                type="button"
-                variant="outline"
-                onclick={changeToken}
-                class="border-brutal-border font-outfit hover:border-hister-indigo h-12 w-full border-[3px] text-sm font-bold tracking-wide transition-all"
-              >
-                Change token
-              </Button>
-            </div>
-          {/if}
 
           <Button
             type="submit"
@@ -241,6 +265,19 @@
         Reindex Page
       </Button>
     </div>
+
+    <!-- Authenticate section -->
+    {#if isAuthenticated === false}
+    <div class="border-brutal-border border-b-[3px] px-5 py-4">
+      <Button
+        variant="outline"
+        onclick={authenticate}
+        class="border-brutal-border font-outfit hover:border-hister-indigo h-9 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
+      >
+        Authenticate Extension
+      </Button>
+    </div>
+    {/if}
   {/if}
   <!-- Status message -->
   {#if message}

@@ -12,7 +12,7 @@ require (
 	github.com/gorilla/sessions v1.4.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-runewidth v0.0.21
-	github.com/mattn/go-sqlite3 v1.14.34
+	github.com/mattn/go-sqlite3 v1.14.37
 	github.com/muesli/termenv v0.16.0
 	github.com/pemistahl/lingua-go v1.4.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c

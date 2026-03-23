@@ -52,7 +52,8 @@
     }
     chrome.cookies.getAll({ url: authURL }, (cookies) => {
       if (!cookies.length) {
-        message = 'No cookies found for server URL. Make sure you are logged in to the Hister web app.';
+        message =
+          'No cookies found for server URL. Make sure you are logged in to the Hister web app.';
         messageType = 'error';
         return;
       }

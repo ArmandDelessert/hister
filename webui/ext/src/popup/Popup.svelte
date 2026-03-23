@@ -147,7 +147,9 @@
     }
     chrome.cookies.getAll({ url: authURL }, (cookies) => {
       if (!cookies.length) {
-        setErrorMessage('No cookies found for server URL. Make sure you are logged in to the Hister web app.');
+        setErrorMessage(
+          'No cookies found for server URL. Make sure you are logged in to the Hister web app.',
+        );
         return;
       }
       const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
@@ -156,7 +158,9 @@
           if (ok) {
             setSuccessMessage('Authentication successful');
           } else {
-            setErrorMessage('Authentication failed. Make sure you are logged in to the Hister web app.');
+            setErrorMessage(
+              'Authentication failed. Make sure you are logged in to the Hister web app.',
+            );
           }
         });
       });
@@ -268,15 +272,15 @@
 
     <!-- Authenticate section -->
     {#if isAuthenticated === false}
-    <div class="border-brutal-border border-b-[3px] px-5 py-4">
-      <Button
-        variant="outline"
-        onclick={authenticate}
-        class="border-brutal-border font-outfit hover:border-hister-indigo h-9 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
-      >
-        Authenticate Extension
-      </Button>
-    </div>
+      <div class="border-brutal-border border-b-[3px] px-5 py-4">
+        <Button
+          variant="outline"
+          onclick={authenticate}
+          class="border-brutal-border font-outfit hover:border-hister-indigo h-9 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
+        >
+          Authenticate Extension
+        </Button>
+      </div>
     {/if}
   {/if}
   <!-- Status message -->

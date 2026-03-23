@@ -27,7 +27,8 @@
     { label: 'History', href: 'history' },
     { label: 'Rules', href: 'rules' },
     { label: 'Add', href: 'add' },
-  ];</script>
+  ];
+</script>
 
 <ModeWatcher />
 

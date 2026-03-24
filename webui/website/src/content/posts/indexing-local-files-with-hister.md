@@ -5,7 +5,15 @@ title: 'Indexing Local Files with Hister'
 description: "How to search your local documents, notes, and code alongside your browser history with Hister's new file indexing feature"
 ---
 
+<script>
+  import { CalloutNote } from '@hister/components';
+</script>
+
 One of the most exciting features we've added to Hister is the ability to automatically index and search local files alongside your browser history. This means you can now find meeting notes, project documents, org files just as easily as you'd find a web page you visited last week.
+
+<CalloutNote title="Note">
+  Local file indexing is an optional feature and is <b>turned off by default</b>. You need to explicitly configure <code>indexer.directories</code> in your Hister config to enable it.
+</CalloutNote>
 
 ## Setting It Up
 

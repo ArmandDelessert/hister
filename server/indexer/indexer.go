@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -748,8 +749,6 @@ func tuiHighlighter(config map[string]any, cache *registry.Cache) (highlight.Hig
 
 func bleveRuntimeConfig() map[string]any {
 	c := make(map[string]any, len(bleveConfig))
-	for k, v := range bleveConfig {
-		c[k] = v
-	}
+	maps.Copy(c, bleveConfig)
 	return c
 }

@@ -341,6 +341,58 @@ var deleteUserCmd = &cobra.Command{
 	},
 }
 
+var updateUserCmd = &cobra.Command{
+	Use:   "update-user USERNAME",
+	Short: "Update a user",
+	Long:  "Update a user account (requires user_handling to be enabled). Use flags to change username, regenerate token, or toggle admin status.",
+	Args:  cobra.ExactArgs(1),
+	PreRun: func(_ *cobra.Command, _ []string) {
+		if !cfg.App.UserHandling {
+			exit(1, "user_handling is not enabled in configuration")
+		}
+		initDB()
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		username := args[0]
+		changed := false
+
+		if newUsername, _ := cmd.Flags().GetString("username"); newUsername != "" {
+			if err := model.UpdateUsername(username, newUsername); err != nil {
+				exit(1, "Failed to update username: "+err.Error())
+			}
+			fmt.Println(cliSuccessStyle.Render("✓") + " Username changed: " + cliInfoStyle.Render(username) + " → " + cliInfoStyle.Render(newUsername))
+			username = newUsername
+			changed = true
+		}
+
+		if regen, _ := cmd.Flags().GetBool("regen-token"); regen {
+			token, err := model.RegenerateTokenByUsername(username)
+			if err != nil {
+				exit(1, "Failed to regenerate token: "+err.Error())
+			}
+			fmt.Println(cliSuccessStyle.Render("✓") + " New token for " + cliInfoStyle.Render(username) + ": " + cliInfoStyle.Render(token))
+			changed = true
+		}
+
+		if toggle, _ := cmd.Flags().GetBool("toggle-admin"); toggle {
+			isAdmin, err := model.ToggleAdmin(username)
+			if err != nil {
+				exit(1, "Failed to toggle admin: "+err.Error())
+			}
+			status := "disabled"
+			if isAdmin {
+				status = "enabled"
+			}
+			fmt.Println(cliSuccessStyle.Render("✓") + " Admin " + status + " for " + cliInfoStyle.Render(username))
+			changed = true
+		}
+
+		if !changed {
+			exit(1, "no changes specified - use --username, --regen-token, or --toggle-admin")
+		}
+	},
+}
+
 var reindexCmd = &cobra.Command{
 	Use:   "reindex",
 	Short: "Reindex",
@@ -385,12 +437,17 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(createUserCmd)
 	rootCmd.AddCommand(deleteUserCmd)
+	rootCmd.AddCommand(updateUserCmd)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")
 
 	importCmd.Flags().IntP("min-visit", "m", 1, "only import URLs that were opened at least 'min-visit' times")
 
 	createUserCmd.Flags().Bool("admin", false, "create user with admin privileges")
+
+	updateUserCmd.Flags().String("username", "", "new username")
+	updateUserCmd.Flags().Bool("regen-token", false, "regenerate access token")
+	updateUserCmd.Flags().Bool("toggle-admin", false, "toggle admin status")
 
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "don't add documents that contain sensitive content matched by config.SensitiveContentPatterns")
 

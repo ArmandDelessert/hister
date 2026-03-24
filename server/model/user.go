@@ -75,3 +75,38 @@ func RegenerateToken(userID uint) (string, error) {
 	}
 	return token, nil
 }
+
+func RegenerateTokenByUsername(username string) (string, error) {
+	var u User
+	if err := DB.Where("username = ?", username).First(&u).Error; err != nil {
+		return "", ErrUserNotFound
+	}
+	return RegenerateToken(u.ID)
+}
+
+func UpdateUsername(username, newUsername string) error {
+	var existing User
+	if err := DB.Where("username = ?", newUsername).First(&existing).Error; err == nil {
+		return ErrUserAlreadyExists
+	}
+	result := DB.Model(&User{}).Where("username = ?", username).Update("username", newUsername)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+func ToggleAdmin(username string) (bool, error) {
+	var u User
+	if err := DB.Where("username = ?", username).First(&u).Error; err != nil {
+		return false, ErrUserNotFound
+	}
+	newAdmin := !u.IsAdmin
+	if err := DB.Model(&u).Update("is_admin", newAdmin).Error; err != nil {
+		return false, err
+	}
+	return newAdmin, nil
+}

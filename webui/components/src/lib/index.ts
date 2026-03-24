@@ -82,3 +82,12 @@ export { PageHeader } from './components/page-header';
 export { BrowserFrame } from './components/browser-frame';
 export { FeatureCard } from './components/feature-card';
 export { Switch } from './components/ui/switch';
+export {
+  Callout,
+  calloutVariants,
+  type CalloutVariant,
+  CalloutNote,
+  CalloutWarning,
+  CalloutDanger,
+  CalloutTip,
+} from './components/callout';

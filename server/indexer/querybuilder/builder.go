@@ -72,6 +72,7 @@ func getTokenQuery(t Token) (query.Query, bool) {
 				from := float64(t)
 				to := float64(t + 1)
 				q := bleve.NewNumericRangeQuery(&from, &to)
+				q.SetField("type")
 				return q, negated
 			}
 		}

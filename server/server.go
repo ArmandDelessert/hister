@@ -843,6 +843,11 @@ func serveRules(c *webContext) {
 		serve500(c)
 		return
 	}
+	if c.Config.App.UserHandling {
+		// TODO
+		serve500(c)
+		return
+	}
 	err := c.Request.ParseForm()
 	if err != nil {
 		serve500(c)
@@ -1031,6 +1036,11 @@ func serveOpensearch(c *webContext) {
 }
 
 func serveAddAlias(c *webContext) {
+	if c.Config.App.UserHandling {
+		// TODO
+		serve500(c)
+		return
+	}
 	err := c.Request.ParseForm()
 	if err != nil {
 		serve500(c)
@@ -1050,6 +1060,11 @@ func serveAddAlias(c *webContext) {
 }
 
 func serveDeleteAlias(c *webContext) {
+	if c.Config.App.UserHandling {
+		// TODO
+		serve500(c)
+		return
+	}
 	err := c.Request.ParseForm()
 	if err != nil {
 		serve500(c)

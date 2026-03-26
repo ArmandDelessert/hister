@@ -34,13 +34,14 @@ import (
 )
 
 var (
-	appSubFS         iofs.FS
-	staticFileServer http.Handler
-	sessionStore     *sessions.CookieStore
-	errCSRFMismatch  = errors.New("CSRF token mismatch")
-	storeName        = "hister"
-	tokName          = "csrf_token"
-	staticTextFiles  map[string][]byte
+	appSubFS                 iofs.FS
+	staticFileServer         http.Handler
+	sessionStore             *sessions.CookieStore
+	errCSRFMismatch          = errors.New("CSRF token mismatch")
+	storeName                = "hister"
+	tokName                  = "csrf_token"
+	staticTextFiles          map[string][]byte
+	multiUserNotSupportedMsg = map[string]string{"error": "rule management is not yet supported in multi-user mode"}
 )
 
 type historyItem struct {
@@ -844,8 +845,7 @@ func serveRules(c *webContext) {
 		return
 	}
 	if c.Config.App.UserHandling {
-		// TODO
-		serve500(c)
+		c.JSONStatus(http.StatusNotImplemented, multiUserNotSupportedMsg)
 		return
 	}
 	err := c.Request.ParseForm()
@@ -1038,7 +1038,7 @@ func serveOpensearch(c *webContext) {
 func serveAddAlias(c *webContext) {
 	if c.Config.App.UserHandling {
 		// TODO
-		serve500(c)
+		c.JSONStatus(http.StatusNotImplemented, multiUserNotSupportedMsg)
 		return
 	}
 	err := c.Request.ParseForm()
@@ -1062,7 +1062,7 @@ func serveAddAlias(c *webContext) {
 func serveDeleteAlias(c *webContext) {
 	if c.Config.App.UserHandling {
 		// TODO
-		serve500(c)
+		c.JSONStatus(http.StatusNotImplemented, multiUserNotSupportedMsg)
 		return
 	}
 	err := c.Request.ParseForm()

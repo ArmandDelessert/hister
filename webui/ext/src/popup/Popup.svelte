@@ -46,11 +46,14 @@
       }
       return fetch(authURL + 'api/profile', { headers })
         .then((r) => {
-          isAuthenticated = r.status === 200;
+          if (r.status === 403) {
+            isAuthenticated = false;
+            return false;
+          }
+          isAuthenticated = true;
           return isAuthenticated;
         })
         .catch(() => {
-          isAuthenticated = false;
           return false;
         });
     };

@@ -608,6 +608,7 @@ func (q *Query) create() query.Query {
 		uid := float64(q.UserID)
 		userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, boolPtr(true), boolPtr(true))
 		userQuery.SetField("user_id")
+		// userid 0 is preserved for global results
 		zeroF := float64(0)
 		globalQuery := bleve.NewNumericRangeInclusiveQuery(&zeroF, &zeroF, boolPtr(true), boolPtr(true))
 		globalQuery.SetField("user_id")

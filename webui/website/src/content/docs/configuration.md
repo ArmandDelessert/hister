@@ -62,6 +62,7 @@ sensitive_content_patterns:
 | `directory`               | string | platform default                      | Directory where Hister stores its data (index, rules, secret key).             |
 | `search_url`              | string | `https://google.com/search?q={query}` | Fallback web search URL. Use `{query}` as the placeholder for the search term. |
 | `access_token`            | string | (none)                                | Optional access token for securing the API. See [Access Token](#access-token). |
+| `user_handling`           | bool   | `false`                               | Enable multi-user mode. See [User Handling](/docs/user-handling) for details.  |
 | `log_level`               | string | `info`                                | Log verbosity. One of: `debug`, `info`, `warn`, `error`.                       |
 | `debug_sql`               | bool   | `false`                               | Enable verbose SQL query logging.                                              |
 | `open_results_on_new_tab` | bool   | `false`                               | Open search results in a new browser tab instead of the current tab.           |
@@ -82,7 +83,7 @@ TUI settings are configured in a separate `tui.yaml` file located in the same di
 
 | Key            | Type   | Default            | Description                                                                                             |
 | -------------- | ------ | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `dark_theme`   | string | `catppuccin-mocha` | Theme to use in dark mode. Available themes: catppuccin, dracula, gruvbox, nord, rose-pine, tokyonight. |
+| `dark_theme`   | string | `tokyonight`       | Theme to use in dark mode. Available themes: catppuccin, dracula, gruvbox, nord, rose-pine, tokyonight. |
 | `light_theme`  | string | `catppuccin-latte` | Theme to use in light mode.                                                                             |
 | `color_scheme` | string | `auto`             | Color scheme mode: `auto` (follow system), `dark`, or `light`.                                          |
 | `themes_dir`   | string | (built-in themes)  | Custom directory for theme YAML files (optional).                                                       |
@@ -95,6 +96,7 @@ TUI settings are configured in a separate `tui.yaml` file located in the same di
 | ------------------ | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `detect_languages` | bool        | `true`  | Enable automatic language detection for indexed pages. See [Language Detection](#language-detection) for details on memory/CPU impact and reindexing requirements. |
 | `directories`      | Directory[] | (none)  | List of local directories to index. See [Local Directory Indexing](#local-directory-indexing) for details.                                                         |
+| `max_file_size_mb` | int         | `1`     | Maximum file size (in MB) to index. Files larger than this value are skipped.                                                                                      |
 
 ### Directory Entry
 
@@ -131,7 +133,7 @@ Files are indexed recursively, with the following rules:
 - Hidden files and directories (starting with `.`) are skipped unless `include_hidden: true`
 - Well-known dependency/cache directories (`node_modules`, `bower_components`, `jspm_packages`, `__pycache__`, `__pypackages__`) are skipped unless `include_hidden: true`
 - Binary files are skipped
-- Files larger than 1 MB are skipped
+- Files larger than `indexer.max_file_size_mb` (default: 1 MB) are skipped
 - Files matching `sensitive_content_patterns` are skipped
 
 Changes to indexed directories are picked up automatically by the file watcher, no server restart is needed. On server start, only files that have been modified since they were last indexed are re-processed. File results appear with the domain `local` and are served through the Hister web interface directly.
@@ -200,7 +202,7 @@ TUI-specific settings are stored in a separate `tui.yaml` file in the same direc
 ### tui.yaml Example
 
 ```yaml
-dark_theme: 'catppuccin-mocha'
+dark_theme: 'tokyonight'
 light_theme: 'catppuccin-latte'
 color_scheme: 'auto'
 
@@ -215,13 +217,9 @@ hotkeys:
   j: 'scroll_down'
   enter: 'open_result'
   ctrl+d: 'delete_result'
-  d: 'delete_result'
   ctrl+t: 'toggle_theme'
-  t: 'toggle_theme'
   ctrl+s: 'toggle_settings'
-  s: 'toggle_settings'
   ctrl+o: 'toggle_sort'
-  o: 'toggle_sort'
   alt+1: 'tab_search'
   alt+2: 'tab_history'
   alt+3: 'tab_rules'

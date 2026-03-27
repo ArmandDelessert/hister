@@ -277,6 +277,15 @@ Non-admin users are restricted to their own documents by the server.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		c := newClient()
+		dry, _ := cmd.Flags().GetBool("dry")
+		if dry {
+			res, err := c.Search(args[0])
+			if err != nil {
+				exit(1, "Failed to search: "+err.Error())
+			}
+			fmt.Printf("%d document(s) would be deleted\n", res.Total)
+			return
+		}
 		if err := c.DeleteDocuments(args[0]); err != nil {
 			exit(1, "Failed to delete: "+err.Error())
 		}
@@ -497,6 +506,8 @@ func init() {
 	updateUserCmd.Flags().String("username", "", "new username")
 	updateUserCmd.Flags().Bool("regen-token", false, "regenerate access token")
 	updateUserCmd.Flags().Bool("toggle-admin", false, "toggle admin status")
+
+	deleteCmd.Flags().Bool("dry", false, "display the number of documents that would be deleted without actually deleting them")
 
 	deleteUserCmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
 

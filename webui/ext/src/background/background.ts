@@ -1,17 +1,181 @@
-import { sendPageData, sendResult } from '../modules/network';
+import { fetchAPI, sendPageData, sendResult } from '../modules/network';
 
 const missingURLMsg = {
   error: 'Missing or invalid Hister server URL. Configure it in the addon popup.',
 };
 
+// --- Badge helpers ---
+
 function setErrorBadge(tabId: number) {
-  chrome.action.setBadgeText({ text: '!', tabId });
-  chrome.action.setBadgeBackgroundColor({ color: '#ff4444', tabId });
+  chrome.action.setBadgeText({ text: '!', tabId }, () => void chrome.runtime.lastError);
+  chrome.action.setBadgeBackgroundColor(
+    { color: '#ff4444', tabId },
+    () => void chrome.runtime.lastError,
+  );
 }
 
-function clearErrorBadge(tabId: number) {
-  chrome.action.setBadgeText({ text: '', tabId });
+function clearBadge(tabId: number) {
+  chrome.action.setBadgeText({ text: '', tabId }, () => void chrome.runtime.lastError);
 }
+
+// --- Grey icon helpers ---
+
+let greyIconCache: Record<number, ImageData> | null = null;
+
+async function buildGreyIcons(): Promise<Record<number, ImageData>> {
+  if (greyIconCache) return greyIconCache;
+  const response = await fetch(chrome.runtime.getURL('assets/icons/icon128.png'));
+  const blob = await response.blob();
+  const bitmap = await createImageBitmap(blob);
+  const result: Record<number, ImageData> = {};
+  for (const size of [16, 32]) {
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(bitmap, 0, 0, size, size);
+    const imageData = ctx.getImageData(0, 0, size, size);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const grey =
+        imageData.data[i] * 0.299 + imageData.data[i + 1] * 0.587 + imageData.data[i + 2] * 0.114;
+      imageData.data[i] = grey;
+      imageData.data[i + 1] = grey;
+      imageData.data[i + 2] = grey;
+      imageData.data[i + 3] = Math.round(imageData.data[i + 3] * 0.5);
+    }
+    result[size] = imageData;
+  }
+  greyIconCache = result;
+  return result;
+}
+
+async function setGreyIcon(tabId: number): Promise<void> {
+  clearBadge(tabId);
+  try {
+    const imageData = await buildGreyIcons();
+    chrome.action.setIcon({ imageData, tabId }, () => void chrome.runtime.lastError);
+  } catch (_) {}
+}
+
+function setNormalIcon(tabId: number): void {
+  chrome.action.setIcon(
+    { path: { '128': 'assets/icons/icon128.png' }, tabId },
+    () => void chrome.runtime.lastError,
+  );
+}
+
+// --- Skip rules cache ---
+
+interface SkipRulesCache {
+  patterns: RegExp[];
+  timestamp: number;
+}
+
+// TODO find better way to keep skip rules updated
+// Perhaps a websocket connection to the server which pushes skip rule changes?
+const SKIP_RULES_TTL = 60_000;
+let skipRulesCache: SkipRulesCache | null = null;
+
+async function getSkipPatterns(
+  serverURL: string,
+  customHeaders: { name: string; value: string }[],
+): Promise<RegExp[]> {
+  const now = Date.now();
+  if (skipRulesCache && now - skipRulesCache.timestamp < SKIP_RULES_TTL) {
+    return skipRulesCache.patterns;
+  }
+  try {
+    const u = serverURL.endsWith('/') ? serverURL : serverURL + '/';
+    const r = await fetchAPI(u + 'api/rules', { customHeaders });
+    if (!r.ok) return skipRulesCache?.patterns ?? [];
+    const data = await r.json();
+    const patterns: RegExp[] = ((data.skip as string[]) ?? [])
+      .map((s) => {
+        try {
+          return new RegExp(s);
+        } catch (_) {
+          return null;
+        }
+      })
+      .filter((p): p is RegExp => p !== null);
+    skipRulesCache = { patterns, timestamp: now };
+    return patterns;
+  } catch (_) {
+    return skipRulesCache?.patterns ?? [];
+  }
+}
+
+// --- Tab icon state ---
+
+async function updateTabIcon(tabId: number, url: string): Promise<void> {
+  if (
+    !url ||
+    url.startsWith('chrome://') ||
+    url.startsWith('about:') ||
+    url.startsWith('moz-extension://') ||
+    url.startsWith('chrome-extension://')
+  ) {
+    return;
+  }
+  const data = await chrome.storage.local.get([
+    'histerURL',
+    'histerToken',
+    'indexingEnabled',
+    'histerCustomHeaders',
+  ]);
+
+  if (data['indexingEnabled'] === false) {
+    await setGreyIcon(tabId);
+    return;
+  }
+
+  const serverURL: string = data['histerURL'] || '';
+  if (!serverURL) {
+    await setNormalIcon(tabId);
+    return;
+  }
+
+  const customHeaders: { name: string; value: string }[] = Array.isArray(
+    data['histerCustomHeaders'],
+  )
+    ? data['histerCustomHeaders']
+    : [];
+  if (data['histerToken']) {
+    customHeaders.push({ name: 'X-Access-Token', value: data['histerToken'] });
+  }
+
+  const patterns = await getSkipPatterns(serverURL, customHeaders);
+  if (patterns.some((re) => re.test(url))) {
+    await setGreyIcon(tabId);
+  } else {
+    await setNormalIcon(tabId);
+  }
+}
+
+// --- Tab listeners ---
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.url) await updateTabIcon(tabId, tab.url);
+  } catch (_) {}
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    await updateTabIcon(tabId, tab.url);
+  }
+});
+
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local') return;
+  if (!('indexingEnabled' in changes || 'histerURL' in changes)) return;
+  if ('histerURL' in changes) skipRulesCache = null;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id && tab.url) await updateTabIcon(tab.id, tab.url);
+  } catch (_) {}
+});
+
+// --- Message handler ---
 
 // TODO check source
 function cjsMsgHandler(request, sender, sendResponse) {
@@ -27,6 +191,18 @@ function cjsMsgHandler(request, sender, sendResponse) {
       // token is not required, this is just for backward compatibility
       if (data['histerToken']) {
         customHeaders.push({ name: 'X-Access-Token', value: data['histerToken'] });
+      }
+
+      if (request.action === 'checkSkipRule') {
+        if (!u) {
+          sendResponse({ isSkipped: false });
+          return;
+        }
+        const baseURL = u.endsWith('/') ? u : u + '/';
+        getSkipPatterns(baseURL, customHeaders).then((patterns) => {
+          sendResponse({ isSkipped: patterns.some((re) => re.test(request.url)) });
+        });
+        return true;
       }
 
       if (!u) {
@@ -45,8 +221,13 @@ function cjsMsgHandler(request, sender, sendResponse) {
         sendPageData(u + 'api/add', request.pageData, customHeaders)
           .then((r) => {
             if (r.status === 201) {
-              clearErrorBadge(sender.tab.id);
-            } else if (r.status != 406) {
+              clearBadge(sender.tab.id);
+              setNormalIcon(sender.tab.id);
+            } else if (r.status === 406) {
+              // URL matched a server-side skip rule; invalidate cache and grey out
+              skipRulesCache = null;
+              setGreyIcon(sender.tab.id);
+            } else {
               setErrorBadge(sender.tab.id);
             }
             sendResponse({ status: 'ok', status_code: r.status });
@@ -61,7 +242,7 @@ function cjsMsgHandler(request, sender, sendResponse) {
         sendResult(u + 'api/history', request.resultData, customHeaders)
           .then((r) => {
             if (r.status === 201) {
-              clearErrorBadge(sender.tab.id);
+              clearBadge(sender.tab.id);
             } else if (r.status != 406) {
               setErrorBadge(sender.tab.id);
             }

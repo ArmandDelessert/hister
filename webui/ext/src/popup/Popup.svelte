@@ -14,9 +14,10 @@
   let customHeaders: { name: string; value: string }[] = $state([]);
   let indexingEnabled = $state(true);
   let message = $state('');
-  let messageType: 'success' | 'error' = $state('success');
+  let messageType: 'success' | 'error' | 'info' = $state('success');
   let showSettings = $state(false);
-  let messageKey = $state(0); // used to reappear message every time it is updated
+  let isPageSkipped = $state(false);
+  let messageKey = $state(0); // to reappear message every time it is updated
 
   function setMessage(mType, msg) {
     message = msg;
@@ -26,6 +27,10 @@
 
   function setErrorMessage(msg) {
     setMessage('error', msg);
+  }
+
+  function setInfoMessage(msg) {
+    setMessage('info', msg);
   }
 
   function setSuccessMessage(msg) {
@@ -86,9 +91,23 @@
             setErrorMessage('Failed to send page data to server');
           }
         });
+        const tabURL = tabs[0].url;
+        if (tabURL) {
+          checkTabSkipRule(tabURL);
+        }
       });
     },
   );
+
+  async function checkTabSkipRule(tabURL: string) {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'checkSkipRule', url: tabURL });
+      if (response?.isSkipped) {
+        isPageSkipped = true;
+        setInfoMessage('This page is excluded from indexing by a skip rule');
+      }
+    } catch (_) {}
+  }
 
   function save(e: Event) {
     e.preventDefault();
@@ -263,15 +282,17 @@
     </div>
 
     <!-- Reindex section -->
-    <div class="border-brutal-border border-b-[3px] px-5 py-4">
-      <Button
-        variant="outline"
-        onclick={reindex}
-        class="border-brutal-border font-outfit hover:border-hister-indigo h-9 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
-      >
-        Reindex Page
-      </Button>
-    </div>
+    {#if !isPageSkipped}
+      <div class="border-brutal-border border-b-[3px] px-5 py-4">
+        <Button
+          variant="outline"
+          onclick={reindex}
+          class="border-brutal-border font-outfit hover:border-hister-indigo h-9 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
+        >
+          Reindex Page
+        </Button>
+      </div>
+    {/if}
 
     <!-- Authenticate section -->
     {#if isAuthenticated === false}
@@ -293,7 +314,9 @@
         transition:slide
         class="font-inter mx-5 my-4 border-l-[4px] px-4 py-3 text-sm {messageType === 'success'
           ? 'border-l-hister-teal bg-hister-teal/10 text-hister-teal'
-          : 'border-l-hister-rose bg-hister-rose/10 text-hister-rose'}"
+          : messageType === 'info'
+            ? 'border-l-hister-indigo/60 bg-hister-indigo/10 text-hister-indigo'
+            : 'border-l-hister-rose bg-hister-rose/10 text-hister-rose'}"
       >
         {message}
       </div>

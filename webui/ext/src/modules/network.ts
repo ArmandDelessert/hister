@@ -22,6 +22,38 @@ async function getServerCookies(): Promise<string> {
   });
 }
 
+async function fetchAPI(
+  url: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    customHeaders?: { name: string; value: string }[];
+  } = {},
+): Promise<Response> {
+  const cookieHeader = await getServerCookies();
+  const headers: Record<string, string> = {};
+
+  if (options.body !== undefined) {
+    headers['Content-type'] = 'application/json; charset=UTF-8';
+  }
+  if (cookieHeader) {
+    headers['Cookie'] = cookieHeader;
+  }
+  for (const h of options.customHeaders ?? []) {
+    if (h.name) headers[h.name] = h.value || '';
+  }
+
+  const fetchOptions: RequestInit = {
+    method: options.method ?? (options.body !== undefined ? 'POST' : 'GET'),
+    headers,
+  };
+  if (options.body !== undefined) {
+    fetchOptions.body = JSON.stringify(options.body);
+  }
+
+  return fetch(url, fetchOptions);
+}
+
 async function sendPageData(url, doc, customHeaders = []) {
   try {
     doc['favicon'] = await fetchFavicon(doc.faviconURL);
@@ -32,24 +64,7 @@ async function sendPageData(url, doc, customHeaders = []) {
 }
 
 async function sendResult(url, res, customHeaders = []) {
-  const cookieHeader = await getServerCookies();
-
-  const headers: Record<string, string> = {
-    'Content-type': 'application/json; charset=UTF-8',
-  };
-  if (cookieHeader) {
-    headers['Cookie'] = cookieHeader;
-  }
-  for (const h of customHeaders) {
-    if (h.name) {
-      headers[h.name] = h.value || '';
-    }
-  }
-  return fetch(url, {
-    method: 'POST',
-    body: JSON.stringify(res),
-    headers,
-  });
+  return fetchAPI(url, { body: res, customHeaders });
 }
 
-export { sendPageData, sendResult };
+export { fetchAPI, sendPageData, sendResult };

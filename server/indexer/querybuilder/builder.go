@@ -81,7 +81,7 @@ func getTokenQuery(t Token) (query.Query, bool) {
 		if v, ok := strings.CutPrefix(t.Value, "user_id:"); ok {
 			if uid, err := strconv.ParseUint(v, 10, 64); err == nil {
 				f := float64(uid)
-				q := bleve.NewNumericRangeInclusiveQuery(&f, &f, boolPtr(true), boolPtr(true))
+				q := bleve.NewNumericRangeInclusiveQuery(&f, &f, new(true), new(true))
 				q.SetField("user_id")
 				return q, negated
 			}
@@ -176,5 +176,3 @@ func normalizeFileURL(v string) string {
 	}
 	return "file://" + v
 }
-
-func boolPtr(b bool) *bool { return &b }

@@ -330,7 +330,7 @@ func (i *indexer) Total() uint64 {
 
 func (i *indexer) TotalByUser(userID uint) uint64 {
 	uid := float64(userID)
-	q := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, boolPtr(true), boolPtr(true))
+	q := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
 	q.SetField("user_id")
 	req := bleve.NewSearchRequest(q)
 	req.Size = 1
@@ -482,7 +482,7 @@ func DeleteByQuery(text string, userID *uint) (int, error) {
 	q := querybuilder.Build(text)
 	if userID != nil {
 		uid := float64(*userID)
-		userQ := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, boolPtr(true), boolPtr(true))
+		userQ := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
 		userQ.SetField("user_id")
 		q = bleve.NewConjunctionQuery(q, userQ)
 	}
@@ -596,8 +596,6 @@ func Iterate(fn func(*Document)) {
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func docFromHit(h *search.DocumentMatch) *Document {
 	d := &Document{}
 	if t, ok := h.Fragments["title"]; ok {
@@ -656,11 +654,11 @@ func (q *Query) create() query.Query {
 
 	if q.UserID > 0 {
 		uid := float64(q.UserID)
-		userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, boolPtr(true), boolPtr(true))
+		userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
 		userQuery.SetField("user_id")
 		// userid 0 is preserved for global results
 		zeroF := float64(0)
-		globalQuery := bleve.NewNumericRangeInclusiveQuery(&zeroF, &zeroF, boolPtr(true), boolPtr(true))
+		globalQuery := bleve.NewNumericRangeInclusiveQuery(&zeroF, &zeroF, new(true), new(true))
 		globalQuery.SetField("user_id")
 		userOrGlobal := bleve.NewDisjunctionQuery(userQuery, globalQuery)
 		sq = bleve.NewConjunctionQuery(sq, userOrGlobal)

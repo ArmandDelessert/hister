@@ -51,6 +51,7 @@ type App struct {
 	LogLevel            string `yaml:"log_level" mapstructure:"log_level"`
 	DebugSQL            bool   `yaml:"debug_sql" mapstructure:"debug_sql"`
 	OpenResultsOnNewTab bool   `yaml:"open_results_on_new_tab" mapstructure:"open_results_on_new_tab"`
+	RedirectOnNoResults bool   `yaml:"redirect_on_no_results" mapstructure:"redirect_on_no_results"`
 }
 
 type TUI struct {
@@ -309,6 +310,7 @@ func CreateDefaultConfig() *Config {
 			Directory:           getDefaultDataDir(),
 			LogLevel:            "info",
 			OpenResultsOnNewTab: false,
+			RedirectOnNoResults: true,
 		},
 		Server: Server{
 			Address:  "127.0.0.1:4433",

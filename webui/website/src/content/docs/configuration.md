@@ -63,15 +63,16 @@ sensitive_content_patterns:
 
 ## `app` Section
 
-| Key                       | Type   | Default                               | Description                                                                    |
-| ------------------------- | ------ | ------------------------------------- | ------------------------------------------------------------------------------ |
-| `directory`               | string | platform default                      | Directory where Hister stores its data (index, rules, secret key).             |
-| `search_url`              | string | `https://google.com/search?q={query}` | Fallback web search URL. Use `{query}` as the placeholder for the search term. |
-| `access_token`            | string | (none)                                | Optional access token for securing the API. See [Access Token](#access-token). |
-| `user_handling`           | bool   | `false`                               | Enable multi-user mode. See [User Handling](/docs/user-handling) for details.  |
-| `log_level`               | string | `info`                                | Log verbosity. One of: `debug`, `info`, `warn`, `error`.                       |
-| `debug_sql`               | bool   | `false`                               | Enable verbose SQL query logging.                                              |
-| `open_results_on_new_tab` | bool   | `false`                               | Open search results in a new browser tab instead of the current tab.           |
+| Key                       | Type   | Default                               | Description                                                                                                    |
+| ------------------------- | ------ | ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `directory`               | string | platform default                      | Directory where Hister stores its data (index, rules, secret key).                                             |
+| `search_url`              | string | `https://google.com/search?q={query}` | Fallback web search URL. Use `{query}` as the placeholder for the search term.                                 |
+| `access_token`            | string | (none)                                | Optional access token for securing the API. See [Access Token](#access-token).                                 |
+| `user_handling`           | bool   | `false`                               | Enable multi-user mode. See [User Handling](/docs/user-handling) for details.                                  |
+| `log_level`               | string | `info`                                | Log verbosity. One of: `debug`, `info`, `warn`, `error`.                                                       |
+| `debug_sql`               | bool   | `false`                               | Enable verbose SQL query logging.                                                                              |
+| `open_results_on_new_tab` | bool   | `false`                               | Open search results in a new browser tab instead of the current tab.                                           |
+| `redirect_on_no_results`  | bool   | `true`                                | Redirect to the configured `search_url` when a query returns no results. Disable to always stay within Hister. |
 
 ## `server` Section
 

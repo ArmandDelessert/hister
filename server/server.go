@@ -485,7 +485,7 @@ func serveSPA(c *webContext) {
 	}
 
 	// redirect to configured search engine if query string exists but we have no matching results
-	if q != "" {
+	if q != "" && c.Config.App.RedirectOnNoResults {
 		res, err := indexer.Search(c.Config, &indexer.Query{
 			Text:   c.effectiveRules().ResolveAliases(q),
 			UserID: c.UserID,

@@ -82,7 +82,7 @@
       },
       {
         icon: Download,
-        title: 'BROWSER IMPORT',
+        title: 'Browser Import',
         desc: 'Import existing Firefox or Chrome history with a single command.',
         bg: 'bg-hister-rose',
         textColor: 'text-white',
@@ -94,7 +94,7 @@
 
   const aliasCard = {
     icon: Terminal,
-    title: 'SEARCH ALIASES',
+    title: 'Search Aliases',
     desc: 'Create custom keyword shortcuts to simplify complex or frequently used queries.',
     bg: 'bg-hister-cyan',
     textColor: 'text-white',

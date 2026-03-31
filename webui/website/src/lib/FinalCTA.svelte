@@ -9,16 +9,16 @@
   <h2
     class="font-space max-w-[800px] text-center text-4xl leading-[0.95] font-black tracking-[-1px] text-white uppercase md:text-6xl lg:text-[64px]"
   >
-    Ready to own your search?
+    Preserve your data
   </h2>
 
   <p class="font-inter max-w-[600px] text-center text-lg leading-relaxed text-white/55">
-    Start indexing your browsing history today. Free, open-source, and completely private.
+    Free, open-source and completely private.
   </p>
 
   <nav class="flex flex-wrap items-center justify-center gap-4">
     <Button
-      href="/docs"
+      href="/docs/quickstart"
       class="bg-hister-coral hover:bg-hister-coral/90 font-space border-brutal-border h-auto rounded-none border-[3px] px-8 py-4 text-lg font-bold tracking-[1.5px] text-white uppercase no-underline shadow-[5px_5px_0_var(--hister-coral)] transition-all hover:translate-x-[3px] hover:translate-y-[3px] hover:shadow-[2px_2px_0_var(--hister-coral)] md:px-12"
     >
       Get started

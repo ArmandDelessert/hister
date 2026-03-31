@@ -12,9 +12,9 @@
     <figcaption class="flex items-center gap-4">
       <span class="bg-hister-cyan h-10 w-1.5" aria-hidden="true"></span>
       <h2
-        class="font-space text-3xl font-black tracking-[3px] text-[var(--text-primary)] md:text-5xl"
+        class="font-space text-3xl font-black tracking-[3px] text-[var(--text-primary)] uppercase md:text-5xl"
       >
-        WEB UI
+        Web UI
       </h2>
     </figcaption>
     <BrowserFrame>
@@ -32,9 +32,9 @@
     <figcaption class="flex items-center gap-4">
       <span class="bg-hister-lime h-10 w-1.5" aria-hidden="true"></span>
       <h2
-        class="font-space text-3xl font-black tracking-[3px] text-[var(--text-primary)] md:text-5xl"
+        class="font-space text-3xl font-black tracking-[3px] text-[var(--text-primary)] uppercase md:text-5xl"
       >
-        TERMINAL UI
+        Terminal UI
       </h2>
     </figcaption>
     <BrowserFrame

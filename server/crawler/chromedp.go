@@ -60,7 +60,7 @@ func newChromedpFetcher(cfg *config.CrawlerConfig) (*chromedpFetcher, error) {
 	}, nil
 }
 
-func (f *chromedpFetcher) fetchPage(ctx context.Context, rawURL string) (string, []string, error) {
+func (f *chromedpFetcher) fetchPage(ctx context.Context, rawURL string) (string, string, []string, error) {
 	taskCtx, taskCancel := chromedp.NewContext(f.allocCtx)
 	defer taskCancel()
 
@@ -99,10 +99,12 @@ func (f *chromedpFetcher) fetchPage(ctx context.Context, rawURL string) (string,
 
 	var htmlContent string
 	var linkHrefs []string
+	var finalURL string
 
 	actions = append(actions,
 		chromedp.Navigate(rawURL),
 		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.Location(&finalURL),
 		chromedp.OuterHTML("html", &htmlContent, chromedp.ByQuery),
 		chromedp.Evaluate(
 			`Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href'))`,
@@ -111,10 +113,13 @@ func (f *chromedpFetcher) fetchPage(ctx context.Context, rawURL string) (string,
 	)
 
 	if err := chromedp.Run(timeoutCtx, actions...); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
-	return htmlContent, linkHrefs, nil
+	if finalURL == "" {
+		finalURL = rawURL
+	}
+	return finalURL, htmlContent, linkHrefs, nil
 }
 
 func (f *chromedpFetcher) close() error {

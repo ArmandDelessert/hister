@@ -28,10 +28,11 @@ type Crawler interface {
 }
 
 // fetcher is the internal interface implemented by each scraping backend.
-// fetchPage downloads rawURL and returns its HTML content together with the
-// raw href values of all anchor tags found on the page.
+// fetchPage downloads rawURL and returns the final URL after any redirects,
+// its HTML content together with the raw href values of all anchor tags found
+// on the page.
 type fetcher interface {
-	fetchPage(ctx context.Context, rawURL string) (htmlContent string, links []string, err error)
+	fetchPage(ctx context.Context, rawURL string) (finalURL string, htmlContent string, links []string, err error)
 	close() error
 }
 
@@ -119,14 +120,25 @@ func (c *baseCrawler) bfsCrawl(ctx context.Context, startURL string, v *Validato
 			}
 		}
 
-		htmlContent, links, err := c.fetcher.fetchPage(ctx, cur.rawURL)
+		finalURL, htmlContent, links, err := c.fetcher.fetchPage(ctx, cur.rawURL)
 		if err != nil {
 			log.Warn().Err(err).Str("url", cur.rawURL).Msg("crawler: failed to fetch page")
 			continue
 		}
 
+		// If the server redirected to a different URL, mark it seen so it
+		// won't be queued again (e.g. /path/ -> /path). Use the final URL
+		// for the document and as the base for link resolution.
+		if finalURL != cur.rawURL {
+			seen[finalURL] = struct{}{}
+		}
+		finalParsed, err := url.Parse(finalURL)
+		if err != nil {
+			finalParsed = parsedURL
+		}
+
 		doc := &indexer.Document{
-			URL:  cur.rawURL,
+			URL:  finalURL,
 			HTML: htmlContent,
 		}
 
@@ -137,7 +149,7 @@ func (c *baseCrawler) bfsCrawl(ctx context.Context, startURL string, v *Validato
 		}
 
 		for _, link := range links {
-			abs, err := resolveURL(parsedURL, link)
+			abs, err := resolveURL(finalParsed, link)
 			if err != nil || abs == "" {
 				continue
 			}

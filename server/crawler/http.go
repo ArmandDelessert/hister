@@ -67,10 +67,10 @@ func newHTTPFetcher(cfg *config.CrawlerConfig) (*httpFetcher, error) {
 	}, nil
 }
 
-func (f *httpFetcher) fetchPage(ctx context.Context, rawURL string) (string, []string, error) {
+func (f *httpFetcher) fetchPage(ctx context.Context, rawURL string) (string, string, []string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	if f.userAgent != "" {
@@ -82,7 +82,7 @@ func (f *httpFetcher) fetchPage(ctx context.Context, rawURL string) (string, []s
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -91,21 +91,22 @@ func (f *httpFetcher) fetchPage(ctx context.Context, rawURL string) (string, []s
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+		return "", "", nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	ct := resp.Header.Get("Content-Type")
 	if !strings.Contains(ct, "html") {
-		return "", nil, fmt.Errorf("not an HTML response: %s", ct)
+		return "", "", nil, fmt.Errorf("not an HTML response: %s", ct)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	htmlContent := string(body)
-	return htmlContent, extractLinks(htmlContent), nil
+	finalURL := resp.Request.URL.String()
+	return finalURL, htmlContent, extractLinks(htmlContent), nil
 }
 
 func (f *httpFetcher) close() error { return nil }

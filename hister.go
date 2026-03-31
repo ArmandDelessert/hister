@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -513,7 +514,11 @@ var reindexCmd = &cobra.Command{
 		}
 		c := newClient(client.WithTimeout(0))
 		if err := c.Reindex(skipSensitive, cfg.Indexer.DetectLanguages); err != nil {
-			exit(1, "Reindex error: "+err.Error())
+			msg := "Reindex error: " + err.Error()
+			if isConnectionError(err) {
+				msg += "\n  Make sure the Hister server is running before executing reindex."
+			}
+			exit(1, msg)
 		}
 	},
 }
@@ -525,6 +530,11 @@ func exit(errno int, msg string) {
 		fmt.Println(msg)
 	}
 	os.Exit(errno)
+}
+
+func isConnectionError(err error) bool {
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
 }
 
 func init() {

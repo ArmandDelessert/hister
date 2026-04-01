@@ -834,7 +834,7 @@
             </div>
           </div>
 
-          {#if lastResults?.query && lastResults.query.text !== query}
+          {#if lastResults?.query && lastResults.query.text.length > query.length}
             <p class="font-inter text-text-brand-muted text-sm">
               Expanded query: <code
                 class="font-fira bg-muted-surface text-primary px-1.5 py-0.5 text-xs"

@@ -1091,9 +1091,7 @@
                         <MoreVertical class="size-4" />
                       </Button>
                     </div>
-                    <div
-                      class="items-left flex flex-col gap-0 md:flex-row md:items-center md:gap-2"
-                    >
+                    <div class="flex items-center gap-2">
                       <span
                         class="font-fira text-hister-teal truncate overflow-hidden text-xs text-ellipsis whitespace-nowrap md:text-sm"
                         >{r.url}</span

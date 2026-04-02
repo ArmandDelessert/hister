@@ -92,6 +92,7 @@
   let panelContent = $state('');
   let panelLoading = $state(false);
   let isDesktop = $state(false);
+  let panelOpen = $state(true);
 
   let showHelp = $state(false);
   let resultsShown = $state(false);
@@ -294,6 +295,7 @@
     e.preventDefault();
     if (e.stopPropagation) e.stopPropagation();
     if (isDesktop) {
+      if (!panelOpen) return;
       await loadPanel(url, title);
       return;
     }
@@ -614,7 +616,7 @@
   $effect(() => {
     const idx = highlightIdx;
     const results = lastResults;
-    if (!isDesktop || !results) return;
+    if (!isDesktop || !results || !panelOpen) return;
     const links = document.querySelectorAll<HTMLAnchorElement>('[data-result] [data-result-link]');
     const link = links[idx];
     if (!link) return;
@@ -654,6 +656,8 @@
     })();
     const mq = window.matchMedia('(min-width: 1280px)');
     isDesktop = mq.matches;
+    const stored = localStorage.getItem('hister-panel-open');
+    if (stored !== null) panelOpen = stored !== 'false';
     const mqHandler = (e: MediaQueryListEvent) => {
       isDesktop = e.matches;
     };
@@ -780,6 +784,20 @@
                 {lastResults?.total || totalResults} results{query ? ` for "${query}"` : ''}
               </span>
               <div class="flex items-center gap-2">
+                {#if isDesktop && !panelOpen}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="font-inter text-text-brand-muted hover:text-hister-indigo gap-1 text-xs"
+                    onclick={() => {
+                      panelOpen = true;
+                      localStorage.setItem('hister-panel-open', 'true');
+                    }}
+                  >
+                    <Eye class="size-3" />
+                    Reader
+                  </Button>
+                {/if}
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger>
                     {#snippet child({ props })}
@@ -1176,21 +1194,49 @@
       </ScrollArea>
 
       <!-- Desktop-only readability panel (right column) -->
-      {#if lastResults}
+      {#if lastResults && panelOpen}
         <div
           class="border-border-brand bg-card-surface hidden w-[45%] shrink-0 flex-col overflow-hidden border-l-[3px] md:flex"
         >
           {#if panelLoading}
+            <div
+              class="border-border-brand-muted flex shrink-0 items-center justify-end border-b-[2px] px-2 py-1"
+            >
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-text-brand-muted hover:text-text-brand"
+                onclick={() => {
+                  panelOpen = false;
+                  localStorage.setItem('hister-panel-open', 'false');
+                }}
+              >
+                <X class="size-4" />
+              </Button>
+            </div>
             <div class="flex flex-1 items-center justify-center">
               <span class="font-inter text-text-brand-muted text-sm">Loading…</span>
             </div>
           {:else if panelContent}
-            <div class="border-border-brand-muted shrink-0 border-b-[2px] px-4 py-2.5">
+            <div
+              class="border-border-brand-muted flex shrink-0 items-start gap-2 border-b-[2px] px-4 py-2.5"
+            >
               <h2
-                class="font-outfit text-text-brand line-clamp-2 text-lg leading-snug font-bold md:text-3xl"
+                class="font-outfit text-text-brand line-clamp-2 flex-1 text-lg leading-snug font-bold md:text-3xl"
               >
                 {panelTitle}
               </h2>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-text-brand-muted hover:text-text-brand mt-1 shrink-0"
+                onclick={() => {
+                  panelOpen = false;
+                  localStorage.setItem('hister-panel-open', 'false');
+                }}
+              >
+                <X class="size-4" />
+              </Button>
             </div>
             <ScrollArea class="min-h-0 flex-1">
               <div class="font-inter text-text-brand-secondary prose max-w-none p-4 text-sm">
@@ -1198,6 +1244,21 @@
               </div>
             </ScrollArea>
           {:else}
+            <div
+              class="border-border-brand-muted flex shrink-0 items-center justify-end border-b-[2px] px-2 py-1"
+            >
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-text-brand-muted hover:text-text-brand"
+                onclick={() => {
+                  panelOpen = false;
+                  localStorage.setItem('hister-panel-open', 'false');
+                }}
+              >
+                <X class="size-4" />
+              </Button>
+            </div>
             <div class="flex flex-1 flex-col items-center justify-center gap-2 opacity-40">
               <Eye class="size-6" />
               <p class="font-inter text-text-brand-muted text-sm">Focus a result to read it</p>

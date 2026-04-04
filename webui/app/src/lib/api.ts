@@ -11,19 +11,19 @@ export interface AppConfig {
 let _config: AppConfig | null = null;
 let _csrf: string = '';
 
-export function getCsrf(): string {
+function getCsrf(): string {
   return _csrf;
 }
 
-export function setCsrf(tok: string): void {
+function setCsrf(tok: string): void {
   _csrf = tok;
 }
 
-export function getAuthMode(): string {
+function getAuthMode(): string {
   return _config?.authMode ?? 'none';
 }
 
-export function getUsername(): string {
+function getUsername(): string {
   return _config?.username ?? '';
 }
 

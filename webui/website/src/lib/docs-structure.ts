@@ -1,4 +1,4 @@
-export interface DocsCategory {
+interface DocsCategory {
   name: string;
   slugs: string[];
   color: string;

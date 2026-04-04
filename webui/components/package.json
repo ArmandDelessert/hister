@@ -9,7 +9,6 @@
     "./colors.css": "./src/colors.css"
   },
   "devDependencies": {
-    "@internationalized/date": "^3.12.0",
     "@lucide/svelte": "^1.7.0",
     "bits-ui": "^2.16.4",
     "clsx": "^2.1.1",

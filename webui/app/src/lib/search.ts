@@ -1,9 +1,9 @@
-export interface HotkeyConfig {
+interface HotkeyConfig {
   show_hotkeys?: boolean;
   [key: string]: string | boolean | undefined;
 }
 
-export interface SearchConfig {
+interface SearchConfig {
   wsUrl: string;
   csrf: string;
   searchUrl: string;
@@ -11,7 +11,7 @@ export interface SearchConfig {
   hotkeys: HotkeyConfig;
 }
 
-export interface SearchMessage {
+interface SearchMessage {
   text: string;
   sort?: string;
   date_from?: number;
@@ -19,7 +19,7 @@ export interface SearchMessage {
   highlight?: string;
 }
 
-export interface SearchResult {
+interface SearchResult {
   url: string;
   title: string;
   domain: string;
@@ -44,7 +44,7 @@ export function escapeHTML(s: string): string {
   return pre.innerHTML;
 }
 
-export function escapeXML(s: string): string {
+function escapeXML(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -53,7 +53,7 @@ export function escapeXML(s: string): string {
     .replace(/'/g, '&apos;');
 }
 
-export function escape(s: string): string {
+function escape(s: string): string {
   return encodeURIComponent(s);
 }
 
@@ -90,7 +90,7 @@ export function formatRelativeTime(unixTimestamp: number): string {
   return yearsAgo === 1 ? '1 year ago' : `${yearsAgo} years ago`;
 }
 
-export function downloadFile(content: string, filename: string, mimeType: string): void {
+function downloadFile(content: string, filename: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -141,7 +141,7 @@ export function scrollTo(el: Element): void {
   el.scrollIntoView({ block: 'nearest' });
 }
 
-export interface WebSocketManagerCallbacks {
+interface WebSocketManagerCallbacks {
   onOpen: () => void;
   onMessage: (event: MessageEvent) => void;
   onClose: () => void;
@@ -237,13 +237,13 @@ export class WebSocketManager {
   }
 }
 
-export interface APIRequestParams {
+interface APIRequestParams {
   method?: string;
   headers?: Record<string, string>;
   body?: string | URLSearchParams;
 }
 
-export interface APIRequestOptions {
+interface APIRequestOptions {
   url: string;
   params?: APIRequestParams;
   callback?: (response: Response) => void;
@@ -251,7 +251,7 @@ export interface APIRequestOptions {
   csrfCallback?: (token: string) => void;
 }
 
-export function apiRequest(options: APIRequestOptions): void {
+function apiRequest(options: APIRequestOptions): void {
   const headers = options.params?.headers || {};
   if (options.csrfToken) {
     (headers as Record<string, string>)['X-CSRF-Token'] = options.csrfToken;
@@ -316,7 +316,7 @@ export class KeyHandler {
   }
 }
 
-export interface QueryParams {
+interface QueryParams {
   text: string;
   sort?: string;
   date_from?: number;

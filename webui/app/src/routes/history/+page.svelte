@@ -86,9 +86,23 @@
     return result;
   });
 
-  const allGroups = $derived.by(() => {
+  function groupByDate(sourceItems: HistoryItem[]): { key: string; label: string; items: HistoryItem[] }[] {
     const g: { key: string; label: string; items: HistoryItem[] }[] = [];
     const seen = new Map<string, number>();
+    for (const item of sourceItems) {
+      const key = getDateKey(item.added);
+      const label = formatDateLabel(item.added);
+      if (seen.has(key)) {
+        g[seen.get(key)!].items.push(item);
+      } else {
+        seen.set(key, g.length);
+        g.push({ key, label, items: [item] });
+      }
+    }
+    return g;
+  }
+
+  const allGroups = $derived.by(() => {
     let baseItems = items;
     if (filter) {
       const f = filter.toLowerCase();
@@ -96,34 +110,10 @@
         (item) => item.title.toLowerCase().includes(f) || item.url.toLowerCase().includes(f),
       );
     }
-    for (const item of baseItems) {
-      const key = getDateKey(item.added);
-      const label = formatDateLabel(item.added);
-      if (seen.has(key)) {
-        g[seen.get(key)!].items.push(item);
-      } else {
-        seen.set(key, g.length);
-        g.push({ key, label, items: [item] });
-      }
-    }
-    return g;
+    return groupByDate(baseItems);
   });
 
-  const groups = $derived.by(() => {
-    const g: { key: string; label: string; items: HistoryItem[] }[] = [];
-    const seen = new Map<string, number>();
-    for (const item of filteredItems) {
-      const key = getDateKey(item.added);
-      const label = formatDateLabel(item.added);
-      if (seen.has(key)) {
-        g[seen.get(key)!].items.push(item);
-      } else {
-        seen.set(key, g.length);
-        g.push({ key, label, items: [item] });
-      }
-    }
-    return g;
-  });
+  const groups = $derived.by(() => groupByDate(filteredItems));
 
   function getGroupColor(idx: number): string {
     return groupColors[idx % groupColors.length];

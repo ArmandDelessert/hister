@@ -1,0 +1,42 @@
+{
+  "entry": [
+    "webui/ext/src/background/background.ts",
+    "webui/ext/src/content/content.ts",
+    "webui/ext/src/popup/popup.ts",
+    "webui/ext/src/options/options.ts",
+    "webui/ext/svelte.config.js"
+  ],
+  "ignorePatterns": ["**/*.css"],
+  "ignoreDependencies": [
+    "@fontsource/fira-code",
+    "@fontsource/inter",
+    "@fontsource/outfit",
+    "@fontsource/space-grotesk",
+    "@tailwindcss/typography"
+  ],
+  "rules": {
+    "duplicate-exports": "off",
+    "unresolved-imports": "warn",
+    "unused-class-members": "off",
+    "circular-dependencies": "off"
+  },
+  "duplicates": {
+    "mode": "weak",
+    "minLines": 20,
+    "threshold": 3
+  },
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 25
+  },
+  "overrides": [
+    {
+      "files": ["webui/components/src/lib/components/ui/**"],
+      "rules": {
+        "unused-exports": "off",
+        "unused-types": "off",
+        "circular-dependencies": "off"
+      }
+    }
+  ]
+}

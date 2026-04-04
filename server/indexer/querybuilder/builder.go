@@ -98,6 +98,25 @@ func getTokenQuery(t Token) (query.Query, bool) {
 				negated = true
 				v = v[1:]
 			}
+			// Handle parenthesized alternation groups like field:(a|b|c)
+			if strings.HasPrefix(v, "(") && strings.HasSuffix(v, ")") {
+				inner := v[1 : len(v)-1]
+				parts, err := parseAlternationParts(inner)
+				if err == nil {
+					if len(parts) > 1 {
+						qs := []query.Query{}
+						for _, p := range parts {
+							partToken := Token{Type: TokenWord, Value: field + ":" + p.Value}
+							q, _ := getTokenQuery(partToken)
+							qs = append(qs, q)
+						}
+						return bleve.NewDisjunctionQuery(qs...), negated
+					}
+					if len(parts) == 1 {
+						v = parts[0].Value
+					}
+				}
+			}
 			if strings.Contains(v, "*") {
 				q := bleve.NewWildcardQuery(strings.ToLower(v))
 				q.SetField(field)

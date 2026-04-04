@@ -314,6 +314,97 @@ func Test_build_alternation(t *testing.T) {
 	asDisjunction(t, dq.Disjuncts[1])
 }
 
+// Test for issue #274: field:(a|b) alternation syntax
+func Test_build_domain_alternation(t *testing.T) {
+	bq := buildBoolQ(t, "domain:(hister.org|docs.hister.org)")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	dq := asDisjunction(t, clauses[0])
+	if len(dq.Disjuncts) != 2 {
+		t.Fatalf("expected 2 disjuncts, got %d", len(dq.Disjuncts))
+	}
+	tq0 := asTerm(t, dq.Disjuncts[0])
+	if tq0.Term != "hister.org" {
+		t.Fatalf("expected term %q, got %q", "hister.org", tq0.Term)
+	}
+	if tq0.FieldVal != "domain" {
+		t.Fatalf("expected field %q, got %q", "domain", tq0.FieldVal)
+	}
+	tq1 := asTerm(t, dq.Disjuncts[1])
+	if tq1.Term != "docs.hister.org" {
+		t.Fatalf("expected term %q, got %q", "docs.hister.org", tq1.Term)
+	}
+	if tq1.FieldVal != "domain" {
+		t.Fatalf("expected field %q, got %q", "domain", tq1.FieldVal)
+	}
+}
+
+func Test_build_domain_alternation_with_wildcard(t *testing.T) {
+	bq := buildBoolQ(t, "domain:(hister.org|*.hister.org)")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	dq := asDisjunction(t, clauses[0])
+	if len(dq.Disjuncts) != 2 {
+		t.Fatalf("expected 2 disjuncts, got %d", len(dq.Disjuncts))
+	}
+	// First part has no wildcard: TermQuery
+	tq := asTerm(t, dq.Disjuncts[0])
+	if tq.Term != "hister.org" {
+		t.Fatalf("expected term %q, got %q", "hister.org", tq.Term)
+	}
+	// Second part has wildcard: WildcardQuery
+	wq := asWildcard(t, dq.Disjuncts[1])
+	if wq.Wildcard != "*.hister.org" {
+		t.Fatalf("expected wildcard %q, got %q", "*.hister.org", wq.Wildcard)
+	}
+	if wq.FieldVal != "domain" {
+		t.Fatalf("expected field %q, got %q", "domain", wq.FieldVal)
+	}
+}
+
+func Test_build_domain_alternation_single_part(t *testing.T) {
+	// A single-part group should be equivalent to a plain domain query.
+	bq := buildBoolQ(t, "domain:(hister.org)")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	tq := asTerm(t, clauses[0])
+	if tq.Term != "hister.org" {
+		t.Fatalf("expected term %q, got %q", "hister.org", tq.Term)
+	}
+	if tq.FieldVal != "domain" {
+		t.Fatalf("expected field %q, got %q", "domain", tq.FieldVal)
+	}
+}
+
+func Test_build_title_alternation(t *testing.T) {
+	bq := buildBoolQ(t, "title:(hello|world)")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	dq := asDisjunction(t, clauses[0])
+	if len(dq.Disjuncts) != 2 {
+		t.Fatalf("expected 2 disjuncts, got %d", len(dq.Disjuncts))
+	}
+	mq0 := asMatch(t, dq.Disjuncts[0])
+	if mq0.Match != "hello" {
+		t.Fatalf("expected match %q, got %q", "hello", mq0.Match)
+	}
+	if mq0.FieldVal != "title" {
+		t.Fatalf("expected field %q, got %q", "title", mq0.FieldVal)
+	}
+	mq1 := asMatch(t, dq.Disjuncts[1])
+	if mq1.Match != "world" {
+		t.Fatalf("expected match %q, got %q", "world", mq1.Match)
+	}
+}
+
 func Test_build_multiple_words(t *testing.T) {
 	bq := buildBoolQ(t, "foo bar")
 	clauses := mustClauses(t, bq)

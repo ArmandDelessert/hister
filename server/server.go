@@ -25,9 +25,9 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer"
-	"github.com/asciimoo/hister/server/indexer/types"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/static"
+	"github.com/asciimoo/hister/server/types"
 
 	"github.com/gorilla/sessions"
 	"github.com/gorilla/websocket"

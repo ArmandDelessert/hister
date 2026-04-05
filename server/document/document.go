@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/asciimoo/hister/server/indexer/types"
+	"github.com/asciimoo/hister/server/types"
 
 	"github.com/rs/zerolog/log"
 )

@@ -90,6 +90,7 @@
   let panelUrl = $state('');
   let panelTitle = $state('');
   let panelContent = $state('');
+  let panelAdded = $state<number | null>(null);
   let panelLoading = $state(false);
   let isDesktop = $state(false);
   let panelOpen = $state(true);
@@ -273,6 +274,7 @@
   async function loadPanel(url: string, title: string) {
     panelUrl = url;
     panelTitle = title;
+    panelAdded = null;
     panelLoading = true;
     panelContent = '';
     try {
@@ -282,6 +284,7 @@
       } else {
         const data = await resp.json();
         panelTitle = data.title || title;
+        panelAdded = data.added ?? null;
         panelContent = data.content || '<p>No content available</p>';
       }
     } catch (err) {
@@ -1222,11 +1225,19 @@
             <div
               class="border-border-brand-muted flex shrink-0 items-start gap-2 border-b-[2px] px-4 py-2.5"
             >
-              <h2
-                class="font-outfit text-text-brand line-clamp-2 flex-1 text-lg leading-snug font-bold md:text-3xl"
-              >
-                {panelTitle}
-              </h2>
+              <div class="flex flex-1 flex-col gap-0.5">
+                <h2
+                  class="font-outfit text-text-brand line-clamp-2 text-lg leading-snug font-bold md:text-3xl"
+                >
+                  {panelTitle}
+                </h2>
+                {#if panelAdded}
+                  <span
+                    class="font-inter text-text-brand-muted text-xs"
+                    title={formatTimestamp(panelAdded)}>{formatTimestamp(panelAdded)}</span
+                  >
+                {/if}
+              </div>
               <Button
                 variant="ghost"
                 size="icon-sm"

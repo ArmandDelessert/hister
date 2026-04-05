@@ -929,10 +929,11 @@ func servePreview(c *webContext) {
 		serve500(c)
 		return
 	}
-	c.JSON(map[string]string{
+	c.JSON(map[string]any{
 		"title":    doc.Title,
 		"content":  resp.Content,
 		"template": resp.Template,
+		"added":    doc.Added,
 	})
 }
 

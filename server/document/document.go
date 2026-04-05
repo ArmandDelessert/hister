@@ -63,10 +63,6 @@ func SetSensitiveContentPattern(re *regexp.Regexp) {
 	sensitiveContentRe = re
 }
 
-func (d *Document) extractHTML() error {
-	return Extract(d)
-}
-
 func (d *Document) DownloadFavicon(userAgent string) error {
 	if d.faviconURL == "" {
 		d.faviconURL = fullURL(d.URL, "/favicon.ico")
@@ -106,7 +102,7 @@ func (d *Document) DownloadFavicon(userAgent string) error {
 	return nil
 }
 
-func (d *Document) Process(ld LanguageDetector) error {
+func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error) error {
 	if d.processed {
 		return nil
 	}
@@ -149,7 +145,7 @@ func (d *Document) Process(ld LanguageDetector) error {
 	}
 	d.Type = types.Web
 	d.Domain = pu.Host
-	if err := d.extractHTML(); err != nil {
+	if err := extractFn(d); err != nil {
 		return err
 	}
 
@@ -204,6 +200,11 @@ func (d *Document) SetSkipSensitiveCheck(v bool) {
 // IsProcessed reports whether the document has already been processed.
 func (d *Document) IsProcessed() bool {
 	return d.processed
+}
+
+// SetFaviconURL sets the favicon URL discovered during extraction.
+func (d *Document) SetFaviconURL(u string) {
+	d.faviconURL = u
 }
 
 func (d *Document) ID() string {

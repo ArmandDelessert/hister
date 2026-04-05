@@ -16,6 +16,7 @@ import (
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer/querybuilder"
 	"github.com/asciimoo/hister/server/indexer/types"
 	"github.com/asciimoo/hister/server/model"
@@ -78,10 +79,10 @@ type MultiBatch struct {
 }
 
 var (
-	i          *indexer
-	allFields  []string = []string{"url", "title", "text", "favicon", "html", "domain", "added", "type", "user_id"}
-	ErrEmptyFilter      = errors.New("delete query must not be empty")
-	bleveConfig         map[string]any = map[string]any{
+	i              *indexer
+	allFields      []string       = []string{"url", "title", "text", "favicon", "html", "domain", "added", "type", "user_id"}
+	ErrEmptyFilter                = errors.New("delete query must not be empty")
+	bleveConfig    map[string]any = map[string]any{
 		"bolt_timeout": "2s",
 		// https://github.com/blevesearch/bleve/blob/master/docs/persister.md
 		"scorchPersisterOptions": map[string]any{
@@ -235,11 +236,11 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 			log.Debug().Str("URL", d.URL).Msg("Indexing")
 			d.SetSkipSensitiveCheck(skipSensitiveChecks)
 			origDate := d.Added
-			if err := d.Process(tmpIdx.langDetector); err != nil {
+			if err := d.Process(tmpIdx.langDetector, extractor.Extract); err != nil {
 				if errors.Is(err, document.ErrSensitiveContent) {
 					log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, sensitive content")
 					continue
-				} else if errors.Is(err, document.ErrNoExtractor) {
+				} else if errors.Is(err, extractor.ErrNoExtractor) {
 					log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't extract content")
 					continue
 				} else if errors.Is(err, document.ErrReadFile) {
@@ -342,7 +343,7 @@ func (i *indexer) TotalByUser(userID uint) uint64 {
 
 func (i *indexer) AddDocument(d *document.Document) error {
 	if !d.IsProcessed() {
-		if err := d.Process(i.langDetector); err != nil {
+		if err := d.Process(i.langDetector, extractor.Extract); err != nil {
 			return err
 		}
 	}
@@ -442,7 +443,7 @@ func (b *MultiBatch) getOrCreateBatch(name string, idx bleve.Index) *bleve.Batch
 
 func (b *MultiBatch) Add(d *document.Document) error {
 	if !d.IsProcessed() {
-		if err := d.Process(i.langDetector); err != nil {
+		if err := d.Process(i.langDetector, extractor.Extract); err != nil {
 			return err
 		}
 	}

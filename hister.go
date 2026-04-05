@@ -26,6 +26,7 @@ import (
 	"github.com/asciimoo/hister/server"
 	"github.com/asciimoo/hister/server/crawler"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/ui"
@@ -911,7 +912,7 @@ func indexURL(u string, clientOpts ...client.Option) error {
 		URL:  u,
 		HTML: buf.String(),
 	}
-	if err := d.Process(nil); err != nil {
+	if err := d.Process(nil, extractor.Extract); err != nil {
 		return errors.New(`failed to process document: ` + err.Error())
 	}
 	if d.Favicon == "" {
@@ -943,7 +944,7 @@ func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, fo
 				continue
 			}
 		}
-		if err := doc.Process(nil); err != nil {
+		if err := doc.Process(nil, extractor.Extract); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to process crawled document")
 			continue
 		}

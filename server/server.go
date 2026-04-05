@@ -1169,8 +1169,8 @@ type batchOp struct {
 }
 
 type batchOpResult struct {
-	Status   int               `json:"status"`
-	Error    string            `json:"error,omitempty"`
+	Status   int                `json:"status"`
+	Error    string             `json:"error,omitempty"`
 	Document *document.Document `json:"document,omitempty"`
 }
 

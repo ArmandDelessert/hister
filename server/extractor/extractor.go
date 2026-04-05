@@ -1,4 +1,5 @@
-package document
+// Package extractor provides HTML content extraction for documents.
+package extractor
 
 import (
 	"bytes"
@@ -10,28 +11,28 @@ import (
 	readability "codeberg.org/readeck/go-readability/v2"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/net/html"
+
+	"github.com/asciimoo/hister/server/document"
 )
 
 // Extractor extracts content from a Document.
 type Extractor interface {
 	Name() string
-	Match(*Document) bool
-	Extract(*Document) error
-}
-
-var extractors []Extractor = []Extractor{
-	&readabilityExtractor{},
-	&defaultExtractor{},
+	Match(*document.Document) bool
+	Extract(*document.Document) error
 }
 
 // ErrNoExtractor is returned when no extractor can handle the document.
 var ErrNoExtractor = errors.New("no extractor found")
 
-type defaultExtractor struct{}
+var extractors = []Extractor{
+	&readabilityExtractor{},
+	&defaultExtractor{},
+}
 
-type readabilityExtractor struct{}
-
-func Extract(d *Document) error {
+// Extract tries each registered extractor in order and returns the first
+// successful result. Returns ErrNoExtractor if none succeed.
+func Extract(d *document.Document) error {
 	for _, e := range extractors {
 		if e.Match(d) {
 			if err := e.Extract(d); err != nil {
@@ -44,15 +45,19 @@ func Extract(d *Document) error {
 	return ErrNoExtractor
 }
 
+type defaultExtractor struct{}
+
+type readabilityExtractor struct{}
+
 func (e *defaultExtractor) Name() string {
 	return "Default"
 }
 
-func (e *defaultExtractor) Match(_ *Document) bool {
+func (e *defaultExtractor) Match(_ *document.Document) bool {
 	return true
 }
 
-func (e *defaultExtractor) Extract(d *Document) error {
+func (e *defaultExtractor) Extract(d *document.Document) error {
 	d.Title = ""
 	r := bytes.NewReader([]byte(d.HTML))
 	doc := html.NewTokenizer(r)
@@ -107,11 +112,11 @@ func (e *readabilityExtractor) Name() string {
 	return "Readability"
 }
 
-func (e *readabilityExtractor) Match(_ *Document) bool {
+func (e *readabilityExtractor) Match(_ *document.Document) bool {
 	return true
 }
 
-func (e *readabilityExtractor) Extract(d *Document) error {
+func (e *readabilityExtractor) Extract(d *document.Document) error {
 	r := bytes.NewReader([]byte(d.HTML))
 
 	u, err := url.Parse(d.URL)
@@ -128,6 +133,6 @@ func (e *readabilityExtractor) Extract(d *Document) error {
 	}
 	d.Text = buf.String()
 	d.Title = a.Title()
-	d.faviconURL = a.Favicon()
+	d.SetFaviconURL(a.Favicon())
 	return nil
 }

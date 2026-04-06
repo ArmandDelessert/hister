@@ -13,8 +13,8 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/sessions v1.4.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/mattn/go-runewidth v0.0.21
-	github.com/mattn/go-sqlite3 v1.14.38
+	github.com/mattn/go-runewidth v0.0.22
+	github.com/mattn/go-sqlite3 v1.14.40
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/muesli/termenv v0.16.0
 	github.com/pemistahl/lingua-go v1.4.0

@@ -759,6 +759,7 @@
       <Input
         bind:ref={inputEl}
         bind:value={query}
+        type="search"
         placeholder="Search..."
         class="font-inter text-text-brand placeholder:text-text-brand-muted h-full flex-1 border-0 bg-transparent p-0 text-lg font-medium shadow-none focus-visible:ring-0 md:text-2xl"
       />
@@ -1310,6 +1311,7 @@
         <Input
           bind:ref={inputEl}
           bind:value={query}
+          type="search"
           placeholder="Search ..."
           class="font-inter text-text-brand placeholder:text-text-brand-muted h-full min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 md:text-lg"
         />

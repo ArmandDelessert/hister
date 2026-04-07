@@ -726,11 +726,15 @@ func initDB() {
 	log.Debug().Msg("Database initialization complete")
 }
 
-func initIndex() {
-	initDB()
+func initExtractor() {
 	if err := extractor.Init(cfg.Extractors); err != nil {
 		exit(1, "Extractor initialization error: "+err.Error())
 	}
+}
+
+func initIndex() {
+	initDB()
+	initExtractor()
 	if err := indexer.Init(cfg); err != nil {
 		exit(1, "Indexer initialization error: "+err.Error())
 	}

@@ -76,10 +76,10 @@ func (d *Document) DownloadFavicon(userAgent string) error {
 		Timeout: 10 * time.Second,
 	}
 	req, err := http.NewRequest("GET", d.faviconURL, nil)
-	req.Header.Set("User-Agent", userAgent)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := cli.Do(req)
 	if err != nil {
 		return err

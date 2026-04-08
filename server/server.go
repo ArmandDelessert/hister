@@ -588,6 +588,9 @@ func serveConfig(c *webContext) {
 		Authenticated       bool              `json:"authenticated"`
 		Username            string            `json:"username,omitempty"`
 		UserID              uint              `json:"userId,omitempty"`
+		SemanticEnabled     bool              `json:"semanticEnabled"`
+		SemanticWeight      float64           `json:"semanticWeight,omitempty"`
+		SimilarityThreshold float64           `json:"similarityThreshold,omitempty"`
 	}
 	authMode := "none"
 	authenticated := true
@@ -624,6 +627,9 @@ func serveConfig(c *webContext) {
 		Authenticated:       authenticated,
 		Username:            c.Username,
 		UserID:              c.UserID,
+		SemanticEnabled:     indexer.SemanticSearchEnabled(),
+		SemanticWeight:      c.Config.SemanticSearch.SemanticWeight,
+		SimilarityThreshold: c.Config.SemanticSearch.SimilarityThreshold,
 	})
 }
 
@@ -657,16 +663,25 @@ func serveSearch(c *webContext) {
 			}
 		}
 	}
-	if pk := urlParams.Get("page_key"); pk != "" {
-		query.PageKey = pk
-	}
-	if s := urlParams.Get("sort"); s != "" {
-		query.Sort = s
-	}
-	if urlParams.Get("include_html") == "1" {
-		query.IncludeHTML = true
-	}
 	if query.Text != "" {
+		if urlParams.Get("include_html") == "1" {
+			query.IncludeHTML = true
+		}
+		if pk := c.Request.URL.Query().Get("page_key"); pk != "" {
+			query.PageKey = pk
+		}
+		if s := c.Request.URL.Query().Get("sort"); s != "" {
+			query.Sort = s
+		}
+
+		if v := c.Request.URL.Query().Get("semantic"); v != "" {
+			query.SemanticEnabled = v == "1" || v == "true"
+		}
+		if v := c.Request.URL.Query().Get("semantic_threshold"); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				query.SemanticThreshold = f
+			}
+		}
 		r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
 		if err != nil {
 			fmt.Println(err)
@@ -705,6 +720,11 @@ func serveSearch(c *webContext) {
 		if err != nil {
 			log.Error().Err(err).Msg("failed to parse query")
 			continue
+		}
+		// Semantic search is only available when the server has it enabled;
+		// otherwise honour the client's per-request flag.
+		if !c.Config.SemanticSearch.Enable {
+			query.SemanticEnabled = false
 		}
 		res, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
 		if err != nil {

@@ -17,6 +17,8 @@ interface SearchMessage {
   date_from?: number;
   date_to?: number;
   highlight?: string;
+  semantic_enabled?: boolean;
+  semantic_threshold?: number;
 }
 
 interface SearchResult {
@@ -29,6 +31,12 @@ interface SearchResult {
   added?: number;
 }
 
+export interface SemanticHit {
+  doc_id: string;
+  similarity: number;
+  document?: SearchResult;
+}
+
 export interface SearchResults {
   documents?: SearchResult[];
   history?: SearchResult[];
@@ -36,6 +44,8 @@ export interface SearchResults {
   search_duration?: string;
   query?: { text: string };
   query_suggestion?: string;
+  semantic_hits?: SemanticHit[];
+  semantic_enabled?: boolean;
 }
 
 export function escapeHTML(s: string): string {
@@ -322,6 +332,8 @@ interface QueryParams {
   date_from?: number;
   date_to?: number;
   highlight?: string;
+  semantic_enabled?: boolean;
+  semantic_threshold?: number;
 }
 
 export function buildSearchQuery(
@@ -329,6 +341,7 @@ export function buildSearchQuery(
   sort?: string,
   dateFrom?: string,
   dateTo?: string,
+  semantic?: { enabled: boolean; threshold: number },
 ): QueryParams {
   return {
     text,
@@ -338,6 +351,7 @@ export function buildSearchQuery(
       date_from: Math.floor(new Date(dateFrom).getTime() / 1000),
     }),
     ...(dateTo && { date_to: Math.floor(new Date(dateTo).getTime() / 1000) }),
+    ...(semantic && { semantic_enabled: semantic.enabled, semantic_threshold: semantic.threshold }),
   };
 }
 

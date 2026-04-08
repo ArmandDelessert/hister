@@ -34,6 +34,7 @@ type Config struct {
 	Server                   Server                `yaml:"server" mapstructure:"server"`
 	Indexer                  Indexer               `yaml:"indexer" mapstructure:"indexer"`
 	Crawler                  CrawlerConfig         `yaml:"crawler" mapstructure:"crawler"`
+	SemanticSearch           SemanticSearch        `yaml:"semantic_search" mapstructure:"semantic_search"`
 	Hotkeys                  Hotkeys               `yaml:"hotkeys" mapstructure:"hotkeys"`
 	TUI                      TUI                   `yaml:"-" mapstructure:"tui"`
 	SensitiveContentPatterns map[string]string     `yaml:"sensitive_content_patterns" mapstructure:"sensitive_content_patterns"`
@@ -121,6 +122,17 @@ type Rule struct {
 type Extractor struct {
 	Enable  bool           `yaml:"enable" mapstructure:"enable"`
 	Options map[string]any `yaml:"options" mapstructure:"options"`
+}
+
+// SemanticSearch holds configuration for optional vector similarity search.
+type SemanticSearch struct {
+	Enable              bool    `yaml:"enable" mapstructure:"enable"`
+	EmbeddingEndpoint   string  `yaml:"embedding_endpoint" mapstructure:"embedding_endpoint"`
+	EmbeddingModel      string  `yaml:"embedding_model" mapstructure:"embedding_model"`
+	Dimensions          int     `yaml:"dimensions" mapstructure:"dimensions"`
+	SimilarityThreshold float64 `yaml:"similarity_threshold" mapstructure:"similarity_threshold"`
+	ResultLimit         int     `yaml:"result_limit" mapstructure:"result_limit"`
+	SemanticWeight      float64 `yaml:"semantic_weight" mapstructure:"semantic_weight"`
 }
 
 // DBTypedef represents the type of database being used.
@@ -362,6 +374,15 @@ func CreateDefaultConfig() *Config {
 			"github_token":        `(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{36}`,
 			"ssh_private_key":     `-----BEGIN OPENSSH PRIVATE KEY-----`,
 			"pgp_private_key":     `-----BEGIN PGP PRIVATE KEY BLOCK-----`,
+		},
+		SemanticSearch: SemanticSearch{
+			Enable:              false,
+			EmbeddingEndpoint:   "http://localhost:11434/v1/embeddings",
+			EmbeddingModel:      "qwen3-embedding:8b",
+			Dimensions:          4096,
+			SimilarityThreshold: 0.1,
+			ResultLimit:         50,
+			SemanticWeight:      0.4,
 		},
 	}
 }

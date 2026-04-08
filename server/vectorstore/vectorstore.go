@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package vectorstore
+
+import (
+	"strings"
+
+	"github.com/asciimoo/hister/config"
+)
+
+// Result represents a single semantic search hit.
+type Result struct {
+	DocID      string  `json:"doc_id"`
+	Similarity float64 `json:"similarity"`
+}
+
+// VectorStore is the interface for vector similarity backends.
+type VectorStore interface {
+	// Init creates tables/extensions if missing. Safe to call on every startup.
+	Init() error
+
+	// Put upserts the embedding for a document. docID matches the Bleve document ID.
+	// userID scopes the embedding to a specific user (0 in single-user mode).
+	Put(docID string, userID uint, vector []float32) error
+
+	// Delete removes the embedding for a document.
+	Delete(docID string) error
+
+	// Search returns up to topK documents whose embeddings are closest to the
+	// query vector, with similarity >= threshold, scoped to the given userID.
+	Search(vector []float32, topK int, threshold float64, userID uint) ([]Result, error)
+
+	// Clear removes all embeddings. Used during reindex to rebuild from scratch.
+	Clear() error
+
+	// Close releases resources.
+	Close() error
+}
+
+// New creates a VectorStore implementation based on the database backend in use.
+func New(cfg *config.Config) (VectorStore, error) {
+	if strings.HasPrefix(cfg.Server.Database, "postgres") {
+		return newPostgres(cfg)
+	}
+	return newSQLite(cfg)
+}

@@ -18,7 +18,7 @@
   } from '$lib/search';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
   import { showHelp } from '$lib/stores';
-  import type { SearchResults } from '$lib/search';
+  import type { SearchResults, SemanticHit } from '$lib/search';
   import { animate } from 'animejs';
   import { Input } from '@hister/components/ui/input';
   import { Button } from '@hister/components/ui/button';
@@ -51,6 +51,7 @@
     ChevronDown,
     Calendar,
     Filter,
+    Sparkles,
   } from 'lucide-svelte';
   import type { HistoryItem } from '$lib/types';
 
@@ -59,6 +60,9 @@
     searchUrl: string;
     openResultsOnNewTab: boolean;
     hotkeys: Record<string, string>;
+    semanticEnabled: boolean;
+    similarityThreshold: number;
+    semanticWeight: number;
   }
 
   let config: Config = $state({
@@ -66,6 +70,9 @@
     searchUrl: '',
     openResultsOnNewTab: false,
     hotkeys: {},
+    semanticEnabled: false,
+    similarityThreshold: 0.5,
+    semanticWeight: 0.4,
   });
 
   let wsManager: WebSocketManager | undefined;
@@ -121,6 +128,16 @@
 
   let resultsShown = $state(false);
 
+  // Semantic search per-session state — read from localStorage immediately so
+  // the first $effect run doesn't overwrite the saved value with the default.
+  let semanticOn = $state(localStorage.getItem('hister-semantic-on') === 'true');
+  let similarityThreshold = $state(
+    parseFloat(localStorage.getItem('hister-semantic-threshold') ?? 'NaN') || 0.5,
+  );
+  let semanticWeight = $state(
+    parseFloat(localStorage.getItem('hister-semantic-weight') ?? 'NaN') || 0.4,
+  );
+
   let contextMenuSearch: string | null = $state(null);
   let contextMenuPos = $state({ x: 0, y: 0 });
 
@@ -167,8 +184,89 @@
 
   const isSearching = $derived(query.length > 0 || resultsShown);
 
+  interface MergedResult {
+    url: string;
+    title: string;
+    domain: string;
+    score?: number;
+    text?: string;
+    favicon?: string;
+    added?: number;
+    semanticScore?: number;
+    finalScore: number;
+    sourceType: 'keyword' | 'semantic' | 'both';
+  }
+
+  function mergeResults(
+    docs: SearchResults['documents'],
+    hits: SemanticHit[] | undefined,
+    alpha: number,
+  ): MergedResult[] {
+    const kwDocs = docs ?? [];
+    if (!semanticOn || !config.semanticEnabled || !hits?.length) {
+      return kwDocs.map((d) => ({ ...d, finalScore: d.score ?? 0, sourceType: 'keyword' }));
+    }
+
+    const maxBleve = Math.max(...kwDocs.map((d) => d.score ?? 0), 1);
+    const semByDocId = new Map<string, number>(hits.map((h) => [h.doc_id, h.similarity]));
+
+    // Helper: the doc_id is either a bare URL or "{uid}:{url}".
+    function urlFromDocId(docId: string): string {
+      const userId = getUserId();
+      if (userId) {
+        const prefix = `${userId}:`;
+        if (docId.startsWith(prefix)) return docId.slice(prefix.length);
+      }
+      return docId;
+    }
+
+    const merged = new Map<string, MergedResult>();
+
+    for (const d of kwDocs) {
+      // Find whether this keyword doc also appears in semantic hits.
+      // The semantic doc_id for this user+URL:
+      const userId = getUserId();
+      const expectedDocId = userId ? `${userId}:${d.url}` : d.url;
+      const semScore = semByDocId.get(expectedDocId) ?? semByDocId.get(d.url);
+      const norm = (d.score ?? 0) / maxBleve;
+      const finalScore =
+        semScore !== undefined ? (1 - alpha) * norm + alpha * semScore : (1 - alpha) * norm;
+      merged.set(d.url, {
+        ...d,
+        semanticScore: semScore,
+        finalScore,
+        sourceType: semScore !== undefined ? 'both' : 'keyword',
+      });
+    }
+
+    // Add semantic-only hits (server sets `document` only for non-keyword hits).
+    for (const hit of hits) {
+      if (!hit.document) continue;
+      const url = hit.document.url;
+      if (!merged.has(url)) {
+        merged.set(url, {
+          url,
+          title: hit.document.title ?? '',
+          domain: hit.document.domain ?? '',
+          favicon: hit.document.favicon,
+          added: hit.document.added,
+          text: hit.document.text,
+          semanticScore: hit.similarity,
+          finalScore: alpha * hit.similarity,
+          sourceType: 'semantic',
+        });
+      }
+    }
+
+    return Array.from(merged.values()).sort((a, b) => b.finalScore - a.finalScore);
+  }
+
+  const mergedResults = $derived(
+    mergeResults(lastResults?.documents, lastResults?.semantic_hits, semanticWeight),
+  );
+
   const historyLen = $derived((lastResults?.history as any)?.length || 0);
-  const docsLen = $derived((lastResults?.documents as any)?.length || 0);
+  const docsLen = $derived(mergedResults.length);
   const totalResults = $derived(historyLen + docsLen);
   const hasResults = $derived(totalResults > 0);
 
@@ -190,7 +288,10 @@
   }
 
   function sendQuery(q: string) {
-    const message = buildSearchQuery(q, currentSort, dateFrom, dateTo);
+    const message = buildSearchQuery(q, currentSort, dateFrom, dateTo, {
+      enabled: semanticOn && config.semanticEnabled,
+      threshold: similarityThreshold,
+    });
     wsManager?.send(JSON.stringify(message));
   }
 
@@ -664,11 +765,26 @@
     if (dateFrom || dateTo) sendQuery(query);
   });
 
+  // Persist and react to semantic setting changes.
+  $effect(() => {
+    localStorage.setItem('hister-semantic-on', String(semanticOn));
+    if (query && connected) sendQuery(query);
+  });
+  $effect(() => {
+    localStorage.setItem('hister-semantic-threshold', String(similarityThreshold));
+    if (query && connected) sendQuery(query);
+  });
+  $effect(() => {
+    localStorage.setItem('hister-semantic-weight', String(semanticWeight));
+  });
+
   // Auto-load the readability panel for the focused result on desktop.
+  // Tracks mergedResults (not just lastResults) so that reordering caused by
+  // the semantic weight slider also refreshes the panel.
   $effect(() => {
     const idx = highlightIdx;
-    const results = lastResults;
-    if (!isDesktop || !results || !panelOpen) return;
+    const results = mergedResults; // reactive dependency: reorders trigger this
+    if (!isDesktop || !results.length || !panelOpen) return;
     const links = document.querySelectorAll<HTMLAnchorElement>('[data-result] [data-result-link]');
     const link = links[idx];
     if (!link) return;
@@ -700,7 +816,17 @@
         searchUrl: appConfig.searchUrl,
         openResultsOnNewTab: appConfig.openResultsOnNewTab,
         hotkeys: appConfig.hotkeys,
+        semanticEnabled: (appConfig as any).semanticEnabled ?? false,
+        similarityThreshold: (appConfig as any).similarityThreshold ?? 0.1,
+        semanticWeight: (appConfig as any).semanticWeight ?? 0.4,
       };
+      if (config.semanticEnabled) {
+        // Apply server defaults only when the user has not yet customised these.
+        if (localStorage.getItem('hister-semantic-threshold') === null)
+          similarityThreshold = config.similarityThreshold;
+        if (localStorage.getItem('hister-semantic-weight') === null)
+          semanticWeight = config.semanticWeight;
+      }
       inputEl?.focus();
       connect();
       keyHandler = new KeyHandler(config.hotkeys, hotkeyActions);
@@ -836,6 +962,31 @@
         placeholder="Search..."
         class="font-inter text-text-brand placeholder:text-text-brand-muted h-full flex-1 border-0 bg-transparent p-0 text-lg font-medium shadow-none focus-visible:ring-0 md:text-2xl"
       />
+      {#if config.semanticEnabled}
+        <Tooltip.Provider delayDuration={0}>
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              <button
+                type="button"
+                onclick={() => (semanticOn = !semanticOn)}
+                class="flex shrink-0 items-center gap-1 px-1.5 py-0.5 text-xs font-semibold transition-colors {semanticOn
+                  ? 'text-hister-indigo'
+                  : 'text-text-brand-muted hover:text-hister-indigo'}"
+                aria-pressed={semanticOn}
+                aria-label="Toggle semantic search"
+              >
+                <Sparkles class="size-3.5" />
+                <span class="hidden md:inline">Semantic</span>
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Portal>
+              <Tooltip.Content>
+                {semanticOn ? 'Semantic search on' : 'Semantic search off'} — click to toggle
+              </Tooltip.Content>
+            </Tooltip.Portal>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      {/if}
       <Tooltip.Provider delayDuration={0}>
         <Tooltip.Root>
           <Tooltip.Trigger>
@@ -861,7 +1012,9 @@
           {#if hasResults}
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span class="font-outfit text-hister-indigo text-sm font-bold md:text-base">
-                {lastResults?.total || totalResults} results{query ? ` for "${query}"` : ''}
+                {semanticOn && config.semanticEnabled
+                  ? totalResults
+                  : lastResults?.total || totalResults} results{query ? ` for "${query}"` : ''}
               </span>
               <div class="flex items-center gap-2">
                 {#if isDesktop && !panelOpen}
@@ -928,6 +1081,51 @@
                         </div>
                       </div>
                       <Separator class="bg-border-brand-muted" />
+                      {#if config.semanticEnabled && semanticOn}
+                        <div class="space-y-2">
+                          <p
+                            class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                          >
+                            <Sparkles class="size-3" />
+                            Semantic Search
+                          </p>
+                          <label
+                            class="font-inter text-text-brand-secondary flex flex-col gap-1 text-xs"
+                          >
+                            <span
+                              >Similarity threshold: <span class="font-fira text-hister-indigo"
+                                >{similarityThreshold.toFixed(2)}</span
+                              ></span
+                            >
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.002"
+                              bind:value={similarityThreshold}
+                              class="accent-hister-indigo w-full cursor-pointer"
+                            />
+                          </label>
+                          <label
+                            class="font-inter text-text-brand-secondary flex flex-col gap-1 text-xs"
+                          >
+                            <span
+                              >Semantic weight: <span class="font-fira text-hister-indigo"
+                                >{semanticWeight.toFixed(2)}</span
+                              ></span
+                            >
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              bind:value={semanticWeight}
+                              class="accent-hister-indigo w-full cursor-pointer"
+                            />
+                          </label>
+                        </div>
+                        <Separator class="bg-border-brand-muted" />
+                      {/if}
                       <div class="space-y-2">
                         <p
                           class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
@@ -1118,11 +1316,12 @@
               {/each}
             {/if}
 
-            {#if lastResults?.documents}
-              {#each lastResults.documents as r, i}
+            {#if mergedResults.length > 0}
+              {#each mergedResults as r, i}
                 {@const idx = historyLen + i}
                 {@const color = 'hister-cyan'}
                 {@const favSrc = getFaviconSrc(r.favicon, r.url)}
+                {@const isSemOnly = r.sourceType === 'semantic'}
                 <article
                   data-result
                   class="flex w-full scroll-my-[6em] gap-3 overflow-hidden py-3.5 transition-all duration-150"
@@ -1172,6 +1371,24 @@
                       >
                         {r.title || '*title*'}
                       </a>
+                      {#if isSemOnly}
+                        <Tooltip.Provider delayDuration={0}>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger>
+                              <Badge
+                                variant="secondary"
+                                class="bg-hister-indigo/10 text-hister-indigo shrink-0 border-0 px-1.5 py-0 font-mono text-[10px]"
+                                >~{r.semanticScore?.toFixed(2)}</Badge
+                              >
+                            </Tooltip.Trigger>
+                            <Tooltip.Portal>
+                              <Tooltip.Content>
+                                Conceptual match · similarity {r.semanticScore?.toFixed(2)}
+                              </Tooltip.Content>
+                            </Tooltip.Portal>
+                          </Tooltip.Root>
+                        </Tooltip.Provider>
+                      {/if}
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -1223,31 +1440,33 @@
                     class="border-brutal-border bg-card-surface ml-8 gap-2 rounded-none border-[3px] py-3 shadow-[3px_3px_0_var(--brutal-shadow)]"
                   >
                     <Card.Content class="space-y-2">
-                      <div class="flex items-center gap-2">
-                        <Input
-                          bind:value={actionsQuery}
-                          placeholder="Query string where this result should appear pinned..."
-                          class="font-inter border-border-brand-muted focus-visible:border-hister-indigo h-7 flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
-                        />
+                      {#if !isSemOnly}
+                        <div class="flex items-center gap-2">
+                          <Input
+                            bind:value={actionsQuery}
+                            placeholder="Query string where this result should appear pinned..."
+                            class="font-inter border-border-brand-muted focus-visible:border-hister-indigo h-7 flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            class="border-hister-indigo text-hister-indigo border-[2px] text-xs"
+                            onclick={() => updatePriorityResult(r.url, r.title || '*title*', false)}
+                          >
+                            <Pin class="size-3.5" />
+                            Pin
+                          </Button>
+                        </div>
                         <Button
                           variant="outline"
                           size="sm"
-                          class="border-hister-indigo text-hister-indigo border-[2px] text-xs"
-                          onclick={() => updatePriorityResult(r.url, r.title || '*title*', false)}
+                          class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 border-[2px] text-xs"
+                          onclick={() => deleteResult(r.url)}
                         >
-                          <Pin class="size-3.5" />
-                          Pin
+                          <Trash2 class="size-3.5" />
+                          Delete result
                         </Button>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 border-[2px] text-xs"
-                        onclick={() => deleteResult(r.url)}
-                      >
-                        <Trash2 class="size-3.5" />
-                        Delete result
-                      </Button>
+                      {/if}
                       {#if actionsMessage}
                         <p
                           class="font-inter text-xs {actionsError

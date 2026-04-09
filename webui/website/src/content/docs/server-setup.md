@@ -139,7 +139,7 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
 
    		# Uncomment this if you know what you're doing.
    		# add_header Access-Control-Allow-Origin *;
-   		proxy_set_header        Host              $http_host;
+   		proxy_set_header        Host              $host;
    		proxy_set_header        X-Real-IP         $remote_addr;
    		proxy_set_header        X-Forwarded-For   $proxy_add_x_forwarded_for;
    		proxy_set_header        X-Forwarded-Proto $scheme;

@@ -29,3 +29,13 @@ updates:
       gha-deps:
         patterns:
           - '*'
+
+  - package-ecosystem: nix
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      nix-deps:
+        patterns:
+          - '*'

@@ -818,7 +818,7 @@ func serveHistory(c *webContext) {
 		c.JSON(&openedResponse{Documents: docs, LastID: nextLastID})
 		return
 	}
-	ds := indexer.GetLatestDocuments(100, c.Request.URL.Query().Get("last"))
+	ds := indexer.GetLatestDocuments(100, c.Request.URL.Query().Get("last"), c.UserID)
 	c.JSON(ds)
 }
 

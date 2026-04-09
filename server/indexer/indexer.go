@@ -351,8 +351,19 @@ func (i *indexer) AddDocument(d *document.Document) error {
 	return i.getOrCreate(d.Language).Index(d.ID(), d)
 }
 
-func GetLatestDocuments(limit int, latest string) *Results {
-	q := query.NewMatchAllQuery()
+func GetLatestDocuments(limit int, latest string, userID uint) *Results {
+	var q query.Query
+	if userID > 0 {
+		uid := float64(userID)
+		userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
+		userQuery.SetField("user_id")
+		zeroF := float64(0)
+		globalQuery := bleve.NewNumericRangeInclusiveQuery(&zeroF, &zeroF, new(true), new(true))
+		globalQuery.SetField("user_id")
+		q = bleve.NewDisjunctionQuery(userQuery, globalQuery)
+	} else {
+		q = query.NewMatchAllQuery()
+	}
 	req := bleve.NewSearchRequest(q)
 	req.Fields = []string{"url", "title", "added"}
 	req.Size = limit

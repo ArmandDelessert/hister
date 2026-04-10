@@ -60,6 +60,7 @@ type Query struct {
 	DateFrom  int64  `json:"date_from"`
 	DateTo    int64  `json:"date_to"`
 	UserID    uint   `json:"user_id"`
+	PageKey   string `json:"page_key"`
 	cfg       *config.Config
 }
 
@@ -374,7 +375,10 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 		},
 	})
 	if latest != "" {
-		req.SetSearchAfter([]string{latest})
+		var after []string
+		if err := json.Unmarshal([]byte(latest), &after); err == nil {
+			req.SetSearchAfter(after)
+		}
 	}
 	res, err := i.idx.Search(req)
 	if err != nil || len(res.Hits) < 1 {
@@ -389,10 +393,11 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 		}
 		docs[i] = d
 	}
-	return &Results{
-		Documents: docs,
-		PageKey:   res.Hits[len(res.Hits)-1].Sort[0],
+	r := &Results{Documents: docs}
+	if pk, err := json.Marshal(res.Hits[len(res.Hits)-1].Sort); err == nil {
+		r.PageKey = string(pk)
 	}
+	return r
 }
 
 func (i *indexer) getOrCreate(lang string) bleve.Index {
@@ -563,10 +568,27 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	case "tui":
 		req.Highlight = bleve.NewHighlightWithStyle("tui")
 	}
+
+	// Always set a stable two-field sort so cursor-based pagination works
+	// correctly across pages. The secondary _id tiebreaker ensures a consistent
+	// order when scores or domain values are equal.
+	//
+	// TODO / question: should we store the length of the URL path and sort by it,
+	// prefering shorter path names for tied score?
 	switch q.Sort {
 	case "domain":
-		req.SortBy([]string{"domain"})
+		req.SortBy([]string{"domain", "_id"})
+	default:
+		req.SortBy([]string{"-_score", "_id"})
 	}
+
+	if q.PageKey != "" {
+		var after []string
+		if err := json.Unmarshal([]byte(q.PageKey), &after); err == nil {
+			req.SetSearchAfter(after)
+		}
+	}
+
 	res, err := i.idx.Search(req)
 	if err != nil {
 		return nil, err
@@ -579,6 +601,13 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 		Total:     res.Total,
 		Query:     q,
 		Documents: matches,
+	}
+	if len(res.Hits) > 0 {
+		lastSort := res.Hits[len(res.Hits)-1].Sort
+		if pk, err := json.Marshal(lastSort); err == nil {
+			r.PageKey = string(pk)
+			q.PageKey = r.PageKey
+		}
 	}
 	return r, nil
 }

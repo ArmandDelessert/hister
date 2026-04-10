@@ -633,6 +633,9 @@ func serveSearch(c *webContext) {
 				}
 			}
 		}
+		if pk := c.Request.URL.Query().Get("page_key"); pk != "" {
+			query.PageKey = pk
+		}
 		r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
 		if err != nil {
 			fmt.Println(err)

@@ -371,6 +371,35 @@ Non-admin users are restricted to their own documents by the server.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		c := newClient()
 		dry, _ := cmd.Flags().GetBool("dry")
+		verbose, _ := cmd.Flags().GetBool("verbose")
+		if verbose {
+			var (
+				pageKey string
+				total   uint64
+			)
+			for {
+				res, err := c.SearchPage(args[0], pageKey)
+				if err != nil {
+					exit(1, "Failed to search: "+err.Error())
+				}
+				if total == 0 {
+					total = res.Total
+				}
+				for _, doc := range res.Documents {
+					fmt.Println(doc.URL)
+				}
+				if res.PageKey == "" || len(res.Documents) == 0 {
+					break
+				}
+				pageKey = res.PageKey
+			}
+			if dry {
+				fmt.Printf("%d document(s) would be deleted\n", total)
+			} else {
+				fmt.Printf("Deleting %d document(s)\n", total)
+			}
+			return
+		}
 		if dry {
 			res, err := c.Search(args[0])
 			if err != nil {
@@ -610,6 +639,7 @@ func init() {
 	updateUserCmd.Flags().Bool("toggle-admin", false, "toggle admin status")
 
 	deleteCmd.Flags().Bool("dry", false, "display the number of documents that would be deleted without actually deleting them")
+	deleteCmd.Flags().BoolP("verbose", "v", false, "list all URLs that would be deleted before performing the deletion. Can be used with --dry")
 
 	deleteUserCmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
 

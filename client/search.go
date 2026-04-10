@@ -9,7 +9,15 @@ import (
 )
 
 func (c *Client) Search(query string) (_ *indexer.Results, err error) {
-	req, err := c.newRequest("GET", "/search?q="+url.QueryEscape(query), nil)
+	return c.SearchPage(query, "")
+}
+
+func (c *Client) SearchPage(query, pageKey string) (_ *indexer.Results, err error) {
+	u := "/search?q=" + url.QueryEscape(query)
+	if pageKey != "" {
+		u += "&page_key=" + url.QueryEscape(pageKey)
+	}
+	req, err := c.newRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}

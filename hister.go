@@ -150,14 +150,23 @@ var createConfigCmd = &cobra.Command{
 var listURLsCmd = &cobra.Command{
 	Use:   "list-urls",
 	Short: "List indexed URLs",
-	Long:  `List indexed URLs - server should be stopped`,
-	PreRun: func(_ *cobra.Command, _ []string) {
-		initIndex()
-	},
+	Long:  `List all indexed URLs by fetching them from the running server`,
 	Run: func(_ *cobra.Command, _ []string) {
-		indexer.Iterate(func(d *document.Document) {
-			fmt.Println(d.URL)
-		})
+		c := newClient()
+		pageKey := ""
+		for {
+			res, err := c.SearchPage("*", pageKey, "domain")
+			if err != nil {
+				exit(1, "Failed to fetch URLs: "+err.Error())
+			}
+			for _, doc := range res.Documents {
+				fmt.Println(doc.URL)
+			}
+			if res.PageKey == "" || len(res.Documents) == 0 {
+				break
+			}
+			pageKey = res.PageKey
+		}
 	},
 }
 
@@ -378,7 +387,7 @@ Non-admin users are restricted to their own documents by the server.`,
 				total   uint64
 			)
 			for {
-				res, err := c.SearchPage(args[0], pageKey)
+				res, err := c.SearchPage(args[0], pageKey, "domain")
 				if err != nil {
 					exit(1, "Failed to search: "+err.Error())
 				}

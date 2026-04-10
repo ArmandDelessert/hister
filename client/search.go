@@ -9,13 +9,16 @@ import (
 )
 
 func (c *Client) Search(query string) (_ *indexer.Results, err error) {
-	return c.SearchPage(query, "")
+	return c.SearchPage(query, "", "")
 }
 
-func (c *Client) SearchPage(query, pageKey string) (_ *indexer.Results, err error) {
+func (c *Client) SearchPage(query, pageKey, sort string) (_ *indexer.Results, err error) {
 	u := "/search?q=" + url.QueryEscape(query)
 	if pageKey != "" {
 		u += "&page_key=" + url.QueryEscape(pageKey)
+	}
+	if sort != "" {
+		u += "&sort=" + url.QueryEscape(sort)
 	}
 	req, err := c.newRequest("GET", u, nil)
 	if err != nil {

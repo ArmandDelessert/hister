@@ -636,6 +636,9 @@ func serveSearch(c *webContext) {
 		if pk := c.Request.URL.Query().Get("page_key"); pk != "" {
 			query.PageKey = pk
 		}
+		if s := c.Request.URL.Query().Get("sort"); s != "" {
+			query.Sort = s
+		}
 		r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
 		if err != nil {
 			fmt.Println(err)

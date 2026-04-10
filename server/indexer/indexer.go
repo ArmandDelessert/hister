@@ -686,6 +686,9 @@ func resFromHit(h *search.DocumentMatch) *document.Document {
 	}
 	for k, v := range h.Fields {
 		if mk, found := strings.CutPrefix(k, "metadata."); found {
+			if d.Metadata == nil {
+				d.Metadata = make(map[string]any)
+			}
 			d.Metadata[mk] = v
 		}
 	}

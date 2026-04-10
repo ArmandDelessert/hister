@@ -26,7 +26,12 @@ if (isFirefox) {
 } else {
   window.addEventListener('load', extract);
 }
-window.addEventListener('navigatesuccess', update);
+
+// Detect SPA navigations via the Navigation API (fires on window.navigation,
+// not on window). Falls back to polling for browsers without it.
+if (typeof window.navigation !== 'undefined') {
+  window.navigation.addEventListener('navigatesuccess', update);
+}
 
 function extract(sendResponse, actionType) {
   if (!isContextValid()) return;
@@ -48,9 +53,11 @@ function extract(sendResponse, actionType) {
       sendResponse(resp);
     }
     if (!resp || resp.error || resp.status_code != 201) {
-      console.log('failed to submit page data, stopping extraction', resp);
-      return;
+      console.log('failed to submit page data', resp);
     }
+    // Always start polling for URL/content changes, even if the initial
+    // submission failed (e.g. skip rule). The page may navigate to a
+    // non-skipped URL later (SPA).
     setTimeout(update, sleepTime);
   });
 }

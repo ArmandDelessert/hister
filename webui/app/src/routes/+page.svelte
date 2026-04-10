@@ -28,6 +28,7 @@
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
   import * as Tooltip from '@hister/components/ui/tooltip';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
+  import VideoPreview from '$lib/components/VideoPreview.svelte';
   import { Kbd } from '@hister/components/ui/kbd';
   import {
     Search,
@@ -81,15 +82,28 @@
   let showPopup = $state(false);
   let popupTitle = $state('');
   let popupContent = $state('');
+  let popupTemplate = $state('');
+  let popupTemplateData = $state<any>(null);
   let actionsQuery = $state('');
   let actionsMessage: string | null = $state(null);
   let actionsError = $state(false);
   let showActionsForResult: string | null = $state(null);
 
+  function parseTemplateData(content: string): any | null {
+    try {
+      return JSON.parse(content);
+    } catch (e) {
+      console.warn('Failed to parse template data:', e);
+      return null;
+    }
+  }
+
   // Desktop split-pane readability panel state
   let panelUrl = $state('');
   let panelTitle = $state('');
   let panelContent = $state('');
+  let panelTemplate = $state('');
+  let panelTemplateData = $state<any>(null);
   let panelAdded = $state<number | null>(null);
   let panelLoading = $state(false);
   let isDesktop = $state(false);
@@ -277,6 +291,8 @@
     panelAdded = null;
     panelLoading = true;
     panelContent = '';
+    panelTemplate = '';
+    panelTemplateData = null;
     try {
       const resp = await apiFetch(`/preview?url=${encodeURIComponent(url)}`);
       if (!resp.ok) {
@@ -285,7 +301,10 @@
         const data = await resp.json();
         panelTitle = data.title || title;
         panelAdded = data.added ?? null;
-        panelContent = data.content || '<p>No content available</p>';
+        panelTemplate = data.template || '';
+        panelTemplateData = panelTemplate === 'video' ? parseTemplateData(data.content) : null;
+        panelContent =
+          panelTemplate === 'video' ? '' : data.content || '<p>No content available</p>';
       }
     } catch (err) {
       panelContent = `<p class="text-hister-rose">Failed to load: ${err}</p>`;
@@ -315,7 +334,9 @@
       }
       const data = await resp.json();
       popupTitle = data.title || title;
-      popupContent = data.content || '<p>No content available</p>';
+      popupTemplate = data.template || '';
+      popupTemplateData = popupTemplate === 'video' ? parseTemplateData(data.content) : null;
+      popupContent = popupTemplate === 'video' ? '' : data.content || '<p>No content available</p>';
       showPopup = true;
     } catch (err) {
       popupTitle = 'Error';
@@ -692,7 +713,11 @@
       >
     </Dialog.Header>
     <div class="font-inter text-text-brand-secondary prose max-w-none text-sm">
-      {@html popupContent}
+      {#if popupTemplate === 'video' && popupTemplateData}
+        <VideoPreview data={popupTemplateData} />
+      {:else}
+        {@html popupContent}
+      {/if}
     </div>
   </Dialog.Content>
 </Dialog.Root>
@@ -1222,7 +1247,7 @@
             <div class="flex flex-1 items-center justify-center">
               <span class="font-inter text-text-brand-muted text-sm">Loading…</span>
             </div>
-          {:else if panelContent}
+          {:else if panelContent || panelTemplateData}
             <div
               class="border-border-brand-muted flex shrink-0 items-start gap-2 border-b-[2px] px-4 py-2.5"
             >
@@ -1255,7 +1280,11 @@
               <div
                 class="font-inter text-text-brand-secondary prose dark:prose-invert prose-a:text-hister-teal max-w-none p-4 text-sm"
               >
-                {@html panelContent}
+                {#if panelTemplate === 'video' && panelTemplateData}
+                  <VideoPreview data={panelTemplateData} />
+                {:else}
+                  {@html panelContent}
+                {/if}
               </div>
             </ScrollArea>
           {:else}

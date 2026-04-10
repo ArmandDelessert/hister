@@ -4,6 +4,8 @@
   buildNpmPackage,
   importNpmLock,
   sqlite,
+  yt-dlp,
+  makeBinaryWrapper,
   pkg-config,
   histerRev ? "unknown",
 }:
@@ -23,8 +25,8 @@ let
     '';
     installPhase = ''
       runHook preInstall
-      mkdir -p $out
-      cp -r webui/app/build/* $out/
+      mkdir -p "$out"
+      cp -r webui/app/build/* "$out/"
       runHook postInstall
     '';
   };
@@ -50,7 +52,7 @@ buildGoModule (finalAttrs: {
   vendorHash = "sha256-lvVg90jFRDzo5XzPWMRRJp+VrJ/Q+Nwu1dc7T2i7T6I=";
   proxyVendor = true;
 
-  nativeBuildInputs = [ pkg-config ];
+  nativeBuildInputs = [ pkg-config makeBinaryWrapper ];
   buildInputs = [ sqlite ];
 
   tags = [ "libsqlite3" ];
@@ -68,6 +70,11 @@ buildGoModule (finalAttrs: {
   ];
 
   subPackages = [ "." ];
+
+  postInstall = ''
+    wrapProgram $out/bin/hister \
+      --prefix PATH : ${lib.makeBinPath [ yt-dlp ]}
+  '';
 
   passthru = {
     inherit frontend;

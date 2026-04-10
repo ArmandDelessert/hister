@@ -18,6 +18,7 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor/extractors/godoc"
 	"github.com/asciimoo/hister/server/extractor/extractors/stackoverflow"
+	"github.com/asciimoo/hister/server/extractor/extractors/ytdlp"
 	"github.com/asciimoo/hister/server/types"
 )
 
@@ -58,6 +59,7 @@ var ErrNoExtractor = errors.New("no extractor found")
 var extractors = []Extractor{
 	&stackoverflow.StackoverflowExtractor{},
 	&godoc.GoDocExtractor{},
+	&ytdlp.YtdlpExtractor{},
 	&readabilityExtractor{},
 	&defaultExtractor{},
 }

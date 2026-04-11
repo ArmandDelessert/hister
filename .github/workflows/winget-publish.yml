@@ -17,4 +17,4 @@ jobs:
         with:
           identifier: asciimoo.hister
           installers-regex: '\.exe$'
-          token: ${{ secrets.WINGET_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}

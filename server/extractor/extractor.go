@@ -27,6 +27,9 @@ type Extractor interface {
 	// Name returns a human-readable identifier for the extractor.
 	Name() string
 
+	// Description returns a short human-readable summary of what the extractor does.
+	Description() string
+
 	// Match reports whether this extractor is applicable to the given document.
 	// Extract and Preview will only be called when Match returns true.
 	Match(*document.Document) bool
@@ -178,6 +181,10 @@ func (e *defaultExtractor) Name() string {
 	return "Default"
 }
 
+func (e *defaultExtractor) Description() string {
+	return "Fallback extractor that strips HTML tags and extracts plain text from any web page."
+}
+
 func (e *defaultExtractor) Match(_ *document.Document) bool {
 	return true
 }
@@ -239,6 +246,10 @@ func (e *defaultExtractor) Preview(d *document.Document) (types.PreviewResponse,
 
 func (e *readabilityExtractor) Name() string {
 	return "Readability"
+}
+
+func (e *readabilityExtractor) Description() string {
+	return "Extracts the main article content from any web page using the go-readability library, filtering out navigation, ads, and other boilerplate."
 }
 
 func (e *readabilityExtractor) Match(_ *document.Document) bool {

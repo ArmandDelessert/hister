@@ -23,6 +23,11 @@ func (e *StackoverflowExtractor) Name() string {
 	return "Stackoverflow"
 }
 
+// Description returns a short summary of what this extractor does.
+func (e *StackoverflowExtractor) Description() string {
+	return "Extracts the question body and all answers from Stack Overflow question pages."
+}
+
 // GetConfig returns the extractor's current configuration.
 func (e *StackoverflowExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {

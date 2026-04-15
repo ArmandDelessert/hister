@@ -237,6 +237,16 @@
     saveHistoryItem(url, stripHtml(title), query, false, () => openURL(url, newWindow));
   }
 
+  function sendHistoryBeacon(url: string, title: string, queryStr: string) {
+    const payload = JSON.stringify({
+      url,
+      title: stripHtml(title),
+      query: queryStr,
+      delete: false,
+    });
+    navigator.sendBeacon('api/history', new Blob([payload], { type: 'application/json' }));
+  }
+
   async function saveHistoryItem(
     url: string,
     title: string,
@@ -986,9 +996,12 @@
                         data-result-link
                         href={r.url}
                         class="font-outfit text-md text-hister-teal min-w-0 flex-1 font-semibold hover:underline md:overflow-hidden md:text-xl"
-                        onclick={(e) => {
-                          e.preventDefault();
-                          openResult(r.url, r.title || '*title*', e.ctrlKey || e.metaKey);
+                        target={config.openResultsOnNewTab ? '_blank' : undefined}
+                        onclick={() => {
+                          sendHistoryBeacon(r.url, r.title || '*title*', query);
+                        }}
+                        onauxclick={(e) => {
+                          if (e.button === 1) sendHistoryBeacon(r.url, r.title || '*title*', query);
                         }}
                       >
                         {r.title || '*title*'}
@@ -1104,9 +1117,12 @@
                         href={r.url}
                         class="font-outfit text-md min-w-0 flex-1 font-semibold hover:underline md:text-xl"
                         style="color: var(--{color});"
-                        onclick={(e) => {
-                          e.preventDefault();
-                          openResult(r.url, r.title || '*title*', e.ctrlKey || e.metaKey);
+                        target={config.openResultsOnNewTab ? '_blank' : undefined}
+                        onclick={() => {
+                          sendHistoryBeacon(r.url, r.title || '*title*', query);
+                        }}
+                        onauxclick={(e) => {
+                          if (e.button === 1) sendHistoryBeacon(r.url, r.title || '*title*', query);
                         }}
                       >
                         {r.title || '*title*'}

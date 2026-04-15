@@ -1,0 +1,39 @@
+name: govulncheck
+
+on:
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check for Go changes
+        id: changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- '*.go' 'go.mod' 'go.sum')
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run govulncheck
+        if: steps.changes.outputs.skip != 'true'
+        uses: golang/govulncheck-action@v1.0.4
+        with:
+          go-version-file: go.mod

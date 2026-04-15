@@ -18,7 +18,12 @@
           (lib.getExe config.services.hister.package)
           "listen"
         ];
-        KeepAlive = true;
+        KeepAlive = {
+          Crashed = true;
+          SuccessfulExit = false;
+        };
+        RunAtLoad = true;
+        ProcessType = "Background";
         WorkingDirectory = lib.mkIf (config.services.hister.dataDir != null) config.services.hister.dataDir;
         EnvironmentVariables = histerEnv config.services.hister;
       };

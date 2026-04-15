@@ -165,12 +165,59 @@ func TestNoJSONLD(t *testing.T) {
 	}
 }
 
-func TestEmptyHTMLDoesNotMatch(t *testing.T) {
+func TestMatchSkipsPagesWithoutJSONLD(t *testing.T) {
 	e := &JSONLDExtractor{}
 	if e.Match(&document.Document{HTML: ""}) {
 		t.Error("Match should be false for empty HTML")
 	}
-	if !e.Match(&document.Document{HTML: "<html></html>"}) {
-		t.Error("Match should be true for non-empty HTML")
+	if e.Match(&document.Document{HTML: "<html><body><p>hi</p></body></html>"}) {
+		t.Error("Match should be false for HTML without the ld+json marker")
+	}
+	if !e.Match(&document.Document{HTML: `<script type="application/ld+json">{}</script>`}) {
+		t.Error("Match should be true when the marker is present")
+	}
+}
+
+func TestSanitizeHeadlineStripsTagsAndDecodesEntities(t *testing.T) {
+	// A real HTML document must escape </script> inside the blob; browsers
+	// and golang.org/x/net/html both end the enclosing <script> at </script>
+	// regardless of JSON context.
+	const h = `<script type="application/ld+json">{
+		"@type": "Article",
+		"headline": "Smith &amp; Jones: <i>an unlikely<\/i> story",
+		"description": "<script>alert(1)<\/script>plain",
+		"author": {"@type": "Person", "name": "John O&#39;Brien"}
+	}</script>`
+
+	d := extract(t, h)
+	if got, _ := d.Metadata["jsonld_headline"].(string); got != "Smith & Jones: an unlikely story" {
+		t.Errorf("jsonld_headline = %q", got)
+	}
+	if got, _ := d.Metadata["jsonld_description"].(string); got != "plain" {
+		t.Errorf("jsonld_description = %q", got)
+	}
+	if got, _ := d.Metadata["jsonld_author"].(string); got != "John O'Brien" {
+		t.Errorf("jsonld_author = %q", got)
+	}
+}
+
+func TestSanitizeImageRejectsNonHTTP(t *testing.T) {
+	cases := []struct {
+		name, raw, want string
+	}{
+		{"http", `"http://ex.com/a.jpg"`, "http://ex.com/a.jpg"},
+		{"https", `"https://ex.com/a.jpg"`, "https://ex.com/a.jpg"},
+		{"data-uri", `"data:image/png;base64,AAAA"`, ""},
+		{"javascript", `"javascript:alert(1)"`, ""},
+		{"relative", `"/images/a.jpg"`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := extract(t, `<script type="application/ld+json">{"@type":"Article","image":`+tc.raw+`}</script>`)
+			got, _ := d.Metadata["jsonld_image"].(string)
+			if got != tc.want {
+				t.Errorf("jsonld_image = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

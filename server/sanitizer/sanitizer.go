@@ -1,10 +1,16 @@
 package sanitizer
 
 import (
+	stdhtml "html"
+	"strings"
+
 	"github.com/microcosm-cc/bluemonday"
 )
 
-var htmlSanitizerPolicy *bluemonday.Policy
+var (
+	htmlSanitizerPolicy *bluemonday.Policy
+	textSanitizerPolicy = bluemonday.StrictPolicy()
+)
 
 func init() {
 	p := bluemonday.NewPolicy()
@@ -93,4 +99,17 @@ func init() {
 
 func SanitizeHTML(h string) string {
 	return htmlSanitizerPolicy.Sanitize(h)
+}
+
+// SanitizeText strips every HTML tag, decodes entities and trims
+// surrounding whitespace, producing safe plain text suitable for
+// storing in metadata or displaying verbatim.
+func SanitizeText(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	s = textSanitizerPolicy.Sanitize(s)
+	s = stdhtml.UnescapeString(s)
+	return strings.TrimSpace(s)
 }

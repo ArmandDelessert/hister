@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -15,8 +16,13 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/sanitizer"
 	"github.com/asciimoo/hister/server/types"
 )
+
+// scriptTypeMarker is the substring we look for to cheaply rule out pages
+// that cannot contain JSON-LD before running the tokenizer.
+const scriptTypeMarker = "application/ld+json"
 
 // JSONLDExtractor extracts schema.org metadata from JSON-LD script tags.
 type JSONLDExtractor struct {
@@ -50,9 +56,11 @@ func (e *JSONLDExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-// Match returns true when the document has non-empty HTML.
+// Match reports whether the document's HTML plausibly contains a JSON-LD
+// script. strings.Contains is orders of magnitude cheaper than tokenizing
+// the whole HTML, so pages without JSON-LD skip the extractor entirely.
 func (e *JSONLDExtractor) Match(d *document.Document) bool {
-	return len(d.HTML) > 0
+	return len(d.HTML) > 0 && strings.Contains(d.HTML, scriptTypeMarker)
 }
 
 // preferredTypes lists @type values that make a node a good source for
@@ -91,13 +99,13 @@ func (e *JSONLDExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	d.Metadata["jsonld"] = nodes
 
 	best := pickBest(nodes)
-	setString(d.Metadata, "jsonld_type", typeString(best))
-	setString(d.Metadata, "jsonld_headline", firstString(best, "headline", "name"))
-	setString(d.Metadata, "jsonld_description", firstString(best, "description"))
-	setString(d.Metadata, "jsonld_author", authorName(best["author"]))
-	setString(d.Metadata, "jsonld_published", firstString(best, "datePublished"))
-	setString(d.Metadata, "jsonld_modified", firstString(best, "dateModified"))
-	setString(d.Metadata, "jsonld_image", imageURL(best["image"]))
+	setString(d.Metadata, "jsonld_type", sanitizer.SanitizeText(typeString(best)))
+	setString(d.Metadata, "jsonld_headline", sanitizer.SanitizeText(firstString(best, "headline", "name")))
+	setString(d.Metadata, "jsonld_description", sanitizer.SanitizeText(firstString(best, "description")))
+	setString(d.Metadata, "jsonld_author", sanitizer.SanitizeText(authorName(best["author"])))
+	setString(d.Metadata, "jsonld_published", sanitizer.SanitizeText(firstString(best, "datePublished")))
+	setString(d.Metadata, "jsonld_modified", sanitizer.SanitizeText(firstString(best, "dateModified")))
+	setString(d.Metadata, "jsonld_image", sanitizeURL(imageURL(best["image"])))
 
 	return types.ExtractorContinue, nil
 }
@@ -280,4 +288,24 @@ func setString(m map[string]any, key, value string) {
 		return
 	}
 	m[key] = value
+}
+
+// sanitizeURL keeps only absolute http(s) URLs. Anything else relative
+// paths, data: URIs, javascript: is dropped.
+func sanitizeURL(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return ""
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	if u.Host == "" {
+		return ""
+	}
+	return u.String()
 }

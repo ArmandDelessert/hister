@@ -968,12 +968,41 @@ func servePreview(c *webContext) {
 		serve500(c)
 		return
 	}
-	c.JSON(map[string]any{
+	payload := map[string]any{
 		"title":    doc.Title,
 		"content":  resp.Content,
 		"template": resp.Template,
 		"added":    doc.Added,
-	})
+	}
+	if meta := buildPreviewMeta(doc); meta != nil {
+		payload["meta"] = meta
+	}
+	c.JSON(payload)
+}
+
+// buildPreviewMeta surfaces normalized JSON-LD fields and the raw node dump so
+// the preview panel can show a byline and, optionally, the extracted data.
+// Returns nil when there is nothing to surface.
+func buildPreviewMeta(doc *document.Document) map[string]any {
+	if doc.Metadata == nil {
+		return nil
+	}
+	meta := map[string]any{}
+	for _, k := range []string{
+		"jsonld_type", "jsonld_headline", "jsonld_description",
+		"jsonld_author", "jsonld_published", "jsonld_modified", "jsonld_image",
+	} {
+		if v, ok := doc.Metadata[k].(string); ok && v != "" {
+			meta[strings.TrimPrefix(k, "jsonld_")] = v
+		}
+	}
+	if nodes, ok := doc.Metadata["jsonld"].([]map[string]any); ok && len(nodes) > 0 {
+		meta["jsonld"] = nodes
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return meta
 }
 
 func serveFile(c *webContext) {

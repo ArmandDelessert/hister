@@ -17,6 +17,7 @@ import (
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor/extractors/godoc"
+	"github.com/asciimoo/hister/server/extractor/extractors/jsonld"
 	"github.com/asciimoo/hister/server/extractor/extractors/stackoverflow"
 	"github.com/asciimoo/hister/server/extractor/extractors/ytdlp"
 	"github.com/asciimoo/hister/server/types"
@@ -85,6 +86,7 @@ func List() []ExtractorInfo {
 }
 
 var extractors = []Extractor{
+	&jsonld.JSONLDExtractor{},
 	&stackoverflow.StackoverflowExtractor{},
 	&godoc.GoDocExtractor{},
 	&ytdlp.YtdlpExtractor{},

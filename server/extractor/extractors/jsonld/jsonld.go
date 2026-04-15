@@ -93,6 +93,8 @@ func (e *JSONLDExtractor) Extract(d *document.Document) (types.ExtractorState, e
 		return types.ExtractorContinue, nil
 	}
 
+	sanitizeNodes(nodes)
+
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
@@ -288,6 +290,42 @@ func setString(m map[string]any, key, value string) {
 		return
 	}
 	m[key] = value
+}
+
+// sanitizeNodes walks the parsed JSON-LD tree in place and runs every
+// string leaf through sanitizer.SanitizeText so the raw dump stored at
+// d.Metadata["jsonld"] cannot carry untrusted HTML into downstream
+// consumers. @-prefixed keys (@context, @type, @id) are left untouched
+// because they are structural identifiers, not free-form text.
+func sanitizeNodes(nodes []map[string]any) {
+	for _, n := range nodes {
+		sanitizeMap(n)
+	}
+}
+
+func sanitizeMap(m map[string]any) {
+	for k, v := range m {
+		if strings.HasPrefix(k, "@") {
+			continue
+		}
+		m[k] = sanitizeValue(v)
+	}
+}
+
+func sanitizeValue(v any) any {
+	switch t := v.(type) {
+	case string:
+		return sanitizer.SanitizeText(t)
+	case map[string]any:
+		sanitizeMap(t)
+		return t
+	case []any:
+		for i, item := range t {
+			t[i] = sanitizeValue(item)
+		}
+		return t
+	}
+	return v
 }
 
 // sanitizeURL keeps only absolute http(s) URLs. Anything else relative

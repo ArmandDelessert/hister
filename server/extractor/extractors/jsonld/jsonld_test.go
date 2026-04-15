@@ -201,6 +201,37 @@ func TestSanitizeHeadlineStripsTagsAndDecodesEntities(t *testing.T) {
 	}
 }
 
+func TestRawJSONLDDumpIsDeepSanitized(t *testing.T) {
+	const h = `<script type="application/ld+json">{
+		"@type": "Article",
+		"headline": "Smith &amp; Jones",
+		"author": {"@type": "Person", "name": "<b>Jane<\/b>"},
+		"keywords": ["<i>go<\/i>", "hister"]
+	}</script>`
+
+	d := extract(t, h)
+	nodes, _ := d.Metadata["jsonld"].([]map[string]any)
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(nodes))
+	}
+	n := nodes[0]
+	if got, _ := n["headline"].(string); got != "Smith & Jones" {
+		t.Errorf("nodes[0].headline = %q", got)
+	}
+	author, _ := n["author"].(map[string]any)
+	if got, _ := author["name"].(string); got != "Jane" {
+		t.Errorf("nodes[0].author.name = %q", got)
+	}
+	keywords, _ := n["keywords"].([]any)
+	if len(keywords) != 2 || keywords[0] != "go" || keywords[1] != "hister" {
+		t.Errorf("nodes[0].keywords = %v", keywords)
+	}
+	// @-prefixed structural keys are preserved verbatim.
+	if got, _ := n["@type"].(string); got != "Article" {
+		t.Errorf("nodes[0].@type = %q", got)
+	}
+}
+
 func TestSanitizeImageRejectsNonHTTP(t *testing.T) {
 	cases := []struct {
 		name, raw, want string

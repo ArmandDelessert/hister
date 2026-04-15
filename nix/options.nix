@@ -7,7 +7,6 @@
 let
   yamlFormat = pkgs.formats.yaml { };
   cfg = config.services.hister;
-  hasSettings = cfg.settings != { };
   mkHisterEnv =
     cfg:
     lib.optionalAttrs (cfg.dataDir != null) {
@@ -106,7 +105,7 @@ in
   config = {
     assertions = [
       {
-        assertion = !(cfg.configPath != null && hasSettings);
+        assertion = !(cfg.configPath != null && cfg.settings != { });
         message = "Only one of services.hister.configPath and services.hister.settings can be set";
       }
     ];

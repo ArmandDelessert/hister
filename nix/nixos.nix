@@ -60,6 +60,9 @@
         User = config.services.hister.user;
         Group = config.services.hister.group;
         StateDirectory = lib.mkIf (config.services.hister.dataDir == null) "hister";
+        ReadWritePaths = lib.mkIf (config.services.hister.dataDir != null) [
+          config.services.hister.dataDir
+        ];
         EnvironmentFile = lib.mkIf (
           config.services.hister.environmentFile != null
         ) config.services.hister.environmentFile;
@@ -67,9 +70,11 @@
         AmbientCapabilities = lib.mkIf (
           config.services.hister.port != null && config.services.hister.port < 1024
         ) [ "CAP_NET_BIND_SERVICE" ];
-        CapabilityBoundingSet = lib.mkIf (
-          config.services.hister.port == null || config.services.hister.port >= 1024
-        ) [ "" ];
+        CapabilityBoundingSet =
+          if (config.services.hister.port != null && config.services.hister.port < 1024) then
+            [ "CAP_NET_BIND_SERVICE" ]
+          else
+            [ "" ];
 
         NoNewPrivileges = true;
         ProtectSystem = "strict";

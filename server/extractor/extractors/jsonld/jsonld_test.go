@@ -1,6 +1,7 @@
 package jsonld
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/asciimoo/hister/server/document"
@@ -21,6 +22,19 @@ func extract(t *testing.T, html string) *document.Document {
 	return d
 }
 
+func jsonldNodes(t *testing.T, d *document.Document) []map[string]any {
+	t.Helper()
+	raw, _ := d.Metadata["jsonld"].(string)
+	if raw == "" {
+		return nil
+	}
+	var nodes []map[string]any
+	if err := json.Unmarshal([]byte(raw), &nodes); err != nil {
+		t.Fatalf("jsonld metadata is not valid JSON: %v", err)
+	}
+	return nodes
+}
+
 func TestWikipediaArticle(t *testing.T) {
 	const h = `<html><head><script type="application/ld+json">{
 		"@context": "https://schema.org",
@@ -35,19 +49,22 @@ func TestWikipediaArticle(t *testing.T) {
 
 	d := extract(t, h)
 	checks := map[string]string{
-		"jsonld_type":      "Article",
-		"jsonld_headline":  "Kristi Noem",
-		"jsonld_author":    "Contributors to Wikimedia projects",
-		"jsonld_published": "2010-01-01T00:00:00Z",
-		"jsonld_modified":  "2026-04-01T00:00:00Z",
-		"jsonld_image":     "https://upload.wikimedia.org/noem.jpg",
+		"type":     "Article",
+		"headline": "Kristi Noem",
 	}
 	for k, want := range checks {
 		if got, _ := d.Metadata[k].(string); got != want {
 			t.Errorf("Metadata[%q] = %q, want %q", k, got, want)
 		}
 	}
-	if nodes, _ := d.Metadata["jsonld"].([]map[string]any); len(nodes) != 1 {
+	// Overlap fields (author/description/image/dates) are readability's
+	// responsibility now; jsonld should not be writing them.
+	for _, k := range []string{"author", "description", "image", "published", "modified"} {
+		if _, ok := d.Metadata[k]; ok {
+			t.Errorf("Metadata[%q] should not be set by jsonld", k)
+		}
+	}
+	if nodes := jsonldNodes(t, d); len(nodes) != 1 {
 		t.Errorf("expected 1 flattened node, got %d", len(nodes))
 	}
 }
@@ -63,18 +80,15 @@ func TestYoastGraph(t *testing.T) {
 	}</script></head></html>`
 
 	d := extract(t, h)
-	nodes, _ := d.Metadata["jsonld"].([]map[string]any)
+	nodes := jsonldNodes(t, d)
 	if len(nodes) != 3 {
 		t.Fatalf("expected 3 nodes, got %d", len(nodes))
 	}
-	if got, _ := d.Metadata["jsonld_type"].(string); got != "WebPage" {
-		t.Errorf("jsonld_type = %q, want WebPage", got)
+	if got, _ := d.Metadata["type"].(string); got != "WebPage" {
+		t.Errorf("type = %q, want WebPage", got)
 	}
-	if got, _ := d.Metadata["jsonld_headline"].(string); got != "About Us" {
-		t.Errorf("jsonld_headline = %q, want About Us", got)
-	}
-	if got, _ := d.Metadata["jsonld_description"].(string); got != "The about page" {
-		t.Errorf("jsonld_description = %q", got)
+	if got, _ := d.Metadata["headline"].(string); got != "About Us" {
+		t.Errorf("headline = %q, want About Us", got)
 	}
 }
 
@@ -85,13 +99,13 @@ func TestMultipleScriptTags(t *testing.T) {
 	</head></html>`
 
 	d := extract(t, h)
-	nodes, _ := d.Metadata["jsonld"].([]map[string]any)
+	nodes := jsonldNodes(t, d)
 	if len(nodes) != 2 {
 		t.Fatalf("expected 2 nodes, got %d", len(nodes))
 	}
 	// Article is preferred over Organization.
-	if got, _ := d.Metadata["jsonld_type"].(string); got != "Article" {
-		t.Errorf("jsonld_type = %q, want Article", got)
+	if got, _ := d.Metadata["type"].(string); got != "Article" {
+		t.Errorf("type = %q, want Article", got)
 	}
 }
 
@@ -102,7 +116,7 @@ func TestArrayForm(t *testing.T) {
 	]</script></head></html>`
 
 	d := extract(t, h)
-	nodes, _ := d.Metadata["jsonld"].([]map[string]any)
+	nodes := jsonldNodes(t, d)
 	if len(nodes) != 2 {
 		t.Fatalf("expected 2 nodes, got %d", len(nodes))
 	}
@@ -115,38 +129,12 @@ func TestMalformedJSONContinues(t *testing.T) {
 	</head></html>`
 
 	d := extract(t, h)
-	if got, _ := d.Metadata["jsonld_headline"].(string); got != "Survives" {
-		t.Errorf("jsonld_headline = %q, want Survives", got)
+	if got, _ := d.Metadata["headline"].(string); got != "Survives" {
+		t.Errorf("headline = %q, want Survives", got)
 	}
-	nodes, _ := d.Metadata["jsonld"].([]map[string]any)
+	nodes := jsonldNodes(t, d)
 	if len(nodes) != 1 {
 		t.Errorf("expected 1 node (malformed skipped), got %d", len(nodes))
-	}
-}
-
-func TestAuthorShapes(t *testing.T) {
-	cases := []struct {
-		name, blob, want string
-	}{
-		{"string", `{"@type":"Article","author":"Jane Doe"}`, "Jane Doe"},
-		{"object", `{"@type":"Article","author":{"@type":"Person","name":"Jane Doe"}}`, "Jane Doe"},
-		{"array", `{"@type":"Article","author":[{"@type":"Person","name":"Jane Doe"},{"@type":"Person","name":"John"}]}`, "Jane Doe"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			d := extract(t, `<script type="application/ld+json">`+tc.blob+`</script>`)
-			if got, _ := d.Metadata["jsonld_author"].(string); got != tc.want {
-				t.Errorf("jsonld_author = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestImageObjectShape(t *testing.T) {
-	const h = `<script type="application/ld+json">{"@type":"Article","image":{"@type":"ImageObject","url":"https://ex.com/a.jpg"}}</script>`
-	d := extract(t, h)
-	if got, _ := d.Metadata["jsonld_image"].(string); got != "https://ex.com/a.jpg" {
-		t.Errorf("jsonld_image = %q", got)
 	}
 }
 
@@ -190,14 +178,8 @@ func TestSanitizeHeadlineStripsTagsAndDecodesEntities(t *testing.T) {
 	}</script>`
 
 	d := extract(t, h)
-	if got, _ := d.Metadata["jsonld_headline"].(string); got != "Smith & Jones: an unlikely story" {
-		t.Errorf("jsonld_headline = %q", got)
-	}
-	if got, _ := d.Metadata["jsonld_description"].(string); got != "plain" {
-		t.Errorf("jsonld_description = %q", got)
-	}
-	if got, _ := d.Metadata["jsonld_author"].(string); got != "John O'Brien" {
-		t.Errorf("jsonld_author = %q", got)
+	if got, _ := d.Metadata["headline"].(string); got != "Smith & Jones: an unlikely story" {
+		t.Errorf("headline = %q", got)
 	}
 }
 
@@ -210,7 +192,7 @@ func TestRawJSONLDDumpIsDeepSanitized(t *testing.T) {
 	}</script>`
 
 	d := extract(t, h)
-	nodes, _ := d.Metadata["jsonld"].([]map[string]any)
+	nodes := jsonldNodes(t, d)
 	if len(nodes) != 1 {
 		t.Fatalf("expected 1 node, got %d", len(nodes))
 	}
@@ -229,26 +211,5 @@ func TestRawJSONLDDumpIsDeepSanitized(t *testing.T) {
 	// @-prefixed structural keys are preserved verbatim.
 	if got, _ := n["@type"].(string); got != "Article" {
 		t.Errorf("nodes[0].@type = %q", got)
-	}
-}
-
-func TestSanitizeImageRejectsNonHTTP(t *testing.T) {
-	cases := []struct {
-		name, raw, want string
-	}{
-		{"http", `"http://ex.com/a.jpg"`, "http://ex.com/a.jpg"},
-		{"https", `"https://ex.com/a.jpg"`, "https://ex.com/a.jpg"},
-		{"data-uri", `"data:image/png;base64,AAAA"`, ""},
-		{"javascript", `"javascript:alert(1)"`, ""},
-		{"relative", `"/images/a.jpg"`, ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			d := extract(t, `<script type="application/ld+json">{"@type":"Article","image":`+tc.raw+`}</script>`)
-			got, _ := d.Metadata["jsonld_image"].(string)
-			if got != tc.want {
-				t.Errorf("jsonld_image = %q, want %q", got, tc.want)
-			}
-		})
 	}
 }

@@ -1329,7 +1329,8 @@
                   <span class="font-inter text-text-brand-muted text-xs">
                     {#if panelMeta?.author}<span>{panelMeta.author}</span>{/if}
                     {#if panelMeta?.author && panelMeta?.published}<span class="mx-1">·</span>{/if}
-                    {#if panelMeta?.published}<span>{formatMetaDate(panelMeta.published)}</span>{/if}
+                    {#if panelMeta?.published}<span>{formatMetaDate(panelMeta.published)}</span
+                      >{/if}
                     {#if (panelMeta?.author || panelMeta?.published) && panelMeta?.type}<span
                         class="mx-1">·</span
                       >{/if}

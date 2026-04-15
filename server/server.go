@@ -980,24 +980,25 @@ func servePreview(c *webContext) {
 	c.JSON(payload)
 }
 
-// buildPreviewMeta surfaces normalized JSON-LD fields and the raw node dump so
-// the preview panel can show a byline and, optionally, the extracted data.
-// Returns nil when there is nothing to surface.
+// buildPreviewMeta surfaces the document's normalized metadata (merged
+// readability + JSON-LD output) plus the raw JSON-LD node dump so the
+// preview panel can render a byline, description, and an "Extracted
+// JSON-LD" section. Returns nil when there is nothing to surface.
 func buildPreviewMeta(doc *document.Document) map[string]any {
-	if doc.Metadata == nil {
-		return nil
-	}
 	meta := map[string]any{}
 	for _, k := range []string{
-		"jsonld_type", "jsonld_headline", "jsonld_description",
-		"jsonld_author", "jsonld_published", "jsonld_modified", "jsonld_image",
+		"type", "headline", "description", "author",
+		"published", "modified", "image", "site_name", "language",
 	} {
 		if v, ok := doc.Metadata[k].(string); ok && v != "" {
-			meta[strings.TrimPrefix(k, "jsonld_")] = v
+			meta[k] = v
 		}
 	}
-	if nodes, ok := doc.Metadata["jsonld"].([]map[string]any); ok && len(nodes) > 0 {
-		meta["jsonld"] = nodes
+	if raw, ok := doc.Metadata["jsonld"].(string); ok && raw != "" {
+		var nodes []map[string]any
+		if err := json.Unmarshal([]byte(raw), &nodes); err == nil && len(nodes) > 0 {
+			meta["jsonld"] = nodes
+		}
 	}
 	if len(meta) == 0 {
 		return nil

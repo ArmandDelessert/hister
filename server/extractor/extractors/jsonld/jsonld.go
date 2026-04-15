@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -98,16 +97,20 @@ func (e *JSONLDExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
-	d.Metadata["jsonld"] = nodes
+	// Stored as a JSON string so the nested structure survives bleve's
+	// text-mapped metadata round-trip. Preview consumers unmarshal it.
+	if b, err := json.Marshal(nodes); err == nil {
+		d.Metadata["jsonld"] = string(b)
+	}
 
+	// Readability already extracts author/description/image/dates from
+	// JSON-LD + OpenGraph + meta tags and runs after us, so writing those
+	// here would just be overwritten. Keep the two fields readability does
+	// not expose: schema.org @type for classification, and headline (which
+	// is distinct from the HTML <title> readability uses).
 	best := pickBest(nodes)
-	setString(d.Metadata, "jsonld_type", sanitizer.SanitizeText(typeString(best)))
-	setString(d.Metadata, "jsonld_headline", sanitizer.SanitizeText(firstString(best, "headline", "name")))
-	setString(d.Metadata, "jsonld_description", sanitizer.SanitizeText(firstString(best, "description")))
-	setString(d.Metadata, "jsonld_author", sanitizer.SanitizeText(authorName(best["author"])))
-	setString(d.Metadata, "jsonld_published", sanitizer.SanitizeText(firstString(best, "datePublished")))
-	setString(d.Metadata, "jsonld_modified", sanitizer.SanitizeText(firstString(best, "dateModified")))
-	setString(d.Metadata, "jsonld_image", sanitizeURL(imageURL(best["image"])))
+	setString(d.Metadata, "type", sanitizer.SanitizeText(typeString(best)))
+	setString(d.Metadata, "headline", sanitizer.SanitizeText(firstString(best, "headline", "name")))
 
 	return types.ExtractorContinue, nil
 }
@@ -245,46 +248,6 @@ func firstString(n map[string]any, keys ...string) string {
 	return ""
 }
 
-// authorName extracts a human-readable author name from string, object, or
-// array shapes.
-func authorName(v any) string {
-	switch t := v.(type) {
-	case string:
-		return strings.TrimSpace(t)
-	case map[string]any:
-		if s, ok := t["name"].(string); ok {
-			return strings.TrimSpace(s)
-		}
-	case []any:
-		for _, item := range t {
-			if s := authorName(item); s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
-// imageURL extracts an image URL from string, object (schema.org ImageObject),
-// or array shapes.
-func imageURL(v any) string {
-	switch t := v.(type) {
-	case string:
-		return strings.TrimSpace(t)
-	case map[string]any:
-		if s, ok := t["url"].(string); ok {
-			return strings.TrimSpace(s)
-		}
-	case []any:
-		for _, item := range t {
-			if s := imageURL(item); s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
 func setString(m map[string]any, key, value string) {
 	if value == "" {
 		return
@@ -326,24 +289,4 @@ func sanitizeValue(v any) any {
 		return t
 	}
 	return v
-}
-
-// sanitizeURL keeps only absolute http(s) URLs. Anything else relative
-// paths, data: URIs, javascript: is dropped.
-func sanitizeURL(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return ""
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return ""
-	}
-	if u.Host == "" {
-		return ""
-	}
-	return u.String()
 }

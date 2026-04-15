@@ -76,46 +76,7 @@ in
     };
 
     settings = lib.mkOption {
-      type = lib.types.submodule {
-        freeformType = yamlFormat.type;
-        options = {
-          app = lib.mkOption {
-            type = lib.types.submodule { freeformType = yamlFormat.type; };
-            default = { };
-            description = "App section (maps to the `app:` block of config.yml).";
-          };
-          server = lib.mkOption {
-            type = lib.types.submodule { freeformType = yamlFormat.type; };
-            default = { };
-            description = "Server section (maps to the `server:` block of config.yml).";
-          };
-          indexer = lib.mkOption {
-            type = lib.types.submodule { freeformType = yamlFormat.type; };
-            default = { };
-            description = "Indexer section (maps to the `indexer:` block of config.yml).";
-          };
-          crawler = lib.mkOption {
-            type = lib.types.submodule { freeformType = yamlFormat.type; };
-            default = { };
-            description = "Crawler section (maps to the `crawler:` block of config.yml).";
-          };
-          hotkeys = lib.mkOption {
-            type = lib.types.submodule { freeformType = yamlFormat.type; };
-            default = { };
-            description = "Hotkeys section (maps to the `hotkeys:` block of config.yml).";
-          };
-          extractors = lib.mkOption {
-            type = lib.types.submodule { freeformType = yamlFormat.type; };
-            default = { };
-            description = "Extractors section (maps to the `extractors:` block of config.yml).";
-          };
-          sensitive_content_patterns = lib.mkOption {
-            type = lib.types.attrsOf lib.types.str;
-            default = { };
-            description = "Regular expressions for redacting sensitive content.";
-          };
-        };
-      };
+      type = yamlFormat.type;
       default = { };
       description = ''
         Hister configuration rendered to YAML and passed via HISTER_CONFIG.

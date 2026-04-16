@@ -1,6 +1,6 @@
 {
   "name": "@hister/ext",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist/*",

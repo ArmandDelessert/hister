@@ -984,12 +984,16 @@ func servePreview(c *webContext) {
 		serve500(c)
 		return
 	}
-	c.JSON(map[string]any{
+	payload := map[string]any{
 		"title":    doc.Title,
 		"content":  resp.Content,
 		"template": resp.Template,
 		"added":    doc.Added,
-	})
+	}
+	if meta := doc.GetPreviewMeta(); meta != nil {
+		payload["meta"] = meta
+	}
+	c.JSON(payload)
 }
 
 func serveFile(c *webContext) {

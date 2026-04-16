@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/url"
 	"strings"
+	"time"
 
 	readability "codeberg.org/readeck/go-readability/v2"
 	"github.com/rs/zerolog/log"
@@ -303,7 +304,35 @@ func (e *readabilityExtractor) Extract(d *document.Document) (types.ExtractorSta
 	d.Text = buf.String()
 	d.Title = a.Title()
 	d.SetFaviconURL(a.Favicon())
+	writeReadabilityMeta(d, a)
 	return types.ExtractorStop, nil
+}
+
+// writeReadabilityMeta copies the rich fields readability already parsed
+// (internally from JSON-LD, OpenGraph, and meta tags) onto d.Metadata so
+// downstream consumers have byline/date/description without re-parsing.
+// The JSON-LD extractor only writes type and headline, so these keys do
+// not collide.
+func writeReadabilityMeta(d *document.Document, a readability.Article) {
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	set := func(k, v string) {
+		if v != "" {
+			d.Metadata[k] = v
+		}
+	}
+	set("author", a.Byline())
+	set("description", a.Excerpt())
+	set("site_name", a.SiteName())
+	set("image", a.ImageURL())
+	set("language", a.Language())
+	if t, err := a.PublishedTime(); err == nil && !t.IsZero() {
+		d.Metadata["published"] = t.Format(time.RFC3339)
+	}
+	if t, err := a.ModifiedTime(); err == nil && !t.IsZero() {
+		d.Metadata["modified"] = t.Format(time.RFC3339)
+	}
 }
 
 func (e *readabilityExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {

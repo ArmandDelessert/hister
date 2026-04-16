@@ -2,6 +2,7 @@ package document
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -212,6 +213,31 @@ func (d *Document) SetFaviconURL(u string) {
 
 func (d *Document) ID() string {
 	return GetDocID(d.UserID, d.URL)
+}
+
+// GetPreviewMeta returns the document's normalized metadata (merged
+// readability + JSON-LD output) for the preview UI. Returns nil when
+// there is nothing to surface.
+func (d *Document) GetPreviewMeta() map[string]any {
+	meta := map[string]any{}
+	for _, k := range []string{
+		"type", "headline", "description", "author",
+		"published", "modified", "image", "site_name", "language",
+	} {
+		if v, ok := d.Metadata[k].(string); ok && v != "" {
+			meta[k] = v
+		}
+	}
+	if raw, ok := d.Metadata["jsonld"].(string); ok && raw != "" {
+		var nodes []map[string]any
+		if err := json.Unmarshal([]byte(raw), &nodes); err == nil && len(nodes) > 0 {
+			meta["jsonld"] = nodes
+		}
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return meta
 }
 
 func GetDocID(uid uint, url string) string {

@@ -148,8 +148,10 @@ func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error)
 	}
 	d.Type = types.Web
 	d.Domain = pu.Host
-	if err := extractFn(d); err != nil {
-		return err
+	if d.HTML != "" {
+		if err := extractFn(d); err != nil {
+			return err
+		}
 	}
 
 	d.Language = ld.DetectLanguage(d.Text)

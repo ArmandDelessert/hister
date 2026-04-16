@@ -702,6 +702,9 @@ func resFromHit(h *search.DocumentMatch) *document.Document {
 
 func docFromHit(h *search.DocumentMatch) *document.Document {
 	d := resFromHit(h)
+	if s, ok := h.Fields["text"].(string); ok {
+		d.Text = s
+	}
 	if s, ok := h.Fields["html"].(string); ok {
 		d.HTML = s
 	}

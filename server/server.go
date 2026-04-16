@@ -978,11 +978,17 @@ func servePreview(c *webContext) {
 		serve500(c)
 		return
 	}
-	resp, err := extractor.Preview(doc)
-	if err != nil {
-		log.Warn().Err(err).Str("url", u).Msg("failed to generate preview")
-		serve500(c)
-		return
+	var resp types.PreviewResponse
+	var err error
+	if doc.HTML == "" {
+		resp = types.PreviewResponse{Content: doc.Text}
+	} else {
+		resp, err = extractor.Preview(doc)
+		if err != nil {
+			log.Warn().Err(err).Str("url", u).Msg("failed to generate preview")
+			serve500(c)
+			return
+		}
 	}
 	payload := map[string]any{
 		"title":    doc.Title,

@@ -373,6 +373,20 @@ func SemanticSearchEnabled() bool {
 	return i != nil && i.embedder != nil && i.vectorStore != nil
 }
 
+// semanticTextPreviewLen is the maximum number of runes returned in
+// MatchedChunk and semantic-only Document.Text fields. Keeps response payloads
+// comparable to Bleve's keyword result snippets.
+const semanticTextPreviewLen = 500
+
+// truncateText trims s to at most maxRunes runes, appending "…" when cut.
+func truncateText(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "…"
+}
+
 // embedDocumentChunks splits the document text into chunks, batch-embeds them,
 // and stores the resulting chunk vectors. Errors are logged but not propagated
 // so that Bleve indexing can still proceed.
@@ -775,12 +789,13 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 					hit := SemanticHit{
 						DocID:        docID,
 						Similarity:   dh.similarity,
-						MatchedChunk: dh.chunkText,
+						MatchedChunk: truncateText(dh.chunkText, semanticTextPreviewLen),
 					}
-					// For semantic-only hits, populate the full document.
+					// For semantic-only hits, populate the document with a truncated text preview.
 					d := GetByURL(docID)
 					if d != nil {
 						if _, inKeyword := keywordURLs[d.URL]; !inKeyword {
+							d.Text = truncateText(d.Text, semanticTextPreviewLen)
 							hit.Document = d
 						}
 					}

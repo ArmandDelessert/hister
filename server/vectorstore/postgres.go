@@ -79,17 +79,23 @@ func (p *pgVectorStore) PutChunks(docID string, userID uint, chunks []Chunk) err
 		return fmt.Errorf("delete old embeddings: %w", err)
 	}
 
-	for _, c := range chunks {
-		key := chunkKey(docID, c.Index)
-		vecStr := pgVectorLiteral(c.Embedding)
-		if _, err = tx.Exec(
-			`INSERT INTO embeddings(chunk_key, doc_id, chunk_idx, user_id, chunk_text, embedding)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			key, docID, c.Index, userID, c.Text, vecStr,
-		); err != nil {
-			return fmt.Errorf("insert embedding chunk: %w", err)
+	// Build a single multi-row INSERT for all chunks.
+	const cols = 6 // chunk_key, doc_id, chunk_idx, user_id, chunk_text, embedding
+	var sb strings.Builder
+	sb.WriteString(`INSERT INTO embeddings(chunk_key, doc_id, chunk_idx, user_id, chunk_text, embedding) VALUES `)
+	args := make([]any, 0, len(chunks)*cols)
+	for i, c := range chunks {
+		if i > 0 {
+			sb.WriteString(", ")
 		}
+		base := i*cols + 1
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d, $%d)", base, base+1, base+2, base+3, base+4, base+5)
+		args = append(args, chunkKey(docID, c.Index), docID, c.Index, userID, c.Text, pgVectorLiteral(c.Embedding))
 	}
+	if _, err = tx.Exec(sb.String(), args...); err != nil {
+		return fmt.Errorf("insert embedding chunks: %w", err)
+	}
+
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit chunks: %w", err)
 	}

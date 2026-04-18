@@ -38,12 +38,7 @@ func NewEmbedder(cfg *config.SemanticSearch) *Embedder {
 
 type embeddingRequest struct {
 	Model string `json:"model"`
-	Input string `json:"input"`
-}
-
-type embeddingBatchRequest struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
+	Input any    `json:"input"` // string for single, []string for batch
 }
 
 type embeddingResponse struct {
@@ -52,11 +47,12 @@ type embeddingResponse struct {
 	} `json:"data"`
 }
 
-// Embed converts a single text into a float32 vector.
-func (e *Embedder) Embed(text string) (_ []float32, err error) {
+// doEmbeddingRequest sends an embedding request to the endpoint and returns the
+// parsed response. input is either a string (single) or []string (batch).
+func (e *Embedder) doEmbeddingRequest(input any) (_ *embeddingResponse, err error) {
 	body, err := json.Marshal(embeddingRequest{
 		Model: e.model,
-		Input: text,
+		Input: input,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal embedding request: %w", err)
@@ -87,49 +83,27 @@ func (e *Embedder) Embed(text string) (_ []float32, err error) {
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode embedding response: %w", err)
 	}
+	return &result, nil
+}
+
+// Embed converts a single text into a float32 vector.
+func (e *Embedder) Embed(text string) ([]float32, error) {
+	result, err := e.doEmbeddingRequest(text)
+	if err != nil {
+		return nil, err
+	}
 	if len(result.Data) == 0 || len(result.Data[0].Embedding) == 0 {
 		return nil, fmt.Errorf("embedding response contained no data")
 	}
-
 	return toFloat32(result.Data[0].Embedding), nil
 }
 
 // EmbedBatch converts multiple texts in a single request.
-func (e *Embedder) EmbedBatch(texts []string) (_ [][]float32, err error) {
-	body, err := json.Marshal(embeddingBatchRequest{
-		Model: e.model,
-		Input: texts,
-	})
+func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
+	result, err := e.doEmbeddingRequest(texts)
 	if err != nil {
-		return nil, fmt.Errorf("marshal batch embedding request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequest("POST", e.endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create batch embedding request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("batch embedding request failed: %w", err)
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); err == nil {
-			err = cerr
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("embedding endpoint returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result embeddingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode batch embedding response: %w", err)
-	}
-
 	vectors := make([][]float32, len(result.Data))
 	for i, d := range result.Data {
 		vectors[i] = toFloat32(d.Embedding)

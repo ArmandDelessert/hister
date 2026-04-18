@@ -18,6 +18,7 @@ import (
 type Embedder struct {
 	endpoint         string
 	model            string
+	dimensions       int
 	client           *http.Client
 	maxContextLength int
 	chunkOverlap     int
@@ -28,6 +29,7 @@ func NewEmbedder(cfg *config.SemanticSearch) *Embedder {
 	return &Embedder{
 		endpoint:         cfg.EmbeddingEndpoint,
 		model:            cfg.EmbeddingModel,
+		dimensions:       cfg.Dimensions,
 		maxContextLength: cfg.MaxContextLength,
 		chunkOverlap:     cfg.ChunkOverlap,
 		client: &http.Client{
@@ -95,6 +97,9 @@ func (e *Embedder) Embed(text string) ([]float32, error) {
 	if len(result.Data) == 0 || len(result.Data[0].Embedding) == 0 {
 		return nil, fmt.Errorf("embedding response contained no data")
 	}
+	if got := len(result.Data[0].Embedding); e.dimensions > 0 && got != e.dimensions {
+		return nil, fmt.Errorf("embedding dimension mismatch: expected %d, got %d", e.dimensions, got)
+	}
 	return toFloat32(result.Data[0].Embedding), nil
 }
 
@@ -106,6 +111,9 @@ func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
 	}
 	vectors := make([][]float32, len(result.Data))
 	for i, d := range result.Data {
+		if got := len(d.Embedding); e.dimensions > 0 && got != e.dimensions {
+			return nil, fmt.Errorf("embedding dimension mismatch at index %d: expected %d, got %d", i, e.dimensions, got)
+		}
 		vectors[i] = toFloat32(d.Embedding)
 	}
 	return vectors, nil

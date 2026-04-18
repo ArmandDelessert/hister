@@ -3,8 +3,6 @@
 package vectorstore
 
 import (
-	"strings"
-
 	"github.com/asciimoo/hister/config"
 )
 
@@ -49,7 +47,8 @@ type VectorStore interface {
 
 // New creates a VectorStore implementation based on the database backend in use.
 func New(cfg *config.Config) (VectorStore, error) {
-	if strings.HasPrefix(cfg.Server.Database, "postgres") {
+	dbType, _ := cfg.DatabaseConnection()
+	if dbType == config.Psql {
 		return newPostgres(cfg)
 	}
 	return newSQLite(cfg)

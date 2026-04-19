@@ -126,15 +126,17 @@ type Extractor struct {
 
 // SemanticSearch holds configuration for optional vector similarity search.
 type SemanticSearch struct {
-	Enable              bool    `yaml:"enable" mapstructure:"enable"`
-	EmbeddingEndpoint   string  `yaml:"embedding_endpoint" mapstructure:"embedding_endpoint"`
-	EmbeddingModel      string  `yaml:"embedding_model" mapstructure:"embedding_model"`
-	Dimensions          int     `yaml:"dimensions" mapstructure:"dimensions"`
-	MaxContextLength    int     `yaml:"max_context_length" mapstructure:"max_context_length"`
-	ChunkOverlap        int     `yaml:"chunk_overlap" mapstructure:"chunk_overlap"`
-	SimilarityThreshold float64 `yaml:"similarity_threshold" mapstructure:"similarity_threshold"`
-	ResultLimit         int     `yaml:"result_limit" mapstructure:"result_limit"`
-	SemanticWeight      float64 `yaml:"semantic_weight" mapstructure:"semantic_weight"`
+	Enable              bool              `yaml:"enable" mapstructure:"enable"`
+	EmbeddingEndpoint   string            `yaml:"embedding_endpoint" mapstructure:"embedding_endpoint"`
+	EmbeddingModel      string            `yaml:"embedding_model" mapstructure:"embedding_model"`
+	APIKey              string            `yaml:"api_key" mapstructure:"api_key"`
+	Headers             map[string]string `yaml:"headers" mapstructure:"headers"`
+	Dimensions          int               `yaml:"dimensions" mapstructure:"dimensions"`
+	MaxContextLength    int               `yaml:"max_context_length" mapstructure:"max_context_length"`
+	ChunkOverlap        int               `yaml:"chunk_overlap" mapstructure:"chunk_overlap"`
+	SimilarityThreshold float64           `yaml:"similarity_threshold" mapstructure:"similarity_threshold"`
+	ResultLimit         int               `yaml:"result_limit" mapstructure:"result_limit"`
+	SemanticWeight      float64           `yaml:"semantic_weight" mapstructure:"semantic_weight"`
 }
 
 // DBTypedef represents the type of database being used.

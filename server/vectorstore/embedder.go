@@ -18,6 +18,8 @@ import (
 type Embedder struct {
 	endpoint         string
 	model            string
+	apiKey           string
+	headers          map[string]string
 	dimensions       int
 	client           *http.Client
 	maxContextLength int
@@ -29,6 +31,8 @@ func NewEmbedder(cfg *config.SemanticSearch) *Embedder {
 	return &Embedder{
 		endpoint:         cfg.EmbeddingEndpoint,
 		model:            cfg.EmbeddingModel,
+		apiKey:           cfg.APIKey,
+		headers:          cfg.Headers,
 		dimensions:       cfg.Dimensions,
 		maxContextLength: cfg.MaxContextLength,
 		chunkOverlap:     cfg.ChunkOverlap,
@@ -65,6 +69,12 @@ func (e *Embedder) doEmbeddingRequest(input any) (_ *embeddingResponse, err erro
 		return nil, fmt.Errorf("create embedding request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if e.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+e.apiKey)
+	}
+	for k, v := range e.headers {
+		req.Header.Set(k, v)
+	}
 
 	resp, err := e.client.Do(req)
 	if err != nil {

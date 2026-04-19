@@ -124,17 +124,19 @@ Hister can augment keyword search with vector similarity search. When enabled, e
 
 Semantic search is **opt-in** and disabled by default. It requires an OpenAI-compatible embeddings endpoint such as [Ollama](https://ollama.com), a local [llama.cpp](https://github.com/ggml-org/llama.cpp) server, or the OpenAI API itself.
 
-| Key                    | Type   | Default                                | Description                                                                                                                                |
-| ---------------------- | ------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `enable`               | bool   | `false`                                | Enable or disable semantic search. All other keys are ignored when `false`.                                                                |
-| `embedding_endpoint`   | string | `http://localhost:11434/v1/embeddings` | URL of the OpenAI-compatible `/v1/embeddings` endpoint.                                                                                    |
-| `embedding_model`      | string | `qwen3-embedding:8b`                   | Model name passed in the embedding request. Must match a model served by your endpoint.                                                    |
-| `dimensions`           | int    | `4096`                                 | Vector dimensionality. Must match the output of the chosen model.                                                                          |
-| `max_context_length`   | int    | `4096`                                 | Maximum number of tokens per text chunk sent to the embedding model.                                                                       |
-| `chunk_overlap`        | int    | `128`                                  | Number of tokens shared between consecutive chunks. Helps preserve context across chunk boundaries.                                        |
-| `similarity_threshold` | float  | `0.1`                                  | Minimum cosine similarity score for a chunk to be included in results. Raise this to surface only highly relevant matches.                 |
-| `result_limit`         | int    | `50`                                   | Maximum number of semantic hits retrieved per query.                                                                                       |
-| `semantic_weight`      | float  | `0.4`                                  | Weight applied to the semantic score when merging with keyword scores (0.0 = keyword only, 1.0 = semantic only). Adjustable in the web UI. |
+| Key                    | Type              | Default                                | Description                                                                                                                                |
+| ---------------------- | ----------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enable`               | bool              | `false`                                | Enable or disable semantic search. All other keys are ignored when `false`.                                                                |
+| `embedding_endpoint`   | string            | `http://localhost:11434/v1/embeddings` | URL of the OpenAI-compatible `/v1/embeddings` endpoint.                                                                                    |
+| `embedding_model`      | string            | `qwen3-embedding:8b`                   | Model name passed in the embedding request. Must match a model served by your endpoint.                                                    |
+| `api_key`              | string            | `""`                                   | Optional API key sent as `Authorization: Bearer <key>`. Required for hosted providers such as OpenAI, Together, Mistral, or Voyage.        |
+| `headers`              | map[string]string | `{}`                                   | Optional extra HTTP headers added to every embedding request. Useful for proxies or providers that use a non-standard auth scheme.         |
+| `dimensions`           | int               | `4096`                                 | Vector dimensionality. Must match the output of the chosen model.                                                                          |
+| `max_context_length`   | int               | `4096`                                 | Maximum number of tokens per text chunk sent to the embedding model.                                                                       |
+| `chunk_overlap`        | int               | `128`                                  | Number of tokens shared between consecutive chunks. Helps preserve context across chunk boundaries.                                        |
+| `similarity_threshold` | float             | `0.1`                                  | Minimum cosine similarity score for a chunk to be included in results. Raise this to surface only highly relevant matches.                 |
+| `result_limit`         | int               | `50`                                   | Maximum number of semantic hits retrieved per query.                                                                                       |
+| `semantic_weight`      | float             | `0.4`                                  | Weight applied to the semantic score when merging with keyword scores (0.0 = keyword only, 1.0 = semantic only). Adjustable in the web UI. |
 
 ### Vector Storage Backends
 

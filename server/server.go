@@ -273,7 +273,13 @@ func withTokenAuth(handler endpointHandler) endpointHandler {
 			handler(c)
 			return
 		}
-		if c.Request.Header.Get("X-Access-Token") != c.Config.App.AccessToken {
+		tok := c.Request.Header.Get("X-Access-Token")
+		if tok == "" {
+			if auth := c.Request.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				tok = strings.TrimPrefix(auth, "Bearer ")
+			}
+		}
+		if tok != c.Config.App.AccessToken {
 			serve403(c)
 			return
 		}
@@ -299,7 +305,13 @@ func populateUserContext(c *webContext) {
 		c.Username = name
 	}
 	if c.UserID == 0 {
-		if tok := c.Request.Header.Get("X-Access-Token"); tok != "" {
+		tok := c.Request.Header.Get("X-Access-Token")
+		if tok == "" {
+			if auth := c.Request.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				tok = strings.TrimPrefix(auth, "Bearer ")
+			}
+		}
+		if tok != "" {
 			if u, err := model.GetUserByToken(tok); err == nil {
 				c.UserID = u.ID
 				c.Username = u.Username

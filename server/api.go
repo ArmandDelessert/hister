@@ -282,5 +282,12 @@ func init() {
 			Handler:      serveGenerateToken,
 			Description:  "Generate a new access token for the current user",
 		},
+		{
+			Name:        "MCP",
+			Path:        "/mcp",
+			Method:      POST,
+			Handler:     serveMCP,
+			Description: "Model Context Protocol endpoint. Exposes the search tool to AI assistants",
+		},
 	}
 }

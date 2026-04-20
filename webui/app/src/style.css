@@ -80,4 +80,15 @@
     background: transparent;
     color: inherit;
   }
+
+  /* Preview panel: wrap wide tables so horizontal overflow scrolls,
+     and contain floated infoboxes/thumbnails inside the prose block. */
+  .prose table {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  .prose {
+    display: flow-root;
+  }
 }

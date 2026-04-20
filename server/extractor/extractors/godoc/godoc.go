@@ -15,6 +15,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
 	"github.com/asciimoo/hister/server/types"
 )
@@ -154,7 +155,7 @@ func writeTag(buf *bytes.Buffer, tag string, attrs map[string]string, selfClosin
 	buf.WriteString(tag)
 	for k, v := range attrs {
 		if base != nil && (k == "href" || k == "src") {
-			v = resolveURL(base, v)
+			v = urlutil.ResolveURL(base, v)
 		}
 		buf.WriteByte(' ')
 		buf.WriteString(k)
@@ -167,19 +168,6 @@ func writeTag(buf *bytes.Buffer, tag string, attrs map[string]string, selfClosin
 	} else {
 		buf.WriteByte('>')
 	}
-}
-
-// resolveURL resolves ref against base. Returns ref unchanged if it is already
-// absolute or cannot be parsed.
-func resolveURL(base *url.URL, ref string) string {
-	if ref == "" || strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "data:") {
-		return ref
-	}
-	u, err := url.Parse(ref)
-	if err != nil || u.IsAbs() {
-		return ref
-	}
-	return base.ResolveReference(u).String()
 }
 
 // escapeAttr escapes special characters in HTML attribute values using the

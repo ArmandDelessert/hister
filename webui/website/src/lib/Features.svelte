@@ -111,7 +111,6 @@
   <PageHeader color="hister-coral" size="lg" tag="h2">Features</PageHeader>
 
   <div class="flex flex-col gap-6">
-
     <FeatureCard
       icon={aliasCard.icon}
       title={aliasCard.title}
@@ -121,7 +120,7 @@
       descColor={aliasCard.descColor}
       iconBg={aliasCard.iconBg}
       iconColor={aliasCard.iconColor}
-      iconSize=64
+      iconSize="64"
       horizontal
     />
     {#each rows as row}

@@ -7,7 +7,7 @@
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import WifiOff from '@lucide/svelte/icons/wifi-off';
   import Download from '@lucide/svelte/icons/download';
-  import Terminal from '@lucide/svelte/icons/terminal';
+  import Brain from '@lucide/svelte/icons/brain';
   import { PageHeader } from '@hister/components';
   import { FeatureCard } from '@hister/components';
 
@@ -93,14 +93,14 @@
   ];
 
   const aliasCard = {
-    icon: Terminal,
-    title: 'Search Aliases',
-    desc: 'Create custom keyword shortcuts to simplify complex or frequently used queries.',
+    icon: Brain,
+    title: 'AI Integration',
+    desc: 'Optional semantic search and MCP connectivity',
     bg: 'bg-hister-cyan',
     textColor: 'text-white',
     descColor: 'text-white/80',
-    iconBg: 'bg-[#f5f5f5]',
-    iconColor: 'text-hister-teal',
+    iconBg: 'bg-hister-cyan',
+    iconColor: 'text-white',
   };
 </script>
 
@@ -111,6 +111,19 @@
   <PageHeader color="hister-coral" size="lg" tag="h2">Features</PageHeader>
 
   <div class="flex flex-col gap-6">
+
+    <FeatureCard
+      icon={aliasCard.icon}
+      title={aliasCard.title}
+      description={aliasCard.desc}
+      bg={aliasCard.bg}
+      textColor={aliasCard.textColor}
+      descColor={aliasCard.descColor}
+      iconBg={aliasCard.iconBg}
+      iconColor={aliasCard.iconColor}
+      iconSize=64
+      horizontal
+    />
     {#each rows as row}
       <div class="grid grid-cols-1 gap-4 {row.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}">
         {#each row as card}
@@ -126,17 +139,5 @@
         {/each}
       </div>
     {/each}
-
-    <FeatureCard
-      icon={aliasCard.icon}
-      title={aliasCard.title}
-      description={aliasCard.desc}
-      bg={aliasCard.bg}
-      textColor={aliasCard.textColor}
-      descColor={aliasCard.descColor}
-      iconBg={aliasCard.iconBg}
-      iconColor={aliasCard.iconColor}
-      horizontal
-    />
   </div>
 </section>

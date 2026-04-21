@@ -31,6 +31,10 @@ server:
   address: '127.0.0.1:4433'
   base_url: 'http://127.0.0.1:4433'
   database: 'db.sqlite3'
+  oauth:
+    github:
+      client_id: 'your-github-client-id'
+      client_secret: 'your-github-client-secret'
 
 indexer:
   detect_languages: true
@@ -92,6 +96,7 @@ sensitive_content_patterns:
 | `address`  | string | `127.0.0.1:4433`       | Host and port to listen on. Use `[::]:4433` or `0.0.0.0:4433` to listen on all interfaces.                                           |
 | `base_url` | string | derived from `address` | Public URL of the Hister instance. Required when `address` uses `0.0.0.0`. Must match how you access Hister.                         |
 | `database` | string | `db.sqlite3`           | Database connection. SQLite filename (relative to `app.directory`) or a PostgreSQL DSN. See [Database Backends](#database-backends). |
+| `oauth`    | map    | (none)                 | Optional map of OAuth/OIDC provider configurations. See [OAuth](#oauth).                                                             |
 
 ## Database Backends
 
@@ -253,6 +258,87 @@ curl -H "X-Access-Token: your-secret-token-here" http://localhost:4433/api/confi
 ```
 
 **Security note**: The access token is transmitted in plain text with each request. When exposing Hister over the network, always use HTTPS (via reverse proxy) to encrypt the token in transit. The token provides basic access control but does not replace proper authentication systems for multi-user scenarios.
+
+## OAuth
+
+When [user handling](/docs/user-handling) is enabled, Hister supports delegating authentication to external OAuth 2.0 / OpenID Connect providers. Users can then sign in with their existing accounts instead of a Hister-local password.
+
+The `server.oauth` key is a map where each key is a provider name and the value is its configuration. Three providers are built in:
+
+| Provider | Description                                                  |
+| -------- | ------------------------------------------------------------ |
+| `github` | GitHub accounts via the GitHub OAuth app                     |
+| `google` | Google accounts via Google Identity                          |
+| `oidc`   | Any OpenID Connect provider (Keycloak, Authentik, Dex, etc.) |
+
+Each entry supports the following fields:
+
+| Field               | Type     | Required  | Description                                                                                                                                                   |
+| ------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client_id`         | string   | yes       | OAuth application client ID issued by the provider.                                                                                                           |
+| `client_secret`     | string   | yes       | OAuth application client secret issued by the provider.                                                                                                       |
+| `configuration_url` | string   | OIDC only | OIDC discovery URL (e.g. `https://accounts.example.com/.well-known/openid-configuration`). When set, `auth_url` and `token_url` are discovered automatically. |
+| `auth_url`          | string   | no        | Override the provider's authorization endpoint. Not needed for `github` or `google`. Required for `oidc` when `configuration_url` is not set.                 |
+| `token_url`         | string   | no        | Override the provider's token endpoint. Not needed for `github` or `google`. Required for `oidc` when `configuration_url` is not set.                         |
+| `scopes`            | []string | no        | Additional OAuth scopes to request. The provider defaults are used when omitted.                                                                              |
+
+### GitHub Example
+
+Register an OAuth app at [github.com/settings/developers](https://github.com/settings/developers). Set the **Authorization callback URL** to `https://your-hister-instance/api/oauth/callback?provider=github`.
+
+```yaml
+server:
+  oauth:
+    github:
+      client_id: 'your-github-client-id'
+      client_secret: 'your-github-client-secret'
+```
+
+### Google Example
+
+Create OAuth credentials in the [Google Cloud Console](https://console.cloud.google.com/). Add `https://your-hister-instance/api/oauth/callback?provider=google` as an authorised redirect URI.
+
+```yaml
+server:
+  oauth:
+    google:
+      client_id: 'your-google-client-id'
+      client_secret: 'your-google-client-secret'
+```
+
+### Generic OIDC Example
+
+```yaml
+server:
+  oauth:
+    oidc:
+      client_id: 'hister'
+      client_secret: 'your-client-secret'
+      configuration_url: 'https://accounts.example.com/.well-known/openid-configuration'
+```
+
+If your provider does not publish a discovery document, set `auth_url` and `token_url` directly and omit `configuration_url`:
+
+```yaml
+server:
+  oauth:
+    oidc:
+      client_id: 'hister'
+      client_secret: 'your-client-secret'
+      auth_url: 'https://accounts.example.com/oauth/authorize'
+      token_url: 'https://accounts.example.com/oauth/token'
+```
+
+### How It Works
+
+1. The login page shows a **Sign in with &lt;Provider&gt;** button for each configured provider.
+2. Clicking the button redirects the user to the provider's authorization page.
+3. After the user grants access the provider redirects back to `/api/oauth/callback?provider=<name>`.
+4. Hister verifies the state token, exchanges the authorization code for a token, and fetches the user's identity from the provider.
+5. If no local account is linked to that identity, one is created automatically using the provider's username (or email prefix for OIDC).
+6. The user is logged in and redirected to the home page.
+
+> **Note**: OAuth login requires `app.user_handling: true`. The buttons only appear on the login page when user handling is active and at least one provider is configured.
 
 ## Language Detection
 

@@ -19,15 +19,23 @@ app:
 
 After enabling user handling, restart the server and create at least one user account before attempting to log in.
 
-## Single User Compatibility
-
-Hister reserves user ID `0` for unauthenticated use. Documents indexed without user handling enabled are stored under user ID `0` and remain visible to all authenticated users after the feature is turned on. This means you can enable user handling on an existing instance without losing access to previously indexed content.
-
 ## Authentication
 
 ### Web Interface
 
 When user handling is enabled, the web interface presents a login page to unauthenticated visitors. Enter your username and password to log in. Your session is maintained via a secure HTTP-only cookie valid for one year.
+
+If OAuth providers are configured, the login page also shows **Sign in with &lt;Provider&gt;** buttons. See [OAuth Login](#oauth-login) below.
+
+### OAuth Login
+
+Hister supports signing in via GitHub, Google, or any OpenID Connect provider when `server.oauth` is configured. No password is required for OAuth accounts.
+
+When a user signs in via OAuth for the first time, Hister automatically creates a local account linked to their provider identity (GitHub login name, Google email, or OIDC preferred username). Subsequent logins with the same provider identity reuse the same account.
+
+OAuth accounts work identically to password accounts: they have their own isolated search index, personal access token, rules, and aliases. An OAuth user can generate a personal access token from their profile page to use with the CLI or browser extension.
+
+See the [OAuth section of the configuration docs](/docs/configuration#oauth) for setup instructions.
 
 ### Browser Extension
 
@@ -147,6 +155,10 @@ Non-admin users receive `403 Forbidden` when attempting to call admin-only endpo
 
 Grant or revoke admin status using `create-user --admin` (at creation time) or `update-user --toggle-admin` (at any time).
 
+## Single User Compatibility
+
+Hister reserves user ID `0` for unauthenticated use. Documents indexed without user handling enabled are stored under user ID `0` and remain visible to all authenticated users after the feature is turned on. This means you can enable user handling on an existing instance without losing access to previously indexed content.
+
 ## Document Isolation
 
 Each user's indexed documents are stored with their user ID. Searches are automatically scoped to:
@@ -183,4 +195,6 @@ The `/api/profile` endpoint returns information about the currently authenticate
 - Passwords are hashed with bcrypt before storage and are never returned by any API.
 - Sessions are stored in signed HTTP-only cookies. The signing key is derived from Hister's secret key file.
 - Personal access tokens bypass session cookies and can be used in scripts. Keep them secret and regenerate them if compromised.
+- OAuth state tokens are single-use random values stored in the session cookie. They prevent cross-site request forgery during the OAuth redirect flow.
+- OAuth accounts have no password set. If you need to disable an OAuth user's access, use `hister delete-user` or remove the provider from the configuration.
 - User handling is intended for a trusted group of users on a shared instance (family, team). For public-facing deployments, place Hister behind a reverse proxy with HTTPS.

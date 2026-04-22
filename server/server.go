@@ -12,7 +12,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -797,15 +796,6 @@ func doSearch(query *indexer.Query, cfg *config.Config, rules *config.Rules, use
 	}
 	if oq != "" {
 		res.QuerySuggestion = model.GetQuerySuggestion(userID, oq)
-	}
-	for _, doc := range res.Documents {
-		if doc.Type != types.Local {
-			continue
-		}
-		if strings.HasPrefix(doc.URL, "file://") {
-			cfp := files.FileURLToPath(doc.URL)
-			doc.URL = cfg.BaseURL("/api/file?path=") + url.QueryEscape(cfp)
-		}
 	}
 	duration := float32(time.Since(start).Milliseconds()) / 1000.
 	res.SearchDuration = fmt.Sprintf("%.3f seconds", duration)

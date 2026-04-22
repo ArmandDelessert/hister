@@ -396,6 +396,15 @@
     }
   }
 
+  // Convert a file:// URL to a server-side /api/file?path= URL for in-browser viewing.
+  // On Windows, strips the extra leading slash before the drive letter (file:///C:/ → C:/).
+  function fileResultUrl(url: string): string {
+    if (!url.startsWith('file://')) return url;
+    let path = url.slice('file://'.length);
+    if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
+    return 'api/file?path=' + encodeURIComponent(path);
+  }
+
   function updatePriorityResult(url: string, title: string, remove: boolean) {
     const q = actionsQuery || query;
     if (!q) return;
@@ -512,7 +521,11 @@
       const el = readables[highlightIdx] as HTMLElement;
       const result = el.closest('[data-result]')!;
       const link = result.querySelector<HTMLAnchorElement>('[data-result-link]')!;
-      openReadable({ preventDefault: () => {} } as Event, link.href, link.innerText);
+      openReadable(
+        { preventDefault: () => {} } as Event,
+        link.getAttribute('data-result-link'),
+        link.innerText,
+      );
     }
   }
 
@@ -788,7 +801,7 @@
     const links = document.querySelectorAll<HTMLAnchorElement>('[data-result] [data-result-link]');
     const link = links[idx];
     if (!link) return;
-    const url = link.href;
+    const url = link.getAttribute('data-result-link');
     if (url === untrack(() => panelUrl)) return;
     loadPanel(url, link.innerText);
   });
@@ -1229,8 +1242,8 @@
                         {/if}
                       </div>
                       <a
-                        data-result-link
-                        href={r.url}
+                        data-result-link={r.url}
+                        href={fileResultUrl(r.url)}
                         class="font-outfit text-md text-hister-teal min-w-0 flex-1 font-semibold hover:underline md:overflow-hidden md:text-xl"
                         target={config.openResultsOnNewTab ? '_blank' : undefined}
                         onclick={() => {
@@ -1357,8 +1370,8 @@
                         {/if}
                       </div>
                       <a
-                        data-result-link
-                        href={r.url}
+                        data-result-link={r.url}
+                        href={fileResultUrl(r.url)}
                         class="font-outfit text-md min-w-0 flex-1 font-semibold hover:underline md:text-xl"
                         style="color: var(--{color});"
                         target={config.openResultsOnNewTab ? '_blank' : undefined}

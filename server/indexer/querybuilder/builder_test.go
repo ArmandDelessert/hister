@@ -1,6 +1,7 @@
 package querybuilder
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -212,14 +213,15 @@ func Test_build_url_field_uses_term_query(t *testing.T) {
 
 // Test that url:"..." quoted syntax produces a TermQuery (supports spaces in URLs).
 func Test_build_url_field_quoted_uses_term_query(t *testing.T) {
-	bq := buildBoolQ(t, `url:"file:///C:/Users/My Documents/notes.txt"`)
+	f := "file:///C:/Users/My Documents/notes.txt"
+	bq := buildBoolQ(t, fmt.Sprintf(`url:"%s"`, f))
 	clauses := mustClauses(t, bq)
 	if len(clauses) != 1 {
 		t.Fatalf("expected 1 must clause, got %d", len(clauses))
 	}
 	tq := asTerm(t, clauses[0])
-	if tq.Term != "file:///c:/users/my documents/notes.txt" {
-		t.Fatalf("expected term %q, got %q", "file:///c:/users/my documents/notes.txt", tq.Term)
+	if tq.Term != f {
+		t.Fatalf("expected term %q, got %q", f, tq.Term)
 	}
 	if tq.FieldVal != "url" {
 		t.Fatalf("expected field %q, got %q", "url", tq.FieldVal)

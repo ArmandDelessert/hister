@@ -74,7 +74,7 @@ func getTokenQuery(t Token) (query.Query, bool) {
 				if field == "url" {
 					v = normalizeFileURL(v)
 				}
-				q := bleve.NewTermQuery(strings.ToLower(v))
+				q := bleve.NewTermQuery(v)
 				q.SetField(field)
 				q.SetBoost(weights[field])
 				return q, negated
@@ -155,7 +155,7 @@ func getTokenQuery(t Token) (query.Query, bool) {
 				if field == "url" {
 					v = normalizeFileURL(v)
 				}
-				q := bleve.NewTermQuery(strings.ToLower(v))
+				q := bleve.NewTermQuery(v)
 				q.SetField(field)
 				q.SetBoost(weights[field])
 				return q, negated

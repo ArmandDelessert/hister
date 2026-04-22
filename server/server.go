@@ -1000,7 +1000,7 @@ func serveRules(c *webContext) {
 
 func serveGet(c *webContext) {
 	u := c.Request.URL.Query().Get("url")
-	doc := indexer.GetByURL(u)
+	doc := indexer.GetByURLAndUser(u, c.UserID)
 	if doc == nil {
 		http.Error(c.Response, "document not found", http.StatusNotFound)
 		return
@@ -1015,7 +1015,7 @@ func serveGet(c *webContext) {
 
 func servePreview(c *webContext) {
 	u := c.Request.URL.Query().Get("url")
-	doc := indexer.GetByURL(u)
+	doc := indexer.GetByURLAndUser(u, c.UserID)
 	if doc == nil {
 		serve500(c)
 		return
@@ -1401,7 +1401,7 @@ func serveBatch(c *webContext) {
 				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
 				continue
 			}
-			d := indexer.GetByURL(op.URL)
+			d := indexer.GetByURLAndUser(op.URL, c.UserID)
 			if d == nil {
 				results[i] = batchOpResult{Status: http.StatusNotFound, Error: "document not found"}
 			} else {

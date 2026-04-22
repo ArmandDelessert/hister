@@ -92,7 +92,7 @@ func IndexFile(path string) error {
 	fileURL := files.PathToFileURL(absPath)
 
 	// Skip if already indexed with the same modification time
-	existing := GetByURL(fileURL)
+	existing := GetByURLAndUser(fileURL, 0)
 	if existing != nil && existing.Added == info.ModTime().Unix() {
 		return nil
 	}

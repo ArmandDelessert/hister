@@ -70,7 +70,94 @@ type Query struct {
 	SemanticWeight    float64 `json:"semantic_weight"`
 	PageKey           string  `json:"page_key"`
 	IncludeHTML       bool    `json:"include_html"`
-	cfg               *config.Config
+	Facets            bool    `json:"facets,omitempty"`
+	// FacetTermSize overrides the default top-N cap for term facets
+	// (domain, language). Zero uses the default. Useful for completion
+	// callers that want to post-filter a larger pool by prefix.
+	FacetTermSize int `json:"facet_term_size,omitempty"`
+	// MatchAll bypasses the text-DSL builder and runs a match-all query.
+	// Combine with UserID / Facets / DateFrom / DateTo for cheap aggregate
+	// queries (e.g. completion sources). Text is ignored when set.
+	MatchAll bool `json:"match_all,omitempty"`
+	cfg      *config.Config
+}
+
+const defaultFacetTermSize = 10
+
+// TermCount and RangeCount are the shape of facet buckets returned by Search
+// when Query.Facets is true.
+type TermCount struct {
+	Term  string `json:"term"`
+	Count int    `json:"count"`
+}
+
+type RangeCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type FacetsResult struct {
+	Domains       []TermCount  `json:"domains,omitempty"`
+	Languages     []TermCount  `json:"languages,omitempty"`
+	DateHistogram []RangeCount `json:"date_histogram,omitempty"`
+}
+
+// dateFacetBuckets drives the "added" histogram. Each entry is a non-
+// overlapping slice of time ending at the previous bucket's boundary; the
+// final "older" bucket is appended implicitly. Order matters, the loop
+// walks most-recent -> oldest so each range's upper bound is the prior
+// range's lower bound.
+var dateFacetBuckets = []struct {
+	name string
+	age  time.Duration
+}{
+	{"last_24h", 24 * time.Hour},
+	{"last_7d", 7 * 24 * time.Hour},
+	{"last_30d", 30 * 24 * time.Hour},
+	{"last_year", 365 * 24 * time.Hour},
+}
+
+func addFacets(req *bleve.SearchRequest, termSize int) {
+	if termSize <= 0 {
+		termSize = defaultFacetTermSize
+	}
+	req.AddFacet("domains", bleve.NewFacetRequest("domain", termSize))
+	req.AddFacet("languages", bleve.NewFacetRequest("language", termSize))
+	now := time.Now()
+	dh := bleve.NewFacetRequest("added", len(dateFacetBuckets)+1)
+	var prev *float64
+	for _, b := range dateFacetBuckets {
+		ts := float64(now.Add(-b.age).Unix())
+		dh.AddNumericRange(b.name, &ts, prev)
+		prev = &ts
+	}
+	dh.AddNumericRange("older", nil, prev)
+	req.AddFacet("added", dh)
+}
+
+func extractTermFacet(f *search.FacetResult) []TermCount {
+	if f == nil || f.Terms == nil {
+		return nil
+	}
+	terms := f.Terms.Terms()
+	out := make([]TermCount, 0, len(terms))
+	for _, t := range terms {
+		out = append(out, TermCount{Term: t.Term, Count: t.Count})
+	}
+	return out
+}
+
+func extractFacets(facets search.FacetResults) *FacetsResult {
+	fr := &FacetsResult{
+		Domains:   extractTermFacet(facets["domains"]),
+		Languages: extractTermFacet(facets["languages"]),
+	}
+	if f := facets["added"]; f != nil {
+		for _, nr := range f.NumericRanges {
+			fr.DateHistogram = append(fr.DateHistogram, RangeCount{Name: nr.Name, Count: nr.Count})
+		}
+	}
+	return fr
 }
 
 // SemanticHit represents a document found via vector similarity search.
@@ -91,6 +178,7 @@ type Results struct {
 	PageKey         string               `json:"page_key"`
 	SemanticHits    []SemanticHit        `json:"semantic_hits,omitempty"`
 	SemanticEnabled bool                 `json:"semantic_enabled"`
+	Facets          *FacetsResult        `json:"facets,omitempty"`
 }
 
 type MultiBatch struct {
@@ -705,6 +793,10 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 		}
 	}
 
+	if q.Facets {
+		addFacets(req, q.FacetTermSize)
+	}
+
 	res, err := i.idx.Search(req)
 	if err != nil {
 		return nil, err
@@ -721,6 +813,9 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 		Total:     res.Total,
 		Query:     q,
 		Documents: matches,
+	}
+	if q.Facets && len(res.Facets) > 0 {
+		r.Facets = extractFacets(res.Facets)
 	}
 	if len(res.Hits) > 0 {
 		lastHit := res.Hits[len(res.Hits)-1]
@@ -791,7 +886,7 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 						MatchedChunk: truncateText(dh.chunkText, semanticTextPreviewLen),
 					}
 					// For semantic-only hits, populate the document with a truncated text preview.
-					d := GetByURL(docID)
+					d := GetByDocID(docID)
 					if d != nil {
 						if _, inKeyword := keywordURLs[d.URL]; !inKeyword {
 							d.Text = truncateText(d.Text, semanticTextPreviewLen)
@@ -807,9 +902,20 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	return r, nil
 }
 
-func GetByURL(u string) *document.Document {
-	q := query.NewTermQuery(strings.ToLower(u))
-	q.SetField("url")
+// GetByURLAndUser returns the document at u owned by uid. The url field is
+// shared across owners in multi-user mode, so callers must pass their own
+// UserID to avoid returning another user's copy of the same URL. A uid of 0
+// selects the global (single-user) owner; an instance that mixes uid-0 public
+// docs with per-user private docs still gets the right one because the lookup
+// goes through document.GetDocID.
+func GetByURLAndUser(u string, uid uint) *document.Document {
+	return GetByDocID(document.GetDocID(uid, u))
+}
+
+// GetByDocID returns the document with the given bleve document ID, or nil if
+// none exists. The ID is the uid-prefixed form produced by document.GetDocID.
+func GetByDocID(id string) *document.Document {
+	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
 	req.Fields = allFields
 	req.Highlight = bleve.NewHighlight()
@@ -897,7 +1003,11 @@ func docFromHit(h *search.DocumentMatch) *document.Document {
 
 func (q *Query) create() query.Query {
 	var sq query.Query
-	sq = querybuilder.Build(q.Text)
+	if q.MatchAll {
+		sq = query.NewMatchAllQuery()
+	} else {
+		sq = querybuilder.Build(q.Text)
+	}
 
 	if q.DateFrom != 0 || q.DateTo != 0 {
 		if q.DateFrom != 0 && q.DateTo == 0 {

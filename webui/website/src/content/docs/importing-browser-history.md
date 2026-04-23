@@ -11,8 +11,9 @@ The most obvious way to do so would be to re-visit them after setting up Hister 
 
 - Safari [is not supported yet](https://github.com/asciimoo/hister/issues/49); we welcome [contributions] that add support!
 - Since browsing history only stores URLs and not contents, the command-line tool will need to fetch the contents of those pages.
-  The command-line tool is more limited than a browser in a few ways:
-  - It cannot run JavaScript, so dynamic elements will not load (and some sites are broken enough to be _completely empty_ without it)
+  The default HTTP backend has a few limitations compared to a full browser:
+  - It cannot run JavaScript, so dynamic elements will not load (and some sites are broken enough to be _completely empty_ without it).
+    If this is a concern, you can switch to the `chromedp` backend to use a headless Chrome/Chromium instance that runs JavaScript fully. See [Selecting a Scraping Backend](#selecting-a-scraping-backend) below.
   - Since the requests are made by an automated program and not a human, some sites will trip their anti-bot protections.
     Most of the time they merely refuse to serve you the page, but sometimes this can go further: out of the ~42000 URLs I imported, _one_ site decided to block my household, and even then the ban was lifted on its own the following day.
 - The process can take a while: the aforementioned 42000 URLs took four hours on a decent connection (though [there are plans to improve this](https://codeberg.org/asciimoo/hister/issues/11)).
@@ -78,6 +79,26 @@ Note that Hister doesn't print URLs it skips importing, which can happen if it i
 It is okay to interrupt the importing process in any way!
 Since URLs previously indexed are not fetched again, it is possible to re-run the `hister import-browser` command later, and it will roughly resume from where it left off.
 (Pages that failed to be fetched won't be indexed on the server, so a new attempt will be made to fetch those.)
+
+### Selecting a Scraping Backend
+
+By default, `hister import-browser` fetches pages with a plain HTTP client. For sites that
+require JavaScript to render their content you can use a headless Chrome or Chromium instance
+instead:
+
+```bash
+hister import-browser --backend chromedp
+```
+
+If the Chromium binary is not found automatically, specify the path:
+
+```bash
+hister import-browser --backend chromedp --backend-option exec_path=/usr/bin/chromium
+```
+
+These flags override the `crawler.backend` and `crawler.backend_options` values from your
+config file for the duration of the import. See [configuration](configuration#crawler-backend-options)
+for the full list of backend options.
 
 ### Warnings
 

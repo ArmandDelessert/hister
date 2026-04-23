@@ -22,6 +22,22 @@ To manually index a specific URL:
 ./hister index https://example.com
 ```
 
+By default, Hister fetches the page using a plain HTTP request. For JavaScript-heavy pages
+you can switch to a headless Chrome backend with `--backend`:
+
+```bash
+hister index --backend chromedp https://example.com
+```
+
+If the Chromium binary is not on your `PATH`, point to it with `--backend-option`:
+
+```bash
+hister index --backend chromedp --backend-option exec_path=/usr/bin/chromium https://example.com
+```
+
+The crawler configuration from your config file (`crawler.backend`, `crawler.backend_options`, etc.)
+is used as the default and can be overridden per invocation with these flags.
+
 ### Crawling Websites
 
 Use `--recursive` (`-r`) to recursively crawl a website starting from a given URL.
@@ -63,6 +79,26 @@ Hister restores the original validator rules and picks up exactly where it left 
 | `--exclude-domain`  | Never follow links on this domain (repeatable)           |
 | `--allowed-pattern` | Only follow URLs matching this regexp (repeatable)       |
 | `--exclude-pattern` | Skip URLs matching this regexp (repeatable)              |
+
+#### Select a scraping backend
+
+Both recursive and non-recursive `index` support the same backend flags:
+
+| Flag                       | Description                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--backend NAME`           | Scraping backend: `http` (default) or `chromedp` (headless Chrome)                                                   |
+| `--backend-option KEY=VAL` | Backend-specific option (repeatable). See [configuration](configuration#crawler-backend-options) for available keys. |
+
+These flags override the `crawler.backend` and `crawler.backend_options` values from your config file for the duration of the command.
+
+Example: crawl a JavaScript-heavy site with Chromium:
+
+```bash
+hister index -r \
+  --backend chromedp \
+  --backend-option exec_path=/usr/bin/chromium \
+  https://example.com
+```
 
 Example: crawl only the docs subdomain, up to 200 pages:
 

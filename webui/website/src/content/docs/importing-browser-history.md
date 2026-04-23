@@ -96,7 +96,15 @@ If the Chromium binary is not found automatically, specify the path:
 hister import-browser --backend chromedp --backend-option exec_path=/usr/bin/chromium
 ```
 
-These flags override the `crawler.backend` and `crawler.backend_options` values from your
+You can also pass extra request headers or cookies:
+
+```bash
+hister import-browser --header "Accept-Language=en" --cookie "session=abc; Domain=example.com"
+```
+
+Cookies must be in `Set-Cookie` format: `name=value; Domain=example.com` (the `Domain` attribute is required). The `--header` and `--cookie` flags can be repeated and are merged with any values already defined in your config file.
+
+These flags override or extend the corresponding `crawler.*` values from your
 config file for the duration of the import. See [configuration](configuration#crawler-backend-options)
 for the full list of backend options.
 

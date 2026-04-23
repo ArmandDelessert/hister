@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -88,14 +90,46 @@ func stringToAnyMap(m map[string]string) map[string]any {
 	return result
 }
 
-// applyCrawlerBackendFlags reads --backend and --backend-option flags from cmd
-// and applies them to cfg.Crawler, overriding any config-file values.
+// parseCookieFlag parses a Set-Cookie header value (e.g. "session=abc; Domain=example.com; Path=/")
+// into a CrawlerCookie. Domain is required.
+func parseCookieFlag(s string) (config.CrawlerCookie, error) {
+	c, err := http.ParseSetCookie(s)
+	if err != nil {
+		return config.CrawlerCookie{}, fmt.Errorf("cookie %q: %w", s, err)
+	}
+	if c.Domain == "" {
+		return config.CrawlerCookie{}, fmt.Errorf("cookie %q: Domain attribute is required", s)
+	}
+	path := c.Path
+	if path == "" {
+		path = "/"
+	}
+	return config.CrawlerCookie{Name: c.Name, Value: c.Value, Domain: c.Domain, Path: path}, nil
+}
+
+// applyCrawlerBackendFlags reads --backend, --backend-option, --header, and --cookie
+// flags from cmd and applies them to cfg.Crawler, overriding any config-file values.
 func applyCrawlerBackendFlags(cmd *cobra.Command) {
 	if b, _ := cmd.Flags().GetString("backend"); b != "" {
 		cfg.Crawler.Backend = b
 	}
 	if opts, _ := cmd.Flags().GetStringToString("backend-option"); len(opts) > 0 {
 		cfg.Crawler.BackendOptions = stringToAnyMap(opts)
+	}
+	if headers, _ := cmd.Flags().GetStringToString("header"); len(headers) > 0 {
+		if cfg.Crawler.Headers == nil {
+			cfg.Crawler.Headers = make(map[string]string)
+		}
+		maps.Copy(cfg.Crawler.Headers, headers)
+	}
+	if cookies, _ := cmd.Flags().GetStringArray("cookie"); len(cookies) > 0 {
+		for _, raw := range cookies {
+			ck, err := parseCookieFlag(raw)
+			if err != nil {
+				exit(1, err.Error())
+			}
+			cfg.Crawler.Cookies = append(cfg.Crawler.Cookies, ck)
+		}
 	}
 }
 
@@ -619,6 +653,8 @@ func init() {
 	indexCmd.Flags().String("job-id", "", "Persistent crawl job ID; use with --recursive to start a new job or alone to resume an existing one")
 	indexCmd.Flags().String("backend", "", "Crawler backend to use (\"http\" or \"chromedp\")")
 	indexCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
+	indexCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
+	indexCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 }
 
 var deleteCmd = &cobra.Command{
@@ -964,6 +1000,8 @@ func init() {
 	importCmd.Flags().IntP("min-visit", "m", 1, "only import URLs that were opened at least 'min-visit' times")
 	importCmd.Flags().String("backend", "", "Crawler backend to use (\"http\" or \"chromedp\")")
 	importCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
+	importCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
+	importCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 
 	createUserCmd.Flags().Bool("admin", false, "create user with admin privileges")
 

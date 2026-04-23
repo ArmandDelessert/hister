@@ -35,8 +35,14 @@ If the Chromium binary is not on your `PATH`, point to it with `--backend-option
 hister index --backend chromedp --backend-option exec_path=/usr/bin/chromium https://example.com
 ```
 
+You can also pass extra headers or cookies for the request:
+
+```bash
+hister index --header "Accept-Language=en" --cookie "session=abc; Domain=example.com" https://example.com
+```
+
 The crawler configuration from your config file (`crawler.backend`, `crawler.backend_options`, etc.)
-is used as the default and can be overridden per invocation with these flags.
+is used as the default; all flags override or extend those values per invocation.
 
 ### Crawling Websites
 
@@ -84,12 +90,14 @@ Hister restores the original validator rules and picks up exactly where it left 
 
 Both recursive and non-recursive `index` support the same backend flags:
 
-| Flag                       | Description                                                                                                          |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `--backend NAME`           | Scraping backend: `http` (default) or `chromedp` (headless Chrome)                                                   |
-| `--backend-option KEY=VAL` | Backend-specific option (repeatable). See [configuration](configuration#crawler-backend-options) for available keys. |
+| Flag                        | Description                                                                                                          |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--backend NAME`            | Scraping backend: `http` (default) or `chromedp` (headless Chrome)                                                   |
+| `--backend-option KEY=VAL`  | Backend-specific option (repeatable). See [configuration](configuration#crawler-backend-options) for available keys. |
+| `--header KEY=VALUE`        | Extra HTTP request header (repeatable, e.g. `--header Accept-Language=en`)                                           |
+| `--cookie SET-COOKIE-VALUE` | Cookie in Set-Cookie format (repeatable, e.g. `--cookie "session=abc; Domain=example.com"`)                          |
 
-These flags override the `crawler.backend` and `crawler.backend_options` values from your config file for the duration of the command.
+These flags override or extend the corresponding `crawler.*` values from your config file for the duration of the command. Headers and cookies are merged with any values already defined in the config file.
 
 Example: crawl a JavaScript-heavy site with Chromium:
 

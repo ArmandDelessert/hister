@@ -91,12 +91,13 @@ sensitive_content_patterns:
 
 ## `server` Section
 
-| Key        | Type   | Default                | Description                                                                                                                          |
-| ---------- | ------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `address`  | string | `127.0.0.1:4433`       | Host and port to listen on. Use `[::]:4433` or `0.0.0.0:4433` to listen on all interfaces.                                           |
-| `base_url` | string | derived from `address` | Public URL of the Hister instance. Required when `address` uses `0.0.0.0`. Must match how you access Hister.                         |
-| `database` | string | `db.sqlite3`           | Database connection. SQLite filename (relative to `app.directory`) or a PostgreSQL DSN. See [Database Backends](#database-backends). |
-| `oauth`    | map    | (none)                 | Optional map of OAuth/OIDC provider configurations. See [OAuth](#oauth).                                                             |
+| Key          | Type   | Default                | Description                                                                                                                                                                |
+| ------------ | ------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`    | string | `127.0.0.1:4433`       | Host and port to listen on. Use `[::]:4433` or `0.0.0.0:4433` to listen on all interfaces.                                                                                 |
+| `base_url`   | string | derived from `address` | Public URL of the Hister instance. Required when `address` uses `0.0.0.0`. Must match how you access Hister.                                                               |
+| `database`   | string | `db.sqlite3`           | Database connection. SQLite filename (relative to `app.directory`) or a PostgreSQL DSN. See [Database Backends](#database-backends).                                       |
+| `oauth`      | map    | (none)                 | Optional map of OAuth/OIDC provider configurations. See [OAuth](#oauth).                                                                                                   |
+| `oauth_only` | bool   | `false`                | When `true`, disables password login. OAuth and both the global `app.access_token` and per-user access tokens are still accepted. See [OAuth-Only Mode](#oauth-only-mode). |
 
 ## Database Backends
 
@@ -339,6 +340,25 @@ server:
 6. The user is logged in and redirected to the home page.
 
 > **Note**: OAuth login requires `app.user_handling: true`. The buttons only appear on the login page when user handling is active and at least one provider is configured.
+
+## OAuth-Only Mode
+
+Setting `server.oauth_only: true` prevents users from authenticating with a username/password. Only OAuth logins are accepted through the web interface.
+
+```yaml
+server:
+  oauth_only: true
+  oauth:
+    github:
+      client_id: 'your-github-client-id'
+      client_secret: 'your-github-client-secret'
+```
+
+The global `app.access_token` and per-user personal access tokens continue to work regardless of this setting, so API clients, the CLI, and the browser extension are unaffected.
+
+The login page hides the username/password form when `oauth_only` is active, showing only the OAuth provider buttons.
+
+> **Note**: `oauth_only` only takes effect when `app.user_handling: true` and at least one OAuth provider is configured. Enabling it without any OAuth providers configured would leave users with no way to log in.
 
 ## Language Detection
 

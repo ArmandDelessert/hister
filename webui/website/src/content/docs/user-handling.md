@@ -37,6 +37,16 @@ OAuth accounts work identically to password accounts: they have their own isolat
 
 See the [OAuth section of the configuration docs](/docs/configuration#oauth) for setup instructions.
 
+### OAuth-Only Mode
+
+Setting `server.oauth_only: true` disables password logins entirely. Only OAuth sign-in is accepted through the web interface. The login page hides the credential form and shows only the OAuth provider buttons.
+
+This is useful when you want to enforce a single sign-on policy and prevent users from bypassing it with locally-set passwords.
+
+The global `app.access_token` and per-user personal access tokens continue to work even when `oauth_only` is enabled, so API clients and CLI tools are unaffected.
+
+See the [OAuth-Only Mode section of the configuration docs](/docs/configuration#oauth-only-mode) for the full configuration reference.
+
 ### Browser Extension
 
 The extension authenticates by copying the session cookies from the already-logged-in web interface:
@@ -196,4 +206,5 @@ The `/api/profile` endpoint returns information about the currently authenticate
 - Personal access tokens bypass session cookies and can be used in scripts. Keep them secret and regenerate them if compromised.
 - OAuth state tokens are single-use random values stored in the session cookie. They prevent cross-site request forgery during the OAuth redirect flow.
 - OAuth accounts have no password set. If you need to disable an OAuth user's access, use `hister delete-user` or remove the provider from the configuration.
+- Enable `server.oauth_only: true` to enforce OAuth-only login and prevent password authentication. Per-user access tokens and the global `app.access_token` remain valid for API and CLI access.
 - User handling is intended for a trusted group of users on a shared instance (family, team). For public-facing deployments, place Hister behind a reverse proxy with HTTPS.

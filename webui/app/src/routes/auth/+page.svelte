@@ -12,6 +12,7 @@
   let error = $state('');
   let loading = $state(false);
   let oauthProviders = $state<string[]>([]);
+  let oauthOnly = $state(false);
   let basePath = $state('');
 
   // Detect auth mode from config endpoint (no credentials required)
@@ -21,6 +22,7 @@
       .then((cfg) => {
         authMode = cfg.authMode ?? 'token';
         oauthProviders = cfg.oauthProviders ?? [];
+        oauthOnly = cfg.oauthOnly ?? false;
         basePath = cfg.basePath ?? '';
         if (authMode === 'none' || cfg.authenticated) {
           window.location.href = '/';
@@ -93,7 +95,7 @@
       </Card.Title>
       <Card.Description class="font-inter text-text-brand-secondary">
         {#if authMode === 'user'}
-          Please sign in with your username and password.
+          Please sign in.
         {:else}
           Please enter your access token.
         {/if}
@@ -104,56 +106,60 @@
         <p class="text-hister-rose font-inter text-sm">{error}</p>
       {/if}
       {#if authMode === 'user'}
-        <div class="space-y-2">
-          <label
-            for="username"
-            class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
-          >
-            Username
-          </label>
-          <Input
-            id="username"
-            type="text"
-            variant="brutal"
-            bind:value={username}
-            onkeydown={handleKeydown}
-            placeholder="Enter your username"
-            class="focus-visible:border-hister-indigo"
-            autofocus
-          />
-        </div>
-        <div class="space-y-2">
-          <label
-            for="password"
-            class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
-          >
-            Password
-          </label>
-          <Input
-            id="password"
-            type="password"
-            variant="brutal"
-            bind:value={password}
-            onkeydown={handleKeydown}
-            placeholder="Enter your password"
-            class="focus-visible:border-hister-indigo font-mono"
-          />
-        </div>
-        <Button
-          onclick={handleLogin}
-          disabled={!username.trim() || !password.trim() || loading}
-          class="bg-hister-indigo hover:bg-hister-indigo/90 border-brutal-border font-space h-12 w-full rounded-none border-[3px] font-bold tracking-wider uppercase shadow-[4px_4px_0px_var(--brutal-shadow)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_var(--brutal-shadow)] active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? 'Signing in…' : 'Sign In'}
-        </Button>
-        {#if oauthProviders.length > 0}
-          <div class="relative flex items-center py-2">
-            <div class="border-border-brand-muted flex-grow border-t"></div>
-            <span class="text-text-brand-muted font-inter mx-3 flex-shrink text-xs uppercase"
-              >or</span
+        {#if !oauthOnly}
+          <div class="space-y-2">
+            <label
+              for="username"
+              class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
             >
-            <div class="border-border-brand-muted flex-grow border-t"></div>
+              Username
+            </label>
+            <Input
+              id="username"
+              type="text"
+              variant="brutal"
+              bind:value={username}
+              onkeydown={handleKeydown}
+              placeholder="Enter your username"
+              class="focus-visible:border-hister-indigo"
+              autofocus
+            />
           </div>
+          <div class="space-y-2">
+            <label
+              for="password"
+              class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
+            >
+              Password
+            </label>
+            <Input
+              id="password"
+              type="password"
+              variant="brutal"
+              bind:value={password}
+              onkeydown={handleKeydown}
+              placeholder="Enter your password"
+              class="focus-visible:border-hister-indigo font-mono"
+            />
+          </div>
+          <Button
+            onclick={handleLogin}
+            disabled={!username.trim() || !password.trim() || loading}
+            class="bg-hister-indigo hover:bg-hister-indigo/90 border-brutal-border font-space h-12 w-full rounded-none border-[3px] font-bold tracking-wider uppercase shadow-[4px_4px_0px_var(--brutal-shadow)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_var(--brutal-shadow)] active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? 'Signing in…' : 'Sign In'}
+          </Button>
+        {/if}
+        {#if oauthProviders.length > 0}
+          {#if !oauthOnly}
+            <div class="relative flex items-center py-2">
+              <div class="border-border-brand-muted flex-grow border-t"></div>
+              <span class="text-text-brand-muted font-inter mx-3 flex-shrink text-xs uppercase"
+                >or</span
+              >
+              <div class="border-border-brand-muted flex-grow border-t"></div>
+            </div>
+          {/if}
           <div class="space-y-2">
             {#each oauthProviders as provider}
               <Button
@@ -196,7 +202,7 @@
     </Card.Content>
     <Card.Footer class="bg-muted-surface/50">
       <p class="text-text-brand-muted font-inter w-full text-center text-xs">
-        {#if authMode === 'user'}
+        {#if oauthOnly || authMode === 'user'}
           Your session will be stored as a secure cookie.
         {:else}
           Your token will be stored locally and used for API requests.

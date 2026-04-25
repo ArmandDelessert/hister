@@ -6,6 +6,7 @@ export interface AppConfig {
   authMode: 'token' | 'user' | 'none';
   username?: string;
   userId?: number;
+  oauthOnly?: boolean;
 }
 
 export interface ExtractorInfo {

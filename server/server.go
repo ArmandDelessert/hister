@@ -527,6 +527,10 @@ func serveSPA(c *webContext) {
 }
 
 func serveLogin(c *webContext) {
+	if c.Config.Server.OAuthOnly {
+		http.Error(c.Response, "password login disabled, use OAuth", http.StatusForbidden)
+		return
+	}
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -607,6 +611,7 @@ func serveConfig(c *webContext) {
 		SemanticWeight      float64           `json:"semanticWeight,omitempty"`
 		SimilarityThreshold float64           `json:"similarityThreshold,omitempty"`
 		OAuthProviders      []string          `json:"oauthProviders,omitempty"`
+		OAuthOnly           bool              `json:"oauthOnly,omitempty"`
 	}
 	authMode := "none"
 	authenticated := true
@@ -651,6 +656,7 @@ func serveConfig(c *webContext) {
 		SemanticWeight:      c.Config.SemanticSearch.SemanticWeight,
 		SimilarityThreshold: c.Config.SemanticSearch.SimilarityThreshold,
 		OAuthProviders:      oauthProviders,
+		OAuthOnly:           c.Config.Server.OAuthOnly,
 	})
 }
 

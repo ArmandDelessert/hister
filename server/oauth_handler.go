@@ -40,7 +40,7 @@ func serveOAuthRedirect(c *webContext) {
 		http.Error(c.Response, "unknown oauth provider", http.StatusBadRequest)
 		return
 	}
-	provider, ok := oauth.NewProvider(providerName, entry.AuthURL, entry.TokenURL)
+	provider, ok := oauth.NewProvider(providerName, entry.AuthURL, entry.TokenURL, entry.UserInfoURL)
 	if !ok {
 		http.Error(c.Response, "oauth provider not available", http.StatusBadRequest)
 		return
@@ -101,7 +101,7 @@ func serveOAuthCallback(c *webContext) {
 		return
 	}
 	delete(session.Values, oauthStateKey)
-	provider, ok := oauth.NewProvider(providerName, entry.AuthURL, entry.TokenURL)
+	provider, ok := oauth.NewProvider(providerName, entry.AuthURL, entry.TokenURL, entry.UserInfoURL)
 	if !ok {
 		serve500(c)
 		return

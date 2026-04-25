@@ -274,14 +274,15 @@ The `server.oauth` key is a map where each key is a provider name and the value 
 
 Each entry supports the following fields:
 
-| Field               | Type     | Required  | Description                                                                                                                                                   |
-| ------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `client_id`         | string   | yes       | OAuth application client ID issued by the provider.                                                                                                           |
-| `client_secret`     | string   | yes       | OAuth application client secret issued by the provider.                                                                                                       |
-| `configuration_url` | string   | OIDC only | OIDC discovery URL (e.g. `https://accounts.example.com/.well-known/openid-configuration`). When set, `auth_url` and `token_url` are discovered automatically. |
-| `auth_url`          | string   | no        | Override the provider's authorization endpoint. Not needed for `github` or `google`. Required for `oidc` when `configuration_url` is not set.                 |
-| `token_url`         | string   | no        | Override the provider's token endpoint. Not needed for `github` or `google`. Required for `oidc` when `configuration_url` is not set.                         |
-| `scopes`            | []string | no        | Additional OAuth scopes to request. The provider defaults are used when omitted.                                                                              |
+| Field               | Type     | Required  | Description                                                                                                                                                                                                 |
+| ------------------- | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client_id`         | string   | yes       | OAuth application client ID issued by the provider.                                                                                                                                                         |
+| `client_secret`     | string   | yes       | OAuth application client secret issued by the provider.                                                                                                                                                     |
+| `configuration_url` | string   | OIDC only | OIDC discovery URL (e.g. `https://accounts.example.com/.well-known/openid-configuration`). When set, `auth_url`, `token_url`, and `userinfo_url` are discovered automatically.                              |
+| `auth_url`          | string   | no        | Override the provider's authorization endpoint. Not needed for `github` or `google`. Required for `oidc` when `configuration_url` is not set.                                                               |
+| `token_url`         | string   | no        | Override the provider's token endpoint. Not needed for `github` or `google`. Required for `oidc` when `configuration_url` is not set.                                                                       |
+| `userinfo_url`      | string   | no        | Override the OIDC userinfo endpoint. Normally discovered from `configuration_url`. Set this when auto-discovery does not return a `userinfo_endpoint` or when configuring OIDC without `configuration_url`. |
+| `scopes`            | []string | no        | Additional OAuth scopes to request. The provider defaults are used when omitted.                                                                                                                            |
 
 ### GitHub Example
 

@@ -72,12 +72,23 @@ func (o *OIDCOAuth) Prepare(ctx context.Context, req *PrepareRequest) error {
 
 	o.ConfigurationURL = req.configurationURL
 
+	// A manually configured userinfo_url takes priority over the discovery document.
+	manualUserInfoURL := o.UserInfoURL
+
 	if err := o.fetch(ctx); err != nil {
 		return err
 	}
 
+	if manualUserInfoURL != "" {
+		o.UserInfoURL = manualUserInfoURL
+	}
+
 	if o.AuthURL == "" || o.TokenURL == "" {
 		return fmt.Errorf("oidc: empty AuthURL or TokenURL")
+	}
+
+	if o.UserInfoURL == "" {
+		return fmt.Errorf("oidc: userinfo_endpoint not found in discovery document; set userinfo_url in config to specify it manually")
 	}
 
 	if len(o.Scopes) < 1 || slices.Index(o.Scopes, scopeOpenID) == -1 {
@@ -137,6 +148,10 @@ func (o *OIDCOAuth) GetUserInfo(ctx context.Context, response TokenResponse) (*U
 
 	if len(bearer.AccessToken) < 1 {
 		return nil, fmt.Errorf("oidc: failed to get access token")
+	}
+
+	if o.UserInfoURL == "" {
+		return nil, fmt.Errorf("oidc: userinfo endpoint is not configured; set userinfo_url in config or provide a configuration_url that includes userinfo_endpoint")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.UserInfoURL, nil)

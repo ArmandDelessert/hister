@@ -7,14 +7,14 @@
 //
 // Each provider implements a common OAuth interface that handles the authorization
 // code flow. The package supports:
-//   - Authorization URL generation with PKCE
+//   - Authorization URL generation
 //   - Token exchange
 //   - User profile fetching
 //   - Automatic provider discovery via OIDC
 //
 // OAuth providers are configured in the application config file with client IDs,
 // secrets, and scopes. Users can sign in using any configured provider, and their
-// OAuth ID is linked to their Omnom account.
+// OAuth ID is linked to their Hister account.
 //
 // The Providers map contains factory functions for creating provider instances:
 //
@@ -128,8 +128,10 @@ type Provider interface {
 
 // NewProvider creates a fresh provider instance for the given provider name.
 // authURL and tokenURL override the provider defaults when non-empty.
+// userInfoURL sets the userinfo endpoint for OIDC providers; when empty the
+// endpoint is discovered from the configuration URL.
 // Returns nil, false if the provider name is unknown.
-func NewProvider(name, authURL, tokenURL string) (Provider, bool) {
+func NewProvider(name, authURL, tokenURL, userInfoURL string) (Provider, bool) {
 	switch name {
 	case "github":
 		p := GitHubOAuth{
@@ -162,6 +164,9 @@ func NewProvider(name, authURL, tokenURL string) (Provider, bool) {
 		}
 		if tokenURL != "" {
 			p.TokenURL = tokenURL
+		}
+		if userInfoURL != "" {
+			p.UserInfoURL = userInfoURL
 		}
 		return p, true
 	}

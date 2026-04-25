@@ -65,11 +65,11 @@ type TUI struct {
 }
 
 type Server struct {
-	Address    string                 `yaml:"address"     mapstructure:"address"`
-	BaseURL    string                 `yaml:"base_url"    mapstructure:"base_url"`
-	Database   string                 `yaml:"database"    mapstructure:"database"`
-	OAuth      map[string]*OAuthEntry `yaml:"oauth"       mapstructure:"oauth"`
-	OAuthOnly  bool                   `yaml:"oauth_only"  mapstructure:"oauth_only"`
+	Address   string                 `yaml:"address"     mapstructure:"address"`
+	BaseURL   string                 `yaml:"base_url"    mapstructure:"base_url"`
+	Database  string                 `yaml:"database"    mapstructure:"database"`
+	OAuth     map[string]*OAuthEntry `yaml:"oauth"       mapstructure:"oauth"`
+	OAuthOnly bool                   `yaml:"oauth_only"  mapstructure:"oauth_only"`
 }
 
 // OAuthEntry holds configuration for a single OAuth 2.0 / OIDC provider.
@@ -79,6 +79,7 @@ type OAuthEntry struct {
 	ConfigurationURL string   `yaml:"configuration_url" mapstructure:"configuration_url"`
 	AuthURL          string   `yaml:"auth_url"          mapstructure:"auth_url"`
 	TokenURL         string   `yaml:"token_url"         mapstructure:"token_url"`
+	UserInfoURL      string   `yaml:"userinfo_url"      mapstructure:"userinfo_url"`
 	Scopes           []string `yaml:"scopes"            mapstructure:"scopes"`
 }
 

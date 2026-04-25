@@ -70,7 +70,7 @@ func serveOAuthRedirect(c *webContext) {
 		return
 	}
 	callbackURL := c.Config.BaseURL("/api/oauth/callback") + "?provider=" + providerName
-	redirectURL := provider.GetRedirectURL(oauth.NewRedirectURIRequest(entry.ClientID, callbackURL, state))
+	redirectURL := provider.GetRedirectURL(oauth.NewRedirectURIRequest(entry.ClientID, callbackURL, state, entry.Scopes))
 	http.Redirect(c.Response, c.Request, redirectURL, http.StatusFound)
 }
 

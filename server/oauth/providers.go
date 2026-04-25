@@ -64,6 +64,7 @@ type (
 		clientID    string
 		redirectURI string
 		state       string
+		scopes      []string
 	}
 
 	// TokenRequest contains parameters for exchanging an authorization code for a token.
@@ -108,8 +109,9 @@ func NewPrepareRequest(cURL string) *PrepareRequest {
 }
 
 // NewRedirectURIRequest creates a new RedirectURIRequest with the given parameters.
-func NewRedirectURIRequest(clientID string, redirectURI string, state string) *RedirectURIRequest {
-	return &RedirectURIRequest{clientID: clientID, redirectURI: redirectURI, state: state}
+// scopes is the list of OAuth scopes to request; if empty, the provider will use its defaults.
+func NewRedirectURIRequest(clientID string, redirectURI string, state string, scopes []string) *RedirectURIRequest {
+	return &RedirectURIRequest{clientID: clientID, redirectURI: redirectURI, state: state, scopes: scopes}
 }
 
 // NewTokenRequest creates a new TokenRequest with the given parameters.

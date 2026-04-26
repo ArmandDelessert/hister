@@ -30,7 +30,7 @@
     {
       title: 'Community',
       links: [
-        { label: 'Discord', href: 'https://discord.gg/vAjtDtFp' },
+        { label: 'Discord', href: 'https://discord.gg/beEyuHxRSs' },
         { label: 'IRCNet: #hister', href: '' },
       ],
     },

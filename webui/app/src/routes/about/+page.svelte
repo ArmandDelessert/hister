@@ -109,7 +109,7 @@
       <li><a href="https://hister.org/">Website</a></li>
       <li><a href="https://github.com/asciimoo/hister">GitHub</a></li>
       <li><a href="https://codeberg.org/asciimoo/hister">Codeberg</a></li>
-      <li><a href="https://discord.gg/vAjtDtFp">Discord</a></li>
+      <li><a href="https://discord.gg/beEyuHxRSs">Discord</a></li>
       <li>#hister on IRCNet</li>
     </ul>
   </div>

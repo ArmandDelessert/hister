@@ -38,7 +38,7 @@ This starts a Vite dev server (with HMR) and the Go backend (with auto-rebuild v
 
 ## Community
 
-Join us on IRCNet: #hister or on [Discord](https://discord.gg/vAjtDtFp)
+Join us on IRCNet: #hister or on [Discord](https://discord.gg/beEyuHxRSs)
 
 ## Bugs
 

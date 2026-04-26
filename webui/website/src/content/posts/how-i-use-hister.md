@@ -142,4 +142,4 @@ A bit of upfront configuration (a global hotkey, a handful of aliases, skip rule
 
 I'll keep refining the workflow and I'm always interested in how you use it.
 
-Share your tips, use cases, and ideas on [GitHub](https://github.com/asciimoo/hister), [Discord](https://discord.gg/vAjtDtFp), [Codeberg](https://codeberg.org/asciimoo/hister), or in `#hister` on IRCNet.
+Share your tips, use cases, and ideas on [GitHub](https://github.com/asciimoo/hister), [Discord](https://discord.gg/beEyuHxRSs), [Codeberg](https://codeberg.org/asciimoo/hister), or in `#hister` on IRCNet.

@@ -39,7 +39,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var Version = 5
+var Version = 6
 
 type indexer struct {
 	idx               bleve.IndexAlias       // used only for Search()
@@ -978,6 +978,9 @@ func resFromHit(h *search.DocumentMatch) *document.Document {
 	if t, ok := h.Fields["user_id"].(float64); ok {
 		d.UserID = uint(t)
 	}
+	if s, ok := h.Fields["label"].(string); ok {
+		d.Label = s
+	}
 	d.Score = h.Score
 	for k, v := range h.Fields {
 		if mk, found := strings.CutPrefix(k, "metadata."); found {
@@ -1092,6 +1095,7 @@ func createMapping(lang string) mapping.IndexMapping {
 	docMapping := bleve.NewDocumentMapping()
 	docMapping.AddFieldMappingsAt("title", fm)
 	docMapping.AddFieldMappingsAt("text", fm)
+	docMapping.AddFieldMappingsAt("label", um)
 	docMapping.AddFieldMappingsAt("url", um)
 	docMapping.AddFieldMappingsAt("domain", um)
 	docMapping.AddFieldMappingsAt("language", um)

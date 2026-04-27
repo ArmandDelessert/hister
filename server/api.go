@@ -141,6 +141,7 @@ func init() {
 				{Name: "text", Type: "string", Required: false, Description: "Plain-text content (overrides server-side HTML extraction)"},
 				{Name: "html", Type: "string", Required: false, Description: "Raw HTML source (text is extracted server-side)"},
 				{Name: "favicon", Type: "string", Required: false, Description: "Base64-encoded favicon data URI"},
+				{Name: "label", Type: "string", Required: false, Description: "User-defined label for the document"},
 			},
 		},
 		// alias for /api/add - backward compatibility - use /api/add in the future

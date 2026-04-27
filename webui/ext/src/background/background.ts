@@ -273,28 +273,34 @@ function cjsMsgHandler(request, sender, sendResponse) {
           sendResponse({ status: 'disabled' });
           return;
         }
-        sendPageData(u + 'api/add', request.pageData, customHeaders)
-          .then((r) => {
-            if (r.status === 201) {
-              clearBadge(sender.tab.id);
-              setNormalIcon(sender.tab.id);
-            } else if (r.status === 406) {
-              // URL matched a server-side skip rule; invalidate cache and grey out
-              skipRulesCache = null;
-              setGreyIcon(sender.tab.id);
-            } else if (r.status === 422) {
-              // Document rejected due to sensitive content; not an error
-              tabSensitiveState.set(sender.tab.id, sender.tab.url ?? '');
-              setGreyIcon(sender.tab.id);
-            } else {
+        chrome.storage.local.get(['histerLabel']).then((labelData) => {
+          const pageData = { ...request.pageData };
+          if (labelData['histerLabel']) {
+            pageData.label = labelData['histerLabel'];
+          }
+          sendPageData(u + 'api/add', pageData, customHeaders)
+            .then((r) => {
+              if (r.status === 201) {
+                clearBadge(sender.tab.id);
+                setNormalIcon(sender.tab.id);
+              } else if (r.status === 406) {
+                // URL matched a server-side skip rule; invalidate cache and grey out
+                skipRulesCache = null;
+                setGreyIcon(sender.tab.id);
+              } else if (r.status === 422) {
+                // Document rejected due to sensitive content; not an error
+                tabSensitiveState.set(sender.tab.id, sender.tab.url ?? '');
+                setGreyIcon(sender.tab.id);
+              } else {
+                setErrorBadge(sender.tab.id);
+              }
+              sendResponse({ status: 'ok', status_code: r.status });
+            })
+            .catch((err) => {
               setErrorBadge(sender.tab.id);
-            }
-            sendResponse({ status: 'ok', status_code: r.status });
-          })
-          .catch((err) => {
-            setErrorBadge(sender.tab.id);
-            sendResponse({ error: err.message });
-          });
+              sendResponse({ error: err.message });
+            });
+        });
         return true;
       }
       if (request.resultData) {

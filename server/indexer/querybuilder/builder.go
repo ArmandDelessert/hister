@@ -14,6 +14,7 @@ import (
 
 var weights = map[string]float64{
 	"text":     1,
+	"label":    1,
 	"language": 1,
 	"url":      4,
 	"domain":   8,

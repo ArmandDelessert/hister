@@ -33,6 +33,7 @@ type Document struct {
 	Type               types.DocType  `json:"type"`
 	Language           string         `json:"language"`
 	UserID             uint           `json:"user_id"`
+	Label              string         `json:"label"`
 	Metadata           map[string]any `json:"metadata"`
 	faviconURL         string
 	processed          bool

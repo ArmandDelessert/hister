@@ -1,10 +1,12 @@
 <script lang="ts">
   import { Button } from '@hister/components/ui/button';
+  import { Input } from '@hister/components/ui/input';
   import { Label } from '@hister/components/ui/label';
   import { Switch } from '@hister/components/ui/switch';
   import * as Card from '@hister/components/ui/card';
   import SettingsInput from '../options/SettingsInput.svelte';
-  import { Settings, Sun, Moon } from 'lucide-svelte';
+  import * as Tooltip from '@hister/components/ui/tooltip';
+  import { Settings, Sun, Moon, Save, Info } from 'lucide-svelte';
   import { slide } from 'svelte/transition';
   import { ModeWatcher, toggleMode, mode } from 'mode-watcher';
 
@@ -19,6 +21,7 @@
   let isPageSkipped = $state(false);
   let tabURL = $state('');
   let messageKey = $state(0); // to reappear message every time it is updated
+  let pageLabel = $state('');
 
   function setMessage(mType, msg) {
     message = msg;
@@ -74,7 +77,7 @@
   }
 
   chrome.storage.local.get(
-    ['histerURL', 'histerCustomHeaders', 'indexingEnabled', 'histerCookies'],
+    ['histerURL', 'histerCustomHeaders', 'indexingEnabled', 'histerCookies', 'histerLabel'],
     (data) => {
       if (!data['histerURL']) {
         chrome.storage.local.set({ histerURL: defaultURL });
@@ -82,6 +85,7 @@
       url = data['histerURL'] || defaultURL;
       customHeaders = Array.isArray(data['histerCustomHeaders']) ? data['histerCustomHeaders'] : [];
       indexingEnabled = data['indexingEnabled'] !== false;
+      pageLabel = data['histerLabel'] || '';
 
       checkAuth(url, data['histerCookies'] || '');
 
@@ -237,6 +241,13 @@
     });
   }
 
+  function saveLabel() {
+    chrome.storage.local.set({ histerLabel: pageLabel }, () => {
+      setSuccessMessage('Label saved');
+      //reindex();
+    });
+  }
+
   function toggleSettings() {
     showSettings = !showSettings;
     message = '';
@@ -319,6 +330,43 @@
         >
           Reindex Page
         </Button>
+      </div>
+
+      <!-- Label section -->
+      <div class="border-brutal-border border-b-[3px] px-5 py-4">
+        <div class="mb-2 flex items-center gap-1">
+          <p class="font-outfit text-text-brand text-xs font-bold tracking-widest">Label</p>
+          <Tooltip.Provider delayDuration={0}>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                <Info size={16} class="cursor-help" />
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content class="max-w-52 text-xs">
+                  A label attached to every page you index. Search with
+                  <span class="font-mono">label:yourtext</span> to filter results.<br />
+                  Useful for labeling research sessions or differentiating browser profiles.
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        </div>
+        <div class="flex gap-2">
+          <Input
+            type="text"
+            bind:value={pageLabel}
+            placeholder="Add label..."
+            class="bg-page-bg border-hister-indigo font-fira text-text-brand placeholder:text-text-brand-muted focus-visible:border-hister-coral h-9 flex-1 border-[3px] px-3 text-sm shadow-none transition-colors focus-visible:ring-0"
+          />
+          <Button
+            variant="outline"
+            onclick={saveLabel}
+            aria-label="Save label"
+            class="border-brutal-border font-outfit hover:border-hister-indigo h-9 border-[3px] px-3 text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
+          >
+            <Save size={16} />
+          </Button>
+        </div>
       </div>
 
       <!-- Disable indexing section -->

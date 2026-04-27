@@ -44,6 +44,11 @@
               })}
             </time>
           {/if}
+          {#if post.description}
+            <p class="font-inter mt-3 text-sm text-(--text-secondary)">
+              {post.description}
+            </p>
+          {/if}
         </Card.Root>
       </li>
     {/each}

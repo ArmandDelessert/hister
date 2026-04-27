@@ -32,6 +32,7 @@ type CrawlJob struct {
 	ID             string    `gorm:"primaryKey" json:"id"`
 	StartURL       string    `json:"start_url"`
 	ValidatorRules string    `gorm:"type:text" json:"validator_rules"` // JSON-encoded ValidatorRules
+	Label          string    `json:"label"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
@@ -59,11 +60,12 @@ func GenerateCrawlJobID() (string, error) {
 }
 
 // CreateCrawlJob inserts a new CrawlJob record.
-func CreateCrawlJob(id, startURL, validatorRules string) error {
+func CreateCrawlJob(id, startURL, validatorRules, label string) error {
 	return DB.Create(&CrawlJob{
 		ID:             id,
 		StartURL:       startURL,
 		ValidatorRules: validatorRules,
+		Label:          label,
 		Status:         CrawlJobRunning,
 	}).Error
 }

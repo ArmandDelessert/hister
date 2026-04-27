@@ -472,6 +472,7 @@ var indexCmd = &cobra.Command{
 		force, _ := cmd.Flags().GetBool("force")
 		recursive, _ := cmd.Flags().GetBool("recursive")
 		jobID, _ := cmd.Flags().GetString("job-id")
+		label, _ := cmd.Flags().GetString("label")
 		cfg.Crawler.UserAgent = UserAgent
 		applyCrawlerBackendFlags(cmd)
 
@@ -524,7 +525,7 @@ var indexCmd = &cobra.Command{
 				if err != nil {
 					exit(1, "Failed to serialize validator rules: "+err.Error())
 				}
-				if err := model.CreateCrawlJob(jobID, startURL, rulesJSON); err != nil {
+				if err := model.CreateCrawlJob(jobID, startURL, rulesJSON, label); err != nil {
 					exit(1, "Failed to create crawl job: "+err.Error())
 				}
 				fmt.Println("Starting crawl job:", jobID)
@@ -534,6 +535,10 @@ var indexCmd = &cobra.Command{
 				validatorRules, err = crawler.UnmarshalValidatorRules(existingJob.ValidatorRules)
 				if err != nil {
 					exit(1, "Failed to restore validator rules: "+err.Error())
+				}
+				// Use stored label unless --label was explicitly overridden.
+				if !cmd.Flags().Changed("label") {
+					label = existingJob.Label
 				}
 				fmt.Println("Resuming crawl job:", jobID)
 			}
@@ -564,7 +569,7 @@ var indexCmd = &cobra.Command{
 				}
 			}()
 
-			if err := crawlAndIndex(startURL, cr, validator, force, clientOpts...); err != nil {
+			if err := crawlAndIndex(startURL, cr, validator, force, label, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -583,6 +588,10 @@ var indexCmd = &cobra.Command{
 			validatorRules, err := crawler.UnmarshalValidatorRules(existingJob.ValidatorRules)
 			if err != nil {
 				exit(1, "Failed to restore validator rules: "+err.Error())
+			}
+			// Use stored label unless --label was explicitly overridden.
+			if !cmd.Flags().Changed("label") {
+				label = existingJob.Label
 			}
 			fmt.Println("Resuming crawl job:", jobID)
 
@@ -611,7 +620,7 @@ var indexCmd = &cobra.Command{
 				}
 			}()
 
-			if err := crawlAndIndex(existingJob.StartURL, cr, validator, force, clientOpts...); err != nil {
+			if err := crawlAndIndex(existingJob.StartURL, cr, validator, force, label, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -632,7 +641,7 @@ var indexCmd = &cobra.Command{
 					continue
 				}
 			}
-			if err := indexURL(u, clientOpts...); err != nil {
+			if err := indexURL(u, label, clientOpts...); err != nil {
 				log.Warn().Err(err).Str("URL", u).Msg("Failed to index URL")
 			}
 		}
@@ -640,6 +649,7 @@ var indexCmd = &cobra.Command{
 }
 
 func init() {
+	indexCmd.Flags().String("label", "", "Label to attach to all indexed documents")
 	indexCmd.Flags().Bool("force", false, "Reindex URLs even if they are already in the index. Already indexed URLs are skipped otherwise")
 	indexCmd.Flags().BoolP("recursive", "r", false, "Recursively crawl linked pages")
 	indexCmd.Flags().Int("max-depth", 0, "Maximum crawl depth (0 = unlimited)")
@@ -1293,7 +1303,7 @@ func yesNoPrompt(label string, def bool) bool {
 //	}
 //}
 
-func indexURL(u string, clientOpts ...client.Option) error {
+func indexURL(u string, label string, clientOpts ...client.Option) error {
 	if u == "" {
 		log.Warn().Msg("URL must not be empty")
 		return nil
@@ -1328,6 +1338,7 @@ func indexURL(u string, clientOpts ...client.Option) error {
 			log.Debug().Err(err).Str("URL", d.URL).Msg("failed to download favicon")
 		}
 	}
+	d.Label = label
 	c := newClient(clientOpts...)
 	if err := c.AddDocumentJSON(d); err != nil {
 		return fmt.Errorf("failed to send page to hister: %w", err)
@@ -1335,7 +1346,7 @@ func indexURL(u string, clientOpts ...client.Option) error {
 	return nil
 }
 
-func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, force bool, clientOpts ...client.Option) error {
+func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, force bool, label string, clientOpts ...client.Option) error {
 	ch, err := cr.Crawl(context.Background(), startURL, v)
 	if err != nil {
 		return err
@@ -1360,6 +1371,7 @@ func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, fo
 				log.Debug().Err(err).Str("url", doc.URL).Msg("failed to download favicon")
 			}
 		}
+		doc.Label = label
 		if err := c.AddDocumentJSON(doc); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to index crawled document")
 		}
@@ -1505,7 +1517,7 @@ func importDB(dbFile string, table string, cmd *cobra.Command) {
 			continue
 		}
 		fmt.Printf("[%d/%d] %s\n", i, count, u)
-		if err := indexURL(u); err != nil {
+		if err := indexURL(u, ""); err != nil {
 			log.Warn().Err(err).Str("url", u).Msg("Failed to index URL")
 		}
 	}

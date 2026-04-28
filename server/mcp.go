@@ -258,13 +258,6 @@ func mcpFormatResults(query string, res *indexer.Results, fields []string) strin
 	for _, d := range res.Documents {
 		added := time.Unix(d.Added, 0).Format("2006-01-02")
 		fmt.Fprintf(&b, "\n%d. %s\n   URL: %s\n   Added: %s\n", n, d.Title, d.URL, added)
-		if t := strings.TrimSpace(d.Text); t != "" {
-			if fieldSet["text"] {
-				fmt.Fprintf(&b, "   Text: %s\n", t)
-			} else {
-				fmt.Fprintf(&b, "   %s\n", mcpTruncate(t, 300))
-			}
-		}
 		if fieldSet["domain"] && d.Domain != "" {
 			fmt.Fprintf(&b, "   Domain: %s\n", d.Domain)
 		}
@@ -279,6 +272,13 @@ func mcpFormatResults(query string, res *indexer.Results, fields []string) strin
 		}
 		if fieldSet["type"] {
 			fmt.Fprintf(&b, "   Type: %s\n", d.Type.String())
+		}
+		if t := strings.TrimSpace(d.Text); t != "" {
+			if fieldSet["text"] {
+				fmt.Fprintf(&b, "   Text: %s\n", t)
+			} else {
+				fmt.Fprintf(&b, "   %s\n", mcpTruncate(t, 300))
+			}
 		}
 		if fieldSet["html"] && d.HTML != "" {
 			fmt.Fprintf(&b, "   HTML: %s\n", d.HTML)

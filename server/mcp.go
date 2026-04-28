@@ -136,6 +136,21 @@ func mcpToolList() []map[string]any {
 						"type":        "boolean",
 						"description": "Enable AI semantic similarity search alongside keyword matching. Only effective when the server has semantic search configured.",
 					},
+					"fields": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "string",
+							"enum": []string{"text", "html", "language", "label", "domain", "score", "type"},
+						},
+						"description": "Extra document fields to include in the response. " +
+							`"text" returns the full stored article text instead of a short snippet. ` +
+							`"html" returns the raw HTML. ` +
+							`"language" returns the detected language code. ` +
+							`"label" returns the user-defined label. ` +
+							`"domain" returns the domain name. ` +
+							`"score" returns the relevance score. ` +
+							`"type" returns the document type (web or local).`,
+					},
 				},
 				"required": []string{"query"},
 			},
@@ -162,9 +177,10 @@ func mcpCallTool(c *webContext, req mcpRequest) {
 }
 
 type mcpSearchArgs struct {
-	Query    string `json:"query"`
-	Limit    int    `json:"limit"`
-	Semantic bool   `json:"semantic"`
+	Query    string   `json:"query"`
+	Limit    int      `json:"limit"`
+	Semantic bool     `json:"semantic"`
+	Fields   []string `json:"fields"`
 }
 
 // mcpToolSearch executes a Hister search and formats the results as MCP content.
@@ -198,13 +214,19 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 
 	mcpWriteResult(c, id, map[string]any{
 		"content": []mcpTextContent{
-			{Type: "text", Text: mcpFormatResults(args.Query, res)},
+			{Type: "text", Text: mcpFormatResults(args.Query, res, args.Fields)},
 		},
 	})
 }
 
 // mcpFormatResults renders search results as a human-readable text block.
-func mcpFormatResults(query string, res *indexer.Results) string {
+// fields is the optional list of extra document fields requested by the caller.
+func mcpFormatResults(query string, res *indexer.Results, fields []string) string {
+	fieldSet := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		fieldSet[f] = true
+	}
+
 	total := int(res.Total) + len(res.History)
 	if total == 0 {
 		return fmt.Sprintf("No results found for %q.", query)
@@ -216,16 +238,42 @@ func mcpFormatResults(query string, res *indexer.Results) string {
 	n := 1
 	for _, h := range res.History {
 		fmt.Fprintf(&b, "\n%d. %s\n   URL: %s\n", n, h.Title, h.URL)
-		if snippet := strings.TrimSpace(h.Text); snippet != "" {
-			fmt.Fprintf(&b, "   %s\n", mcpTruncate(snippet, 300))
+		if t := strings.TrimSpace(h.Text); t != "" {
+			if fieldSet["text"] {
+				fmt.Fprintf(&b, "   Text: %s\n", t)
+			} else {
+				fmt.Fprintf(&b, "   %s\n", mcpTruncate(t, 300))
+			}
 		}
 		n++
 	}
 	for _, d := range res.Documents {
 		added := time.Unix(d.Added, 0).Format("2006-01-02")
 		fmt.Fprintf(&b, "\n%d. %s\n   URL: %s\n   Added: %s\n", n, d.Title, d.URL, added)
-		if snippet := strings.TrimSpace(d.Text); snippet != "" {
-			fmt.Fprintf(&b, "   %s\n", mcpTruncate(snippet, 300))
+		if t := strings.TrimSpace(d.Text); t != "" {
+			if fieldSet["text"] {
+				fmt.Fprintf(&b, "   Text: %s\n", t)
+			} else {
+				fmt.Fprintf(&b, "   %s\n", mcpTruncate(t, 300))
+			}
+		}
+		if fieldSet["domain"] && d.Domain != "" {
+			fmt.Fprintf(&b, "   Domain: %s\n", d.Domain)
+		}
+		if fieldSet["language"] && d.Language != "" {
+			fmt.Fprintf(&b, "   Language: %s\n", d.Language)
+		}
+		if fieldSet["label"] && d.Label != "" {
+			fmt.Fprintf(&b, "   Label: %s\n", d.Label)
+		}
+		if fieldSet["score"] {
+			fmt.Fprintf(&b, "   Score: %.4f\n", d.Score)
+		}
+		if fieldSet["type"] {
+			fmt.Fprintf(&b, "   Type: %s\n", d.Type.String())
+		}
+		if fieldSet["html"] && d.HTML != "" {
+			fmt.Fprintf(&b, "   HTML: %s\n", d.HTML)
 		}
 		n++
 	}

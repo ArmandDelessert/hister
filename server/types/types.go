@@ -14,6 +14,18 @@ var DocTypeNames = map[string]DocType{
 	"local": Local,
 }
 
+// String returns the human-readable name of the DocType.
+func (t DocType) String() string {
+	switch t {
+	case Web:
+		return "web"
+	case Local:
+		return "local"
+	default:
+		return "unknown"
+	}
+}
+
 // PreviewResponse holds the result of a document preview operation.
 // Template should be left blank to use the default template.
 type PreviewResponse struct {

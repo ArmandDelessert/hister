@@ -63,14 +63,31 @@ Without this header the server's CSRF protection will reject the request.
 
 Search your personal browsing history and indexed documents.
 
-| Argument   | Type    | Required | Default | Description                                               |
-| ---------- | ------- | -------- | ------- | --------------------------------------------------------- |
-| `query`    | string  | yes      |         | Search query (see [Query Language](/docs/query-language)) |
-| `limit`    | integer | no       | 10      | Maximum results to return (max 50)                        |
-| `semantic` | boolean | no       | false   | Enable AI semantic search alongside keyword matching      |
+| Argument   | Type            | Required | Default | Description                                               |
+| ---------- | --------------- | -------- | ------- | --------------------------------------------------------- |
+| `query`    | string          | yes      |         | Search query (see [Query Language](/docs/query-language)) |
+| `limit`    | integer         | no       | 10      | Maximum results to return (max 50)                        |
+| `semantic` | boolean         | no       | false   | Enable AI semantic search alongside keyword matching      |
+| `fields`   | array of string | no       | `[]`    | Extra fields to include in each result (see below)        |
 
-The response is plain text listing matching results with their title, URL,
-date added, and a short text snippet.
+By default the response includes title, URL, date added, and a short text
+snippet per result. Pass `fields` to include additional data:
+
+| Field value | Description                                         |
+| ----------- | --------------------------------------------------- |
+| `text`      | Full stored article text instead of a short snippet |
+| `html`      | Raw HTML                                            |
+| `language`  | Detected language code (e.g. `en`, `de`)            |
+| `label`     | User-defined label                                  |
+| `domain`    | Domain name                                         |
+| `score`     | Relevance score                                     |
+| `type`      | Document type: `web` or `local`                     |
+
+Example: to summarize articles on a topic without re-fetching any URLs:
+
+```json
+{ "query": "kubernetes networking", "limit": 5, "fields": ["text"] }
+```
 
 ## Client Configuration
 
@@ -128,6 +145,8 @@ the endpoint is `https://example.com/hister/mcp`.
 
 You can verify the endpoint is working before configuring any client.
 
+Authorization header is only required if any kind of authentication is enabled in Hister's config.
+
 **Handshake:**
 
 ```bash
@@ -156,6 +175,16 @@ curl -s -X POST http://127.0.0.1:4433/mcp \
   -H "Authorization: Bearer <your-access-token>" \
   -H "Origin: hister://" \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search","arguments":{"query":"python async","limit":5}}}'
+```
+
+**Search with full text (no re-fetching):**
+
+```bash
+curl -s -X POST http://127.0.0.1:4433/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-access-token>" \
+  -H "Origin: hister://" \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search","arguments":{"query":"python async","limit":5,"fields":["text","language"]}}}'
 ```
 
 ## Example Interaction

@@ -6,6 +6,7 @@
   import * as Card from '@hister/components/ui/card';
   import SettingsInput from '../options/SettingsInput.svelte';
   import * as Tooltip from '@hister/components/ui/tooltip';
+  import { SkipRuleActions, buildUrlSkipPattern, buildDomainSkipPattern } from '@hister/components';
   import { Settings, Sun, Moon, Save, Info } from 'lucide-svelte';
   import { slide } from 'svelte/transition';
   import { ModeWatcher, toggleMode, mode } from 'mode-watcher';
@@ -114,13 +115,19 @@
     },
   );
 
-  function escapeRegex(s: string): string {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  async function addSkipRule(pattern: string) {
+  async function handleAddSkipRule(type: 'url' | 'domain', deleteMatches: boolean) {
+    const pattern = type === 'url' ? buildUrlSkipPattern(tabURL) : buildDomainSkipPattern(tabURL);
+    const deleteQuery = deleteMatches
+      ? type === 'url'
+        ? `url:"${tabURL.replaceAll('"', '\\"')}"`
+        : `domain:${new URL(tabURL).hostname}`
+      : undefined;
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'addSkipRule', pattern });
+      const response = await chrome.runtime.sendMessage({
+        action: 'addSkipRule',
+        pattern,
+        deleteQuery,
+      });
       if (response?.ok) {
         await checkTabSkipRule(tabURL);
       } else {
@@ -370,28 +377,12 @@
       </div>
 
       <!-- Disable indexing section -->
-      {#if tabURL}
-        <div class="border-brutal-border border-b-[3px] px-5 py-4">
-          <p class="font-outfit text-text-brand mb-2 text-xs font-bold tracking-widest">
-            Disable indexing
-          </p>
-          <div class="flex gap-2">
-            <Button
-              variant="outline"
-              onclick={() => addSkipRule(escapeRegex(tabURL) + '$')}
-              class="border-brutal-border font-outfit hover:border-hister-rose h-9 flex-1 border-[3px] text-xs font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
-            >
-              This Page
-            </Button>
-            <Button
-              variant="outline"
-              onclick={() => addSkipRule(escapeRegex(new URL(tabURL).origin))}
-              class="border-brutal-border font-outfit hover:border-hister-rose h-9 flex-1 border-[3px] text-xs font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
-            >
-              This Domain
-            </Button>
-          </div>
-        </div>
+      {#if tabURL && !isPageSkipped}
+        <SkipRuleActions
+          urlLabel="This Page"
+          onAddSkipRule={handleAddSkipRule}
+          class="border-brutal-border border-b-[3px] px-5 py-4"
+        />
       {/if}
     {/if}
 

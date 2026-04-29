@@ -236,6 +236,16 @@ function cjsMsgHandler(request, sender, sendResponse) {
               sendResponse({ error: `Failed to save rule: ${saveResp.status}` });
               return;
             }
+            if (request.deleteQuery) {
+              const deleteResp = await fetchAPI(baseURL + 'api/delete', {
+                body: { query: request.deleteQuery },
+                customHeaders,
+              });
+              if (!deleteResp.ok) {
+                sendResponse({ error: `Failed to delete documents: ${deleteResp.status}` });
+                return;
+              }
+            }
             skipRulesCache = null;
             sendResponse({ ok: true });
             // Grey out the icon on the active tab immediately

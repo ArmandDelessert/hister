@@ -20,10 +20,10 @@
 </script>
 
 <header class="bg-brutal-bg border-brutal-border w-full border-b-[3px]">
-  <nav class="flex items-center justify-between px-6 py-4 md:px-12">
+  <nav class="grid grid-cols-[1fr_auto_1fr] items-center px-6 py-4 md:px-12">
     <a
       href="/"
-      class="font-space text-[28px] font-extrabold tracking-[2px] text-[var(--text-primary)] uppercase no-underline"
+      class="font-space justify-self-start text-[28px] font-extrabold tracking-[2px] text-[var(--text-primary)] uppercase no-underline"
     >
       Hister
     </a>
@@ -45,7 +45,7 @@
       {/each}
     </ul>
 
-    <div class="hidden items-center gap-4 md:flex">
+    <div class="hidden items-center gap-4 justify-self-end md:flex">
       <Button
         href="/support"
         class="bg-hister-rose font-space border-brutal-border h-auto rounded-none border-[3px] px-5 py-2.5 text-[13px] font-semibold tracking-[1px] text-white uppercase no-underline shadow-[3px_3px_0_rgba(0,0,0,0.25)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_rgba(0,0,0,0.25)]"
@@ -63,7 +63,11 @@
       </Button>
     </div>
 
-    <button class="p-2 md:hidden" onclick={() => (menuOpen = !menuOpen)} aria-label="Toggle menu">
+    <button
+      class="cursor-pointer justify-self-end p-2 md:hidden"
+      onclick={() => (menuOpen = !menuOpen)}
+      aria-label="Toggle menu"
+    >
       {#if menuOpen}
         <X size={24} />
       {:else}

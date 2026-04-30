@@ -30,7 +30,7 @@
       <ul class="m-0 flex list-none flex-col gap-3 p-0">
         {#each category.docs as doc}
           <li>
-            <Card.Root href="/docs/{doc.slug}/" class="bg-brutal-card p-5">
+            <Card.Root href="/docs/{doc.slug}" class="bg-brutal-card p-5">
               <h2 class="font-space text-lg font-extrabold tracking-[0.5px] text-(--text-primary)">
                 {doc.title}
               </h2>

@@ -31,7 +31,7 @@
   <ul class="m-0 flex list-none flex-col gap-4 p-0">
     {#each data.posts as post}
       <li>
-        <Card.Root href="/posts/{post.slug}/" class="bg-brutal-card p-6">
+        <Card.Root href="/posts/{post.slug}" class="bg-brutal-card p-6">
           <h2 class="font-space mb-2 text-xl font-extrabold tracking-[0.5px] text-(--text-primary)">
             {post.title}
           </h2>

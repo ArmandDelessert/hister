@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import Menu from '@lucide/svelte/icons/menu';
   import X from '@lucide/svelte/icons/x';
+  import Heart from '@lucide/svelte/icons/heart';
   import { Button } from '@hister/components';
 
   let menuOpen = $state(false);
@@ -46,6 +47,13 @@
 
     <div class="hidden items-center gap-4 md:flex">
       <Button
+        href="/support"
+        class="bg-hister-rose font-space border-brutal-border h-auto rounded-none border-[3px] px-5 py-2.5 text-[13px] font-semibold tracking-[1px] text-white uppercase no-underline shadow-[3px_3px_0_rgba(0,0,0,0.25)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_rgba(0,0,0,0.25)]"
+      >
+        <Heart size={14} class="shrink-0 fill-white text-white" />
+        Support
+      </Button>
+      <Button
         href="https://github.com/asciimoo/hister"
         target="_blank"
         rel="noopener noreferrer"
@@ -83,6 +91,15 @@
           </a>
         </li>
       {/each}
+      <li>
+        <Button
+          href="/support"
+          class="bg-hister-rose font-space border-brutal-border h-auto w-fit rounded-none border-[3px] px-5 py-2.5 text-[13px] font-semibold tracking-[1px] text-white uppercase no-underline shadow-[3px_3px_0_rgba(0,0,0,0.25)]"
+        >
+          <Heart size={14} class="shrink-0 fill-white text-white" />
+          Support
+        </Button>
+      </li>
       <li>
         <Button
           href="https://github.com/asciimoo/hister"

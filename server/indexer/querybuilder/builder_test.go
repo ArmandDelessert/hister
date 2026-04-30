@@ -211,6 +211,21 @@ func Test_build_url_field_uses_term_query(t *testing.T) {
 	}
 }
 
+func Test_build_quoted_url_field(t *testing.T) {
+	bq := buildBoolQ(t, `url:"https://example.com"`)
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	tq := asTerm(t, clauses[0])
+	if tq.Term != "https://example.com" {
+		t.Fatalf("expected term %q, got %q", "https://example.com", tq.Term)
+	}
+	if tq.FieldVal != "url" {
+		t.Fatalf("expected field %q, got %q", "url", tq.FieldVal)
+	}
+}
+
 // Test that url:"..." quoted syntax produces a TermQuery (supports spaces in URLs).
 func Test_build_url_field_quoted_uses_term_query(t *testing.T) {
 	f := "file:///C:/Users/My Documents/notes.txt"

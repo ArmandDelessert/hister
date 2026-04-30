@@ -39,7 +39,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var Version = 6
+var Version = 7
 
 type indexer struct {
 	idx               bleve.IndexAlias       // used only for Search()
@@ -1061,11 +1061,11 @@ func createMapping(lang string) mapping.IndexMapping {
 		textAnalyzer = "default"
 	}
 	err := im.AddCustomAnalyzer("url", map[string]any{
-		"type":         custom.Name,
-		"char_filters": []string{},
-		"tokenizer":    single.Name,
+		"type":          custom.Name,
+		"char_filters":  []string{},
+		"tokenizer":     single.Name,
 		"token_filters": []string{
-			lowercase.Name,
+			// lowercase.Name,
 		},
 	})
 	if err != nil {

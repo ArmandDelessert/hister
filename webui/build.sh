@@ -4,7 +4,7 @@ set -e
 
 cd "$(dirname -- "$0")/.." || exit
 
-npm install --workspaces
+npm install --workspaces --include=optional
 npm run build -w @hister/app
 
 rm -rf server/static/app

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ImageLightbox from '$lib/ImageLightbox.svelte';
+
   let { data } = $props();
 </script>
 
@@ -33,3 +35,5 @@
     <data.content />
   </div>
 </article>
+
+<ImageLightbox />

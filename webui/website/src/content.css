@@ -155,4 +155,9 @@
   border: 3px solid var(--brutal-border);
   box-shadow: 6px 6px 0 var(--brutal-shadow);
   margin-bottom: 1.5em;
+  cursor: zoom-in;
+}
+
+.content a img {
+  cursor: pointer;
 }

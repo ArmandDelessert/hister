@@ -2,6 +2,7 @@
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { Button, Separator } from '@hister/components';
+  import ImageLightbox from '$lib/ImageLightbox.svelte';
 
   let { data } = $props();
 
@@ -123,3 +124,5 @@
     </aside>
   {/if}
 </div>
+
+<ImageLightbox />

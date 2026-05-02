@@ -1,7 +1,7 @@
 ---
 date: '2026-04-29T17:37:00+02:00'
 draft: false
-title: 'Hister - Feedback from a Security Analyst'
+title: 'Using Hister for Threat Intelligence workflows'
 description: 'Some feedback on using Hister for Threat Intelligence workflows, with practical tips and lessons learned.'
 ---
 
@@ -14,48 +14,6 @@ I ([@stanfrbd](https://github.com/stanfrbd)) am a security analyst with a focus 
 I discovered Hister thanks to a post by Korben, a well-known French tech blogger ([check the article](https://korben.info/hister-moteur-recherche-historique-web.html)).  
 The UI looked great, the Go implementation was fast and efficient, and the documentation was clear.  
 I had it running in Docker on my homelab in under five minutes. Security is pretty good too, with native OAuth and access token support. Even if it's still in development, it's already robust ([see the docs](https://hister.org/docs)).
-
-## Setup with Docker
-
-Rolling releases (from `master` branch), easy setup, and a focus on privacy made Hister a no-brainer.  
-I ingested my browser history right away, so I started with a solid baseline of articles and docs. Setting it as my default search engine was an easy task, and I like that it falls back to Google if Hister finds nothing locally.
-
-Here is a very basic example of `docker-compose` setup:
-
-```yaml
-services:
-  hister:
-    image: ghcr.io/asciimoo/hister:master
-    container_name: hister
-    restart: unless-stopped
-    volumes:
-      - ./data:/hister/data
-    environment:
-      - HISTER__SERVER__ADDRESS=0.0.0.0:4433
-      - HISTER__SERVER__BASE_URL=${HISTER__SERVER__BASE_URL}
-      - HISTER__APP__ACCESS_TOKEN=${HISTER__APP__ACCESS_TOKEN}
-    ports:
-      - 4433:4433
-```
-
-**Regarding secrets management**: I am a big fan of [SOPS](https://github.com/mozilla/sops) for managing secrets, so I store my access token in an encrypted file (`.env.enc`) and load it as an environment variable when starting the container.
-
-```bash
-sops exec-env .env.enc 'docker compose up -d'
-```
-
-## Importing browser history
-
-I simply copied the `places.sqlite` file from my Firefox profile and imported it into Hister. You can do this with a simple command:
-
-```bash
-docker exec -it hister
-# ./hister import firefox ./data/places.sqlite
-```
-
-**Note**: I use Hister with a Cloudflare Tunnel (may change in the future), so I set the `HISTER__SERVER__BASE_URL` to my tunnel URL (e.g. `https://hister.myinstance.net`) and generated a random access token for security + access policies.
-
-**Be very careful with your access token**, as it grants full access to your Hister instance. Don't hardcode it in your code or share it publicly.
 
 ## Daily Use and AI Workflows
 
@@ -114,3 +72,49 @@ If you work in Cybersecurity or just read a lot of articles, or docs, give Histe
 [@asciimoo](https://github.com/asciimoo) is really nice and open to feedback, so don't hesitate to share your thoughts in the discussions or on GitHub.  
 
 Happy browsing!
+
+---
+
+## Additional setup information
+
+## Setup with Docker
+
+Rolling releases (from `master` branch), easy setup, and a focus on privacy made Hister a no-brainer.  
+I ingested my browser history right away, so I started with a solid baseline of articles and docs. Setting it as my default search engine was an easy task, and I like that it falls back to Google if Hister finds nothing locally.
+
+Here is a very basic example of `docker-compose` setup:
+
+```yaml
+services:
+  hister:
+    image: ghcr.io/asciimoo/hister:master
+    container_name: hister
+    restart: unless-stopped
+    volumes:
+      - ./data:/hister/data
+    environment:
+      - HISTER__SERVER__ADDRESS=0.0.0.0:4433
+      - HISTER__SERVER__BASE_URL=${HISTER__SERVER__BASE_URL}
+      - HISTER__APP__ACCESS_TOKEN=${HISTER__APP__ACCESS_TOKEN}
+    ports:
+      - 4433:4433
+```
+
+**Regarding secrets management**: I am a big fan of [SOPS](https://github.com/mozilla/sops) for managing secrets, so I store my access token in an encrypted file (`.env.enc`) and load it as an environment variable when starting the container.
+
+```bash
+sops exec-env .env.enc 'docker compose up -d'
+```
+
+## Importing browser history
+
+I simply copied the `places.sqlite` file from my Firefox profile and imported it into Hister. You can do this with a simple command:
+
+```bash
+docker exec -it hister
+# ./hister import firefox ./data/places.sqlite
+```
+
+**Note**: I use Hister with a Cloudflare Tunnel (may change in the future), so I set the `HISTER__SERVER__BASE_URL` to my tunnel URL (e.g. `https://hister.myinstance.net`) and generated a random access token for security + access policies.
+
+**Be very careful with your access token**, as it grants full access to your Hister instance. Don't hardcode it in your code or share it publicly.

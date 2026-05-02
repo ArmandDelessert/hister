@@ -17,10 +17,10 @@ I had it running in Docker on my homelab in under five minutes. Security is pret
 
 ## Daily Use and AI Workflows
 
-I am an early adopter of generative AI tools, especially [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. I think this is what makes AI "do things".  
+I am an early adopter of generative AI tools, especially [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. I think this is what makes AI "do things".
 
-Before Hister, I relied on MCPs and "fetch-page" functions, but anti-bot and Cloudflare protections often blocked me, as this is basically scraping.    
-I could probably use Playwright MCP but it consumes too many tokens and is not as efficient for quick lookups. With Hister, I can search my (full text) indexed content directly, which is much faster and more reliable.  
+Before Hister, I relied on MCPs and "fetch-page" functions, but anti-bot and Cloudflare protections often blocked me, as this is basically scraping.  
+I could probably use Playwright MCP but it consumes too many tokens and is not as efficient for quick lookups. With Hister, I can search my (full text) indexed content directly, which is much faster and more reliable.
 
 Now, since Hister gathers pages as I browse, I can search that content locally. I care a lot about my indexing rules (especially skip rules).  
 I manually index some pages, sometimes disable auto-indexing, and exclude domains like YouTube, SharePoint, and cookie consent pages, using skip rules and the web extension toggle.
@@ -28,7 +28,7 @@ I manually index some pages, sometimes disable auto-indexing, and exclude domain
 I use different LLM models with MCP in VSCode, which lets me generate hunting queries and fetch content from articles I actually read. That's something really useful for my work.
 
 Hister is becoming my personal knowledge base. No more irrelevant AI summaries from random sources. I can control what's indexed, so relevance is not really a problem anymore (if I know exactly what I'm looking for).  
-For example, when the Bitwarden CLI `npm` compromise happened, I could instantly search my Hister instance for everything I'd read on the topic. 
+For example, when the Bitwarden CLI `npm` compromise happened, I could instantly search my Hister instance for everything I'd read on the topic.
 
 I also integrated Hister's search API into my open source project, Cyberbro, to search for articles and IoCs at scale (example of curl query that has been translated in Python Cyberbro's engine):
 
@@ -50,8 +50,8 @@ Here is an example of Cyberbro output with Hister integration:
 Here's a prompt I used in VSCode (properly configured with my Hister MCP):
 
 ```
-Gather articles from Hister about Bitwarden CLI compromise (npm) and summarize all the details in an actionable format (SOC/CERT/CTI purpose).  
-Generate a list of IoCs, TTPs, and mitigation strategies mentioned in those articles. Focus on technical details and practical recommendations.  
+Gather articles from Hister about Bitwarden CLI compromise (npm) and summarize all the details in an actionable format (SOC/CERT/CTI purpose).
+Generate a list of IoCs, TTPs, and mitigation strategies mentioned in those articles. Focus on technical details and practical recommendations.
 Propose 3 hunting queries that don't rely on IoCs but on TTPs or other indicators of compromise. Format the output in markdown for easy reading.
 ```
 
@@ -65,11 +65,11 @@ Propose 3 hunting queries that don't rely on IoCs but on TTPs or other indicator
 
 ## Some Thoughts
 
-Hister is probably one of the most exciting tools I tried in a while.  
+Hister is probably one of the most exciting tools I tried in a while.
 
-If you work in Cybersecurity or just read a lot of articles, or docs, give Hister a try. Set it as your default search engine. There's nothing to lose, since it falls back to Google if needed. Use it, experiment, and help it grow :)  
+If you work in Cybersecurity or just read a lot of articles, or docs, give Hister a try. Set it as your default search engine. There's nothing to lose, since it falls back to Google if needed. Use it, experiment, and help it grow :)
 
-[@asciimoo](https://github.com/asciimoo) is really nice and open to feedback, so don't hesitate to share your thoughts in the discussions or on GitHub.  
+[@asciimoo](https://github.com/asciimoo) is really nice and open to feedback, so don't hesitate to share your thoughts in the discussions or on GitHub.
 
 Happy browsing!
 

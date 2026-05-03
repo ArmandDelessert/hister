@@ -37,7 +37,9 @@
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 md:p-10"
     onclick={close}
-    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') close(); }}
+    onkeydown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') close();
+    }}
   >
     <div
       role="dialog"

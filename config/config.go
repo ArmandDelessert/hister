@@ -248,6 +248,7 @@ var (
 		"view_result_popup",
 		"autocomplete",
 		"show_hotkeys",
+		"delete_result",
 	}
 )
 
@@ -384,6 +385,7 @@ func CreateDefaultConfig() *Config {
 				"alt+v":     "view_result_popup",
 				"tab":       "autocomplete",
 				"?":         "show_hotkeys",
+				"alt+d":     "delete_result",
 			},
 		},
 		SensitiveContentPatterns: map[string]string{

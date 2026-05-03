@@ -147,6 +147,10 @@
   let contextMenuSearch: string | null = $state(null);
   let contextMenuPos = $state({ x: 0, y: 0 });
 
+  let showDeleteConfirm = $state(false);
+  let deleteConfirmUrl = $state('');
+  let deleteConfirmSkip = $state(false);
+
   let recentSearches: string[] = $state([]);
   let rulesCount = $state(0);
   let aliasesCount = $state(0);
@@ -186,6 +190,7 @@
     view_result_popup: viewResultPopup,
     autocomplete: autocompleteQuery,
     show_hotkeys: showHotkeys,
+    delete_result: deleteSelectedResult,
   };
 
   const isSearching = $derived(query.length > 0 || resultsShown);
@@ -430,6 +435,36 @@
     }
   }
 
+  function deleteSelectedResult(e?: KeyboardEvent) {
+    if (e) e.preventDefault();
+    const links = document.querySelectorAll<HTMLAnchorElement>('[data-result] [data-result-link]');
+    const link = links[highlightIdx];
+    if (!link) return;
+    const url = link.getAttribute('data-result-link') ?? link.getAttribute('href');
+    if (!url) return;
+    if (localStorage.getItem('hister-skip-delete-confirm') === 'true') {
+      deleteResult(url);
+      return;
+    }
+    deleteConfirmUrl = url;
+    deleteConfirmSkip = false;
+    showDeleteConfirm = true;
+  }
+
+  function confirmDelete() {
+    if (deleteConfirmSkip) {
+      localStorage.setItem('hister-skip-delete-confirm', 'true');
+    }
+    showDeleteConfirm = false;
+    deleteResult(deleteConfirmUrl);
+    deleteConfirmUrl = '';
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false;
+    deleteConfirmUrl = '';
+  }
+
   // Convert a file:// URL to a server-side /api/file?path= URL for in-browser viewing.
   // On Windows, strips the extra leading slash before the drive letter (file:///C:/ → C:/).
   function fileResultUrl(url: string): string {
@@ -655,6 +690,7 @@
     view_result_popup: 'View result content',
     autocomplete: 'Autocomplete query',
     show_hotkeys: 'Show help',
+    delete_result: 'Delete focused result',
   };
 
   function showHotkeys(e?: KeyboardEvent, isInputFocus?: boolean) {
@@ -668,6 +704,16 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (showDeleteConfirm) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmDelete();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelDelete();
+      }
+      return;
+    }
     const isInputFocus =
       document.activeElement instanceof HTMLInputElement ||
       document.activeElement instanceof HTMLTextAreaElement;
@@ -1061,6 +1107,51 @@
         > to toggle this dialog
       </p>
     </Card.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={showDeleteConfirm}>
+  <Dialog.Content
+    escapeKeydownBehavior="ignore"
+    showCloseButton={false}
+    class="border-border-brand bg-card-surface flex max-h-[80vh] max-w-md flex-col gap-0 overflow-hidden rounded-none border-[3px] p-0 shadow-[6px_6px_0px_black]"
+  >
+    <Dialog.Header class="bg-hister-rose flex-row items-center justify-between gap-2 px-5 py-4">
+      <Dialog.Title class="flex items-center gap-2">
+        <Trash2 class="size-5 text-white" />
+        <span class="font-outfit text-lg font-extrabold text-white">Delete result</span>
+      </Dialog.Title>
+    </Dialog.Header>
+    <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+      <p class="font-inter text-text-brand-secondary text-sm">
+        Are you sure you want to delete this result?
+      </p>
+      <code
+        class="font-fira bg-muted-surface text-text-brand-muted block px-2 py-1 text-xs break-all"
+        title={deleteConfirmUrl}>{deleteConfirmUrl}</code
+      >
+      <label class="flex cursor-pointer items-center gap-2">
+        <input type="checkbox" bind:checked={deleteConfirmSkip} class="accent-hister-rose" />
+        <span class="font-inter text-text-brand-secondary text-sm">Don't ask again</span>
+      </label>
+    </div>
+    <div class="border-border-brand-muted flex shrink-0 justify-end gap-2 border-t-[3px] px-5 py-3">
+      <Button
+        variant="outline"
+        size="sm"
+        class="border-border-brand-muted text-text-brand-secondary rounded-none"
+        onclick={cancelDelete}
+      >
+        No
+      </Button>
+      <Button
+        size="sm"
+        class="bg-hister-rose hover:bg-hister-rose/90 rounded-none border-0 text-white"
+        onclick={confirmDelete}
+      >
+        Yes, delete
+      </Button>
+    </div>
   </Dialog.Content>
 </Dialog.Root>
 

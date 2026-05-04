@@ -9,8 +9,8 @@
     "./colors.css": "./src/colors.css"
   },
   "devDependencies": {
-    "@lucide/svelte": "^1.11.0",
-    "bits-ui": "^2.18.0",
+    "@lucide/svelte": "^1.14.0",
+    "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "svelte": "^5.55.5",
     "tailwind-merge": "^3.5.0",

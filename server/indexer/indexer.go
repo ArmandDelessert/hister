@@ -529,12 +529,22 @@ func (i *indexer) AddDocument(d *document.Document) error {
 			return err
 		}
 	}
-	if i.embedder != nil && i.vectorStore != nil {
-		i.embedWg.Go(func() {
-			embedDocumentChunks(i, d)
-		})
+	if !d.SkipIndexing {
+		if i.embedder != nil && i.vectorStore != nil {
+			i.embedWg.Go(func() {
+				embedDocumentChunks(i, d)
+			})
+		}
+		if err := i.getOrCreate(d.Language).Index(d.ID(), d); err != nil {
+			return err
+		}
 	}
-	return i.getOrCreate(d.Language).Index(d.ID(), d)
+	for _, extra := range d.ExtraDocuments {
+		if err := i.AddDocument(extra); err != nil {
+			log.Warn().Err(err).Str("url", extra.URL).Msg("failed to index extra document")
+		}
+	}
+	return nil
 }
 
 func GetLatestDocuments(limit int, latest string, userID uint) *Results {

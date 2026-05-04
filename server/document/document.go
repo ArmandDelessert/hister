@@ -22,19 +22,23 @@ import (
 )
 
 type Document struct {
-	URL                string         `json:"url"`
-	Domain             string         `json:"domain"`
-	HTML               string         `json:"html"`
-	Title              string         `json:"title"`
-	Text               string         `json:"text"`
-	Favicon            string         `json:"favicon"`
-	Score              float64        `json:"score"`
-	Added              int64          `json:"added"`
-	Type               types.DocType  `json:"type"`
-	Language           string         `json:"language"`
-	UserID             uint           `json:"user_id"`
-	Label              string         `json:"label"`
-	Metadata           map[string]any `json:"metadata"`
+	URL      string         `json:"url"`
+	Domain   string         `json:"domain"`
+	HTML     string         `json:"html"`
+	Title    string         `json:"title"`
+	Text     string         `json:"text"`
+	Favicon  string         `json:"favicon"`
+	Score    float64        `json:"score"`
+	Added    int64          `json:"added"`
+	Type     types.DocType  `json:"type"`
+	Language string         `json:"language"`
+	UserID   uint           `json:"user_id"`
+	Label    string         `json:"label"`
+	Metadata map[string]any `json:"metadata"`
+	// ExtraDocuments can be populated by extractors to create new documents during the extraction
+	ExtraDocuments []*Document `json:"-"`
+	// SkipIndexing can be set by extractors to mark the document to exclude from indexing. Useful when populating ExtraDocuments
+	SkipIndexing       bool `json:"-"`
 	faviconURL         string
 	processed          bool
 	skipSensitiveCheck bool

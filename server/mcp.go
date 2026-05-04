@@ -132,6 +132,14 @@ func mcpToolList() []map[string]any {
 						"type":        "integer",
 						"description": "Maximum number of results to return (default: 10, max: 50).",
 					},
+					"date_from": map[string]any{
+						"type":        "string",
+						"description": `Only return documents indexed on or after this date (ISO 8601, e.g. "2024-01-15").`,
+					},
+					"date_to": map[string]any{
+						"type":        "string",
+						"description": `Only return documents indexed on or before this date (ISO 8601, e.g. "2024-06-30").`,
+					},
 					"semantic": map[string]any{
 						"type":        "boolean",
 						"description": "Enable AI semantic similarity search alongside keyword matching. Only effective when the server has semantic search configured.",
@@ -181,6 +189,8 @@ type mcpSearchArgs struct {
 	Limit    int      `json:"limit"`
 	Semantic bool     `json:"semantic"`
 	Fields   []string `json:"fields"`
+	DateFrom string   `json:"date_from"`
+	DateTo   string   `json:"date_to"`
 }
 
 // mcpToolSearch executes a Hister search and formats the results as MCP content.
@@ -204,6 +214,23 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 		Text:            args.Query,
 		Limit:           args.Limit,
 		SemanticEnabled: args.Semantic && c.Config.SemanticSearch.Enable,
+	}
+	if args.DateFrom != "" {
+		t, err := time.Parse("2006-01-02", args.DateFrom)
+		if err != nil {
+			mcpWriteError(c, id, mcpErrInvalidParam, "invalid date_from (expected YYYY-MM-DD): "+err.Error())
+			return
+		}
+		q.DateFrom = t.Unix()
+	}
+	if args.DateTo != "" {
+		t, err := time.Parse("2006-01-02", args.DateTo)
+		if err != nil {
+			mcpWriteError(c, id, mcpErrInvalidParam, "invalid date_to (expected YYYY-MM-DD): "+err.Error())
+			return
+		}
+		// Use start of the following day so the entire given day is included.
+		q.DateTo = t.AddDate(0, 0, 1).Unix()
 	}
 	for _, f := range args.Fields {
 		switch f {

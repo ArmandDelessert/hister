@@ -50,7 +50,7 @@ func (e *YtdlpExtractor) GetConfig() *config.Extractor {
 				"binary":          "yt-dlp",
 				"timeout":         15,
 				"fetch_subtitles": false,
-				"sub_language":    "en",
+				"sub_language":    "auto",
 			},
 		}
 	}

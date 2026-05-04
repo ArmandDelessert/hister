@@ -33,6 +33,7 @@ type videoInfo struct {
 	Chapters          []chapter                  `json:"chapters"`
 	Subtitles         map[string][]subtitleTrack `json:"subtitles"`
 	AutomaticCaptions map[string][]subtitleTrack `json:"automatic_captions"`
+	Language          string                     `json:"language"`
 	PlaylistTitle     string                     `json:"playlist_title"`
 	PlaylistIndex     *int                       `json:"playlist_index"`
 	PlaylistCount     *int                       `json:"playlist_count"`

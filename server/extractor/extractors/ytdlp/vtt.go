@@ -5,15 +5,46 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 )
 
-// fetchSubtitleText uses yt-dlp to download subtitles and strips timing/formatting
-// to return plain transcript text. It prefers manual subtitles over auto-captions.
+// fetchSubtitleText dispatches subtitle downloading based on the sub_language config:
+//   - "auto": use the video's original language reported by yt-dlp
+//   - single value (e.g. "de"): download subtitles in that language if available
+//   - comma-separated list (e.g. "de,fr"): download subtitles only if the video's
+//     original language matches one of the listed languages
 func (e *YtdlpExtractor) fetchSubtitleText(info *videoInfo) string {
-	lang := e.subLanguage()
+	langSpec := e.subLanguage()
 
+	if langSpec == "auto" {
+		if info.Language == "" {
+			return ""
+		}
+		return downloadSubtitleForLang(e, info, info.Language)
+	}
+
+	langs := strings.Split(langSpec, ",")
+	for i := range langs {
+		langs[i] = strings.TrimSpace(langs[i])
+	}
+
+	if len(langs) > 1 {
+		// Multiple languages: download only if the video's original language is in the list.
+		if info.Language == "" || !slices.Contains(langs, info.Language) {
+			return ""
+		}
+		return downloadSubtitleForLang(e, info, info.Language)
+	}
+
+	// Single language: download in the specified language regardless of video's language.
+	return downloadSubtitleForLang(e, info, langs[0])
+}
+
+// downloadSubtitleForLang downloads subtitles for a single language code and returns
+// the plain transcript text. It prefers manual subtitles over auto-captions.
+func downloadSubtitleForLang(e *YtdlpExtractor, info *videoInfo, lang string) string {
 	// Check whether any subtitles are available at all.
 	hasManual := len(info.Subtitles[lang]) > 0
 	hasAuto := len(info.AutomaticCaptions[lang]) > 0

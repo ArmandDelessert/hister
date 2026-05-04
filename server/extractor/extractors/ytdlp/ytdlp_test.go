@@ -42,10 +42,59 @@ const sampleJSONTemplate = `{
       {"ext": "vtt", "url": "%s/subs.vtt", "name": "English"}
     ]
   },
+  "language": "en",
   "automatic_captions": {},
   "playlist_title": "First Videos",
   "playlist_index": 1,
   "playlist_count": 10
+}`
+
+// sampleJSONTemplateFr is like sampleJSONTemplate but for a French-language video.
+// The "language" field is set to "fr" and automatic_captions include a French track
+// so that downloadSubtitleForLang can find available subtitles.
+// %s placeholders: 1=thumbnail URL.
+const sampleJSONTemplateFr = `{
+  "id": "testFrVideo",
+  "title": "French Video",
+  "description": "A video in French.",
+  "uploader": "testuser",
+  "channel": "testuser",
+  "duration": 60,
+  "view_count": 1000,
+  "like_count": 50,
+  "upload_date": "20240101",
+  "thumbnail": "%s/thumb.jpg",
+  "webpage_url": "https://www.youtube.com/watch?v=testFrVideo",
+  "categories": [],
+  "tags": [],
+  "chapters": [],
+  "language": "fr",
+  "subtitles": {},
+  "automatic_captions": {
+    "fr": [{"ext": "json3", "url": "https://example.com/subs?lang=fr", "name": "French"}]
+  }
+}`
+
+// sampleJSONTemplateNoLang is like sampleJSONTemplateFr but without a "language" field,
+// simulating videos where yt-dlp cannot detect the original language.
+// %s placeholder: thumbnail URL.
+const sampleJSONTemplateNoLang = `{
+  "id": "testNoLang",
+  "title": "Unknown Language Video",
+  "description": "No language metadata.",
+  "uploader": "testuser",
+  "channel": "testuser",
+  "duration": 60,
+  "view_count": 100,
+  "like_count": 5,
+  "upload_date": "20240101",
+  "thumbnail": "%s/thumb.jpg",
+  "webpage_url": "https://www.youtube.com/watch?v=testNoLang",
+  "categories": [],
+  "tags": [],
+  "chapters": [],
+  "subtitles": {},
+  "automatic_captions": {}
 }`
 
 const sampleVTT = `WEBVTT
@@ -64,13 +113,15 @@ really really long trunks
 
 // writeFakeBinary creates a shell script that handles both --dump-json and
 // --write-sub/--write-auto-sub invocations, returning its path.
+// The subtitle file is named using the --sub-lang value so that auto-mode
+// tests work correctly with any detected language.
 func writeFakeBinary(t *testing.T, jsonContent string) string {
 	t.Helper()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "fake-yt-dlp")
 	// When called with --dump-json, output JSON.
 	// When called with --write-sub or --write-auto-sub, write a .vtt file
-	// next to the -o path.
+	// next to the -o path, using the --sub-lang value as the file extension.
 	script := `#!/bin/sh
 case "$*" in
   *--dump-json*)
@@ -80,16 +131,25 @@ YTDLP_EOF
     ;;
   *--write-sub*|*--write-auto-sub*)
     out=""
+    lang="en"
     next=0
+    lang_next=0
     for arg in "$@"; do
       if [ "$next" = 1 ]; then
         out="$arg"
         next=0
       fi
-      case "$arg" in -o) next=1 ;; esac
+      if [ "$lang_next" = 1 ]; then
+        lang="$arg"
+        lang_next=0
+      fi
+      case "$arg" in
+        -o) next=1 ;;
+        --sub-lang) lang_next=1 ;;
+      esac
     done
     if [ -n "$out" ]; then
-      cat > "${out}.en.vtt" <<'VTT_EOF'
+      cat > "${out}.${lang}.vtt" <<'VTT_EOF'
 ` + sampleVTT + `
 VTT_EOF
     fi
@@ -365,6 +425,103 @@ func TestPreviewWithSubtitles(t *testing.T) {
 	}
 }
 
+// newTestExtractorFr creates an extractor configured with a French-language video
+// JSON and the given sub_language setting.
+func newTestExtractorFr(t *testing.T, subLang string) *YtdlpExtractor {
+	t.Helper()
+	srv := startTestServer(t)
+	jsonContent := fmt.Sprintf(sampleJSONTemplateFr, srv.URL)
+
+	e := &YtdlpExtractor{}
+	if err := e.SetConfig(&config.Extractor{
+		Enable: true,
+		Options: map[string]any{
+			"binary":          writeFakeBinary(t, jsonContent),
+			"timeout":         5,
+			"fetch_subtitles": true,
+			"sub_language":    subLang,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+// newTestExtractorNoLang creates an extractor configured with a video JSON that has
+// no "language" field and the given sub_language setting.
+func newTestExtractorNoLang(t *testing.T, subLang string) *YtdlpExtractor {
+	t.Helper()
+	srv := startTestServer(t)
+	jsonContent := fmt.Sprintf(sampleJSONTemplateNoLang, srv.URL)
+
+	e := &YtdlpExtractor{}
+	if err := e.SetConfig(&config.Extractor{
+		Enable: true,
+		Options: map[string]any{
+			"binary":          writeFakeBinary(t, jsonContent),
+			"timeout":         5,
+			"fetch_subtitles": true,
+			"sub_language":    subLang,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestExtractWithSubtitlesAuto(t *testing.T) {
+	e := newTestExtractorFr(t, "auto")
+	d := &document.Document{URL: "https://www.youtube.com/watch?v=testFrVideo"}
+
+	if _, err := e.Extract(d); err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	if !strings.Contains(d.Text, "Transcript:") {
+		t.Error("Text missing transcript section with auto mode")
+	}
+	if !strings.Contains(d.Text, "elephants") {
+		t.Error("Text missing subtitle content with auto mode")
+	}
+}
+
+func TestExtractWithSubtitlesMultiLangMatch(t *testing.T) {
+	// "fr,en" should download subtitles because the video's original language is "fr".
+	e := newTestExtractorFr(t, "fr,en")
+	d := &document.Document{URL: "https://www.youtube.com/watch?v=testFrVideo"}
+
+	if _, err := e.Extract(d); err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	if !strings.Contains(d.Text, "elephants") {
+		t.Error("Text missing subtitle content when original language matches multi-lang list")
+	}
+}
+
+func TestExtractWithSubtitlesAutoNoLanguage(t *testing.T) {
+	// When the video has no "language" field, auto mode should skip subtitles.
+	e := newTestExtractorNoLang(t, "auto")
+	d := &document.Document{URL: "https://www.youtube.com/watch?v=testNoLang"}
+	if _, err := e.Extract(d); err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	if strings.Contains(d.Text, "Transcript:") {
+		t.Error("Text should not contain transcript when video has no language metadata")
+	}
+}
+
+func TestExtractWithSubtitlesMultiLangNoMatch(t *testing.T) {
+	// "de,es" should NOT download subtitles because the video's original language is "fr".
+	e := newTestExtractorFr(t, "de,es")
+	d := &document.Document{URL: "https://www.youtube.com/watch?v=testFrVideo"}
+
+	if _, err := e.Extract(d); err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	if strings.Contains(d.Text, "Transcript:") {
+		t.Error("Text should not contain transcript when original language is not in list")
+	}
+}
+
 func TestCaching(t *testing.T) {
 	dir := t.TempDir()
 	counterFile := filepath.Join(dir, "count")
@@ -448,7 +605,6 @@ func TestConfig(t *testing.T) {
 	if cfg.Options["binary"] != "yt-dlp" {
 		t.Errorf("default binary = %v, want yt-dlp", cfg.Options["binary"])
 	}
-
 	err := e.SetConfig(&config.Extractor{
 		Enable: true,
 		Options: map[string]any{

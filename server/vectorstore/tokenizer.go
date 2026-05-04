@@ -36,7 +36,6 @@ func tokenize(text string) []string {
 	var cur strings.Builder
 	for _, r := range text {
 		if isCJKIdeograph(r) {
-			// Flush any accumulated Latin/digit run.
 			if cur.Len() > 0 {
 				tokens = append(tokens, cur.String())
 				cur.Reset()
@@ -49,7 +48,6 @@ func tokenize(text string) []string {
 				tokens = append(tokens, cur.String())
 				cur.Reset()
 			}
-			// Keep meaningful punctuation as separate tokens.
 			if !unicode.IsSpace(r) {
 				tokens = append(tokens, string(r))
 			}
@@ -61,9 +59,162 @@ func tokenize(text string) []string {
 	return tokens
 }
 
-// ChunkText splits text into overlapping chunks of at most maxTokens tokens.
-// overlap specifies how many tokens consecutive chunks share. If the entire
-// text fits in one chunk, a single TextChunk is returned.
+// cjkTerminators is the set of CJK sentence-ending punctuation characters.
+var cjkTerminators = map[rune]struct{}{
+	'。': {}, '！': {}, '？': {}, '…': {}, '；': {},
+	'｡': {}, '︕': {}, '︖': {},
+}
+
+// isClosingPunct reports whether r is a closing bracket or quote that may
+// appear directly after a sentence-ending period/!/?.
+func isClosingPunct(r rune) bool {
+	return r == ')' || r == ']' || r == '}' ||
+		r == '"' || r == '\'' || r == '\u201D' || r == '\u2019' ||
+		r == '»' || r == '›'
+}
+
+// splitSentences splits text into sentences using CJK terminators and Western
+// sentence-ending punctuation (. ! ?) as boundaries. Paragraph breaks (\n\n)
+// are always boundaries. Repeated terminators and trailing closing punctuation
+// are consumed as part of the same sentence.
+func splitSentences(text string) []string {
+	runes := []rune(text)
+	n := len(runes)
+	var sentences []string
+	sentStart := 0
+	i := 0
+
+	for i < n {
+		r := runes[i]
+
+		// Paragraph break: two or more consecutive newlines.
+		if r == '\n' && i+1 < n && runes[i+1] == '\n' {
+			if s := strings.TrimSpace(string(runes[sentStart:i])); s != "" {
+				sentences = append(sentences, s)
+			}
+			for i < n && runes[i] == '\n' {
+				i++
+			}
+			sentStart = i
+			continue
+		}
+
+		// CJK terminators: always a sentence boundary.
+		if _, ok := cjkTerminators[r]; ok {
+			if s := strings.TrimSpace(string(runes[sentStart : i+1])); s != "" {
+				sentences = append(sentences, s)
+			}
+			i++
+			for i < n && unicode.IsSpace(runes[i]) {
+				i++
+			}
+			sentStart = i
+			continue
+		}
+
+		// Western terminators: . ! ?
+		if r == '.' || r == '!' || r == '?' {
+			j := i + 1
+			// Consume any run of repeated terminators (e.g. !!, ?!, ...).
+			for j < n && (runes[j] == '.' || runes[j] == '!' || runes[j] == '?') {
+				j++
+			}
+			// Consume closing punctuation that may follow (e.g. '."', ')').
+			for j < n && isClosingPunct(runes[j]) {
+				j++
+			}
+			if s := strings.TrimSpace(string(runes[sentStart:j])); s != "" {
+				sentences = append(sentences, s)
+			}
+			for j < n && unicode.IsSpace(runes[j]) {
+				j++
+			}
+			sentStart = j
+			i = j
+			continue
+		}
+
+		i++
+	}
+
+	// Emit any remaining text as the final sentence.
+	if sentStart < n {
+		if s := strings.TrimSpace(string(runes[sentStart:])); s != "" {
+			sentences = append(sentences, s)
+		}
+	}
+	return sentences
+}
+
+// naiveChunkTokens splits a pre-tokenized slice into overlapping token-window
+// chunks. This is the fallback path used when sentence boundaries are absent.
+func naiveChunkTokens(tokens []string, maxTokens, overlap int) []TextChunk {
+	if len(tokens) == 0 {
+		return nil
+	}
+	step := maxTokens - overlap
+	if step <= 0 {
+		step = 1
+	}
+	var chunks []TextChunk
+	for start := 0; start < len(tokens); start += step {
+		end := min(start+maxTokens, len(tokens))
+		chunkTokens := tokens[start:end]
+		chunks = append(chunks, TextChunk{
+			Text:       strings.Join(chunkTokens, " "),
+			TokenCount: len(chunkTokens),
+		})
+		if end == len(tokens) {
+			break
+		}
+	}
+	return chunks
+}
+
+// chunkBySentences groups sentences into chunks of at most maxTokens tokens.
+// Sentences that individually exceed maxTokens are broken by the naive
+// token-window fallback. No overlap is applied between sentence chunks.
+func chunkBySentences(sentences []string, sentTokens []int, maxTokens int) []TextChunk {
+	var chunks []TextChunk
+	chunkStart := 0
+
+	for chunkStart < len(sentences) {
+		total := 0
+		j := chunkStart
+		for j < len(sentences) {
+			// Always include at least one sentence even if it exceeds maxTokens.
+			if total+sentTokens[j] > maxTokens && j > chunkStart {
+				break
+			}
+			total += sentTokens[j]
+			j++
+		}
+
+		if j == chunkStart {
+			// A single sentence exceeds maxTokens: apply naive chunking to it.
+			naive := naiveChunkTokens(tokenize(sentences[chunkStart]), maxTokens, 0)
+			chunks = append(chunks, naive...)
+			chunkStart++
+			continue
+		}
+
+		chunks = append(chunks, TextChunk{
+			Text:       strings.Join(sentences[chunkStart:j], " "),
+			TokenCount: total,
+		})
+		chunkStart = j
+	}
+
+	return chunks
+}
+
+// ChunkText splits text into chunks of at most maxTokens tokens, preferring
+// sentence boundaries when detectable. When the text decomposes into multiple
+// sentences, chunks are aligned to sentence boundaries with no overlap between
+// chunks. Sentences that individually exceed maxTokens are broken using the
+// naive token-window fallback. When no sentence boundaries are found (e.g.
+// code blocks or continuous prose without punctuation), the naive token-window
+// chunker with overlap is used throughout.
 func ChunkText(text string, maxTokens, overlap int) []TextChunk {
 	if maxTokens <= 0 {
 		maxTokens = 2048
@@ -79,27 +230,23 @@ func ChunkText(text string, maxTokens, overlap int) []TextChunk {
 	if len(tokens) == 0 {
 		return nil
 	}
+	// Short enough to fit in a single chunk, return verbatim.
 	if len(tokens) <= maxTokens {
 		return []TextChunk{{Text: text, TokenCount: len(tokens)}}
 	}
 
-	step := maxTokens - overlap
-	if step <= 0 {
-		step = 1
+	// Attempt sentence-level splitting.
+	sentences := splitSentences(text)
+	if len(sentences) <= 1 {
+		// No usable sentence boundaries: fall back to naive chunking.
+		return naiveChunkTokens(tokens, maxTokens, overlap)
 	}
 
-	var chunks []TextChunk
-	for start := 0; start < len(tokens); start += step {
-		end := min(start+maxTokens, len(tokens))
-		chunkTokens := tokens[start:end]
-		chunkText := strings.Join(chunkTokens, " ")
-		chunks = append(chunks, TextChunk{
-			Text:       chunkText,
-			TokenCount: len(chunkTokens),
-		})
-		if end == len(tokens) {
-			break
-		}
+	// Pre-compute token count per sentence.
+	sentTokens := make([]int, len(sentences))
+	for i, s := range sentences {
+		sentTokens[i] = len(tokenize(s))
 	}
-	return chunks
+
+	return chunkBySentences(sentences, sentTokens, maxTokens)
 }

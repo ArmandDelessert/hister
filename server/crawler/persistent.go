@@ -21,24 +21,26 @@ type persistentCrawler struct {
 	fetcher fetcher
 	cfg     *config.CrawlerConfig
 	jobID   string
+	robots  *RobotsCache // nil means robots.txt enforcement is disabled
 }
 
 // NewPersistent creates a Crawler that persists its state to the database.
 // jobID is used as the primary key for the crawl job.
-func NewPersistent(cfg *config.CrawlerConfig, jobID string) (Crawler, error) {
+// Pass a non-nil RobotsCache to enforce robots.txt rules; pass nil to disable.
+func NewPersistent(cfg *config.CrawlerConfig, jobID string, robots *RobotsCache) (Crawler, error) {
 	switch cfg.Backend {
 	case "chromedp":
 		f, err := newChromedpFetcher(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("chromedp backend: %w", err)
 		}
-		return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID}, nil
+		return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots}, nil
 	default:
 		f, err := newHTTPFetcher(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("http backend: %w", err)
 		}
-		return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID}, nil
+		return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots}, nil
 	}
 }
 
@@ -112,6 +114,14 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 		case URLSkip:
 			if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLSkipped, ""); err != nil {
 				log.Warn().Err(err).Msg("failed to mark URL skipped")
+			}
+			continue
+		}
+
+		if c.robots != nil && !c.robots.Allowed(ctx, cur.URL) {
+			log.Debug().Str("url", cur.URL).Msg("crawler: skipping URL disallowed by robots.txt")
+			if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLSkipped, "robots.txt"); err != nil {
+				log.Warn().Err(err).Msg("failed to mark URL skipped by robots.txt")
 			}
 			continue
 		}

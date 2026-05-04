@@ -40,24 +40,27 @@ type fetcher interface {
 type baseCrawler struct {
 	fetcher fetcher
 	cfg     *config.CrawlerConfig
+	robots  *RobotsCache // nil means robots.txt enforcement is disabled
 }
 
 // New creates a Crawler backed by the backend specified in cfg.Backend.
 // Accepted values are "chromedp" and "http" (default).
-func New(cfg *config.CrawlerConfig) (Crawler, error) {
+// Pass a non-nil RobotsCache to enforce robots.txt rules during crawling;
+// pass nil to disable robots.txt checks entirely.
+func New(cfg *config.CrawlerConfig, robots *RobotsCache) (Crawler, error) {
 	switch cfg.Backend {
 	case "chromedp":
 		f, err := newChromedpFetcher(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("chromedp backend: %w", err)
 		}
-		return &baseCrawler{fetcher: f, cfg: cfg}, nil
+		return &baseCrawler{fetcher: f, cfg: cfg, robots: robots}, nil
 	default:
 		f, err := newHTTPFetcher(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("http backend: %w", err)
 		}
-		return &baseCrawler{fetcher: f, cfg: cfg}, nil
+		return &baseCrawler{fetcher: f, cfg: cfg, robots: robots}, nil
 	}
 }
 
@@ -109,6 +112,11 @@ func (c *baseCrawler) bfsCrawl(ctx context.Context, startURL string, v *Validato
 		case URLStop:
 			return
 		case URLSkip:
+			continue
+		}
+
+		if c.robots != nil && !c.robots.Allowed(ctx, cur.rawURL) {
+			log.Debug().Str("url", cur.rawURL).Msg("crawler: skipping URL disallowed by robots.txt")
 			continue
 		}
 

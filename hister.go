@@ -473,8 +473,14 @@ var indexCmd = &cobra.Command{
 		recursive, _ := cmd.Flags().GetBool("recursive")
 		jobID, _ := cmd.Flags().GetString("job-id")
 		label, _ := cmd.Flags().GetString("label")
+		noRobots, _ := cmd.Flags().GetBool("no-robots")
 		cfg.Crawler.UserAgent = UserAgent
 		applyCrawlerBackendFlags(cmd)
+
+		var robotsCache *crawler.RobotsCache
+		if !noRobots {
+			robotsCache = crawler.NewRobotsCache(cfg.Crawler.UserAgent)
+		}
 
 		if recursive {
 			// Persistent crawl mode (always).
@@ -559,7 +565,7 @@ var indexCmd = &cobra.Command{
 			}
 			validator.SetVisited(int(done + failed))
 
-			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID)
+			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID, robotsCache)
 			if err != nil {
 				exit(1, "Failed to initialize persistent crawler: "+err.Error())
 			}
@@ -610,7 +616,7 @@ var indexCmd = &cobra.Command{
 			}
 			validator.SetVisited(int(done + failed))
 
-			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID)
+			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID, robotsCache)
 			if err != nil {
 				exit(1, "Failed to initialize persistent crawler: "+err.Error())
 			}
@@ -641,7 +647,7 @@ var indexCmd = &cobra.Command{
 					continue
 				}
 			}
-			if err := indexURL(u, label, clientOpts...); err != nil {
+			if err := indexURL(u, label, robotsCache, clientOpts...); err != nil {
 				log.Warn().Err(err).Str("URL", u).Msg("Failed to index URL")
 			}
 		}
@@ -665,6 +671,7 @@ func init() {
 	indexCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
 	indexCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
 	indexCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
+	indexCmd.Flags().Bool("no-robots", false, "Disable robots.txt compliance during crawling")
 }
 
 var deleteCmd = &cobra.Command{
@@ -1303,13 +1310,13 @@ func yesNoPrompt(label string, def bool) bool {
 //	}
 //}
 
-func indexURL(u string, label string, clientOpts ...client.Option) error {
+func indexURL(u string, label string, robots *crawler.RobotsCache, clientOpts ...client.Option) error {
 	if u == "" {
 		log.Warn().Msg("URL must not be empty")
 		return nil
 	}
 	cfg.Crawler.UserAgent = UserAgent
-	cr, err := crawler.New(&cfg.Crawler)
+	cr, err := crawler.New(&cfg.Crawler, robots)
 	if err != nil {
 		return fmt.Errorf("failed to create crawler: %w", err)
 	}
@@ -1517,7 +1524,7 @@ func importDB(dbFile string, table string, cmd *cobra.Command) {
 			continue
 		}
 		fmt.Printf("[%d/%d] %s\n", i, count, u)
-		if err := indexURL(u, ""); err != nil {
+		if err := indexURL(u, "", nil); err != nil {
 			log.Warn().Err(err).Str("url", u).Msg("Failed to index URL")
 		}
 	}

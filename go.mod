@@ -24,6 +24,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	github.com/temoto/robotstxt v1.1.2
 	golang.org/x/crypto v0.50.0
 	golang.org/x/net v0.53.0
 	gopkg.in/yaml.v3 v3.0.1

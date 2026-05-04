@@ -434,8 +434,8 @@ func (m *Model) OpenOverlay(state ViewState) {
 // returns the result index at the given content Y offset,
 // or -1 if no result is found.
 func (m *Model) FindResultAtY(contentY int) int {
-	for i := len(m.LineOffsets) - 1; i >= 0; i-- {
-		if m.LineOffsets[i] <= contentY {
+	for i, offset := range slices.Backward(m.LineOffsets) {
+		if offset <= contentY {
 			return i
 		}
 	}

@@ -26,7 +26,7 @@ type bidiFetcher struct {
 	captureDelay time.Duration // extra wait after navigation before capturing HTML
 
 	// Command-response bookkeeping.
-	nextID  uint64
+	nextID  atomic.Uint64
 	pending sync.Map // id → chan bidiResult
 
 	// Set after session.new succeeds; used to send session.end on close.
@@ -178,7 +178,7 @@ func buildBidiWSURL(opts map[string]any) (string, error) {
 
 // call sends a BiDi command and waits for the response.
 func (f *bidiFetcher) call(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
-	id := atomic.AddUint64(&f.nextID, 1)
+	id := f.nextID.Add(1)
 
 	ch := make(chan bidiResult, 1)
 	f.pending.Store(id, ch)
@@ -238,7 +238,7 @@ func (f *bidiFetcher) readLoop() {
 			Type    string          `json:"type"`
 			ID      *uint64         `json:"id"`
 			Error   string          `json:"error"`   // error code string
-			Message string          `json:"message"`  // error message
+			Message string          `json:"message"` // error message
 			Result  json.RawMessage `json:"result"`
 			Method  string          `json:"method"` // present for events
 		}

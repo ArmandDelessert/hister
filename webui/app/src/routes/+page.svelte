@@ -31,7 +31,7 @@
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
   import * as Tooltip from '@hister/components/ui/tooltip';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
-  import VideoPreview from '$lib/components/VideoPreview.svelte';
+  import { PreviewPopup, PreviewPanel } from '$lib/components';
   import { Kbd } from '@hister/components/ui/kbd';
   import {
     Search,
@@ -95,40 +95,15 @@
   let dateFrom = $state('');
   let dateTo = $state('');
   let showPopup = $state(false);
-  let popupTitle = $state('');
   let popupUrl = $state('');
-  let popupContent = $state('');
-  let popupTemplate = $state('');
-  let popupTemplateData = $state<any>(null);
-  let previewMeta = $state<Record<string, any> | null>(null);
+  let popupHintTitle = $state('');
   let actionsQuery = $state('');
   let actionsMessage: string | null = $state(null);
   let actionsError = $state(false);
 
-  function formatMetaDate(iso: string | undefined): string {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    return d.toISOString().slice(0, 10);
-  }
-
-  function parseTemplateData(content: string): any | null {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      console.warn('Failed to parse template data:', e);
-      return null;
-    }
-  }
-
   // Desktop split-pane readability panel state
   let panelUrl = $state('');
-  let panelTitle = $state('');
-  let panelContent = $state('');
-  let panelTemplate = $state('');
-  let panelTemplateData = $state<any>(null);
-  let panelAdded = $state<number | null>(null);
-  let panelLoading = $state(false);
+  let panelHintTitle = $state('');
   let isDesktop = $state(false);
   let panelOpen = $state(true);
 
@@ -536,37 +511,7 @@
     }
   }
 
-  async function loadPanel(url: string, title: string) {
-    panelUrl = url;
-    panelTitle = title;
-    panelAdded = null;
-    panelLoading = true;
-    panelContent = '';
-    panelTemplate = '';
-    panelTemplateData = null;
-    previewMeta = null;
-    try {
-      const resp = await apiFetch(`/preview?url=${encodeURIComponent(url)}`);
-      if (!resp.ok) {
-        panelContent = `<p class="text-hister-rose">Failed to load readable content. Status: ${resp.status}</p>`;
-      } else {
-        const data = await resp.json();
-        panelTitle = data.title || title;
-        panelAdded = data.added ?? null;
-        previewMeta = data.meta ?? null;
-        panelTemplate = data.template || '';
-        panelTemplateData = panelTemplate === 'video' ? parseTemplateData(data.content) : null;
-        panelContent =
-          panelTemplate === 'video' ? '' : data.content || '<p>No content available</p>';
-      }
-    } catch (err) {
-      panelContent = `<p class="text-hister-rose">Failed to load: ${err}</p>`;
-    } finally {
-      panelLoading = false;
-    }
-  }
-
-  async function openReadable(e: Event, url: string, title: string) {
+  function openReadable(e: Event, url: string, title: string) {
     e.preventDefault();
     if (e.stopPropagation) e.stopPropagation();
     if (isDesktop) {
@@ -574,32 +519,13 @@
         panelOpen = true;
         localStorage.setItem('hister-panel-open', 'true');
       }
-      await loadPanel(url, title);
+      panelHintTitle = title;
+      panelUrl = url;
       return;
     }
-    try {
-      const resp = await apiFetch(`/preview?url=${encodeURIComponent(url)}`);
-      if (!resp.ok) {
-        popupTitle = 'Error';
-        previewMeta = null;
-        popupContent = `<p class="text-hister-rose">Failed to load readable content. Status: ${resp.status}</p>`;
-        showPopup = true;
-        return;
-      }
-      const data = await resp.json();
-      popupTitle = data.title || title;
-      popupUrl = url;
-      previewMeta = data.meta ?? null;
-      popupTemplate = data.template || '';
-      popupTemplateData = popupTemplate === 'video' ? parseTemplateData(data.content) : null;
-      popupContent = popupTemplate === 'video' ? '' : data.content || '<p>No content available</p>';
-      showPopup = true;
-    } catch (err) {
-      popupTitle = 'Error';
-      previewMeta = null;
-      popupContent = `<p class="text-hister-rose">Failed to parse response: ${err}</p>`;
-      showPopup = true;
-    }
+    popupHintTitle = title;
+    popupUrl = url;
+    showPopup = true;
   }
 
   function selectNthResult(n: number) {
@@ -935,7 +861,8 @@
     if (!link) return;
     const url = link.getAttribute('data-result-link');
     if (url === untrack(() => panelUrl)) return;
-    loadPanel(url, link.innerText);
+    panelHintTitle = link.innerText;
+    panelUrl = url;
   });
   $effect(() => {
     updateURL();
@@ -1015,60 +942,7 @@
 
 <svelte:window onkeydown={handleKeydown} onpopstate={handlePopState} />
 
-<Dialog.Root bind:open={showPopup}>
-  <Dialog.Content
-    escapeKeydownBehavior="ignore"
-    class="border-border-brand bg-card-surface max-h-[80vh] max-w-2xl overflow-auto rounded-none border-[3px] p-6 shadow-[6px_6px_0px_var(--hister-indigo)]"
-  >
-    <Dialog.Header class="border-border-brand-muted border-b-[3px] pb-4">
-      <Dialog.Title class="font-outfit text-text-brand text-lg font-bold"
-        ><a href={popupUrl} target="_blank" rel="noopener noreferrer" class="hover:underline"
-          >{popupTitle}</a
-        ></Dialog.Title
-      >
-      {#if previewMeta?.author || previewMeta?.published || previewMeta?.type}
-        <div class="font-inter text-text-brand-muted mt-1 text-xs">
-          {#if previewMeta?.author}<span>{previewMeta.author}</span>{/if}
-          {#if previewMeta?.author && previewMeta?.published}<span class="mx-1">·</span>{/if}
-          {#if previewMeta?.published}<span>{formatMetaDate(previewMeta.published)}</span>{/if}
-          {#if (previewMeta?.author || previewMeta?.published) && previewMeta?.type}<span
-              class="mx-1">·</span
-            >{/if}
-          {#if previewMeta?.type}<span class="uppercase">{previewMeta.type}</span>{/if}
-        </div>
-      {/if}
-      {#if previewMeta?.description}
-        <p class="font-inter text-text-brand-secondary mt-1 line-clamp-3 text-sm">
-          {previewMeta.description}
-        </p>
-      {/if}
-    </Dialog.Header>
-    <div
-      class="font-inter text-text-brand-secondary prose dark:prose-invert prose-a:text-hister-teal max-w-none text-sm"
-    >
-      {#if popupTemplate === 'video' && popupTemplateData}
-        <VideoPreview data={popupTemplateData} />
-      {:else}
-        {@html popupContent}
-      {/if}
-      {#if previewMeta?.jsonld}
-        <details class="not-prose border-border-brand-muted mt-6 border-t pt-3">
-          <summary
-            class="font-inter text-text-brand-muted cursor-pointer text-xs tracking-wide uppercase"
-          >
-            Extracted JSON-LD ({previewMeta.jsonld.length})
-          </summary>
-          <pre
-            class="bg-card-surface-muted text-text-brand-secondary mt-2 overflow-x-auto rounded p-2 text-[11px] leading-snug">{JSON.stringify(
-              previewMeta.jsonld,
-              null,
-              2,
-            )}</pre>
-        </details>
-      {/if}
-    </div>
-  </Dialog.Content>
-</Dialog.Root>
+<PreviewPopup bind:open={showPopup} url={popupUrl} hintTitle={popupHintTitle} />
 
 <Dialog.Root bind:open={$showHelp}>
   <Dialog.Content
@@ -1754,128 +1628,14 @@
 
       <!-- Desktop-only readability panel (right column) -->
       {#if lastResults && panelOpen && isDesktop}
-        <div
-          class="border-border-brand bg-card-surface flex flex-1 shrink-0 flex-col overflow-hidden border-l-[3px]"
-        >
-          {#if panelLoading}
-            <div
-              class="border-border-brand-muted flex shrink-0 items-center justify-end border-b-[2px] px-2 py-1"
-            >
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                class="text-text-brand-muted hover:text-text-brand"
-                onclick={() => {
-                  panelOpen = false;
-                  localStorage.setItem('hister-panel-open', 'false');
-                }}
-              >
-                <X class="size-4" />
-              </Button>
-            </div>
-            <div class="flex flex-1 items-center justify-center">
-              <span class="font-inter text-text-brand-muted text-sm">Loading…</span>
-            </div>
-          {:else if panelContent || panelTemplateData}
-            <div
-              class="border-border-brand-muted flex shrink-0 items-start gap-2 border-b-[2px] px-4 py-2.5"
-            >
-              <div class="flex flex-1 flex-col gap-0.5">
-                <h2
-                  class="font-outfit text-text-brand line-clamp-2 text-lg leading-snug font-bold md:text-3xl"
-                >
-                  <a
-                    href={panelUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="hover:underline">{panelTitle}</a
-                  >
-                </h2>
-                {#if previewMeta?.author || previewMeta?.published || previewMeta?.type}
-                  <span class="font-inter text-text-brand-muted text-xs">
-                    {#if previewMeta?.author}<span>{previewMeta.author}</span>{/if}
-                    {#if previewMeta?.author && previewMeta?.published}<span class="mx-1">·</span
-                      >{/if}
-                    {#if previewMeta?.published}<span>{formatMetaDate(previewMeta.published)}</span
-                      >{/if}
-                    {#if (previewMeta?.author || previewMeta?.published) && previewMeta?.type}<span
-                        class="mx-1">·</span
-                      >{/if}
-                    {#if previewMeta?.type}<span class="uppercase">{previewMeta.type}</span>{/if}
-                  </span>
-                {/if}
-                {#if panelAdded}
-                  <span
-                    class="font-inter text-text-brand-muted text-xs"
-                    title={formatTimestamp(panelAdded)}>indexed {formatTimestamp(panelAdded)}</span
-                  >
-                {/if}
-                {#if previewMeta?.description}
-                  <p class="font-inter text-text-brand-secondary mt-1 line-clamp-3 text-sm">
-                    {previewMeta.description}
-                  </p>
-                {/if}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                class="text-text-brand-muted hover:text-text-brand mt-1 shrink-0"
-                onclick={() => {
-                  panelOpen = false;
-                  localStorage.setItem('hister-panel-open', 'false');
-                }}
-              >
-                <X class="size-4" />
-              </Button>
-            </div>
-            <ScrollArea class="min-h-0 flex-1">
-              <div
-                class="font-inter text-text-brand-secondary prose dark:prose-invert prose-a:text-hister-teal w-full max-w-[60em] p-4 text-sm"
-              >
-                {#if panelTemplate === 'video' && panelTemplateData}
-                  <VideoPreview data={panelTemplateData} />
-                {:else}
-                  {@html panelContent}
-                {/if}
-                {#if previewMeta?.jsonld}
-                  <details class="not-prose border-border-brand-muted mt-6 border-t pt-3">
-                    <summary
-                      class="font-inter text-text-brand-muted cursor-pointer text-xs tracking-wide uppercase"
-                    >
-                      Extracted JSON-LD ({previewMeta.jsonld.length})
-                    </summary>
-                    <pre
-                      class="bg-card-surface-muted text-text-brand-secondary mt-2 overflow-x-auto rounded p-2 text-[11px] leading-snug">{JSON.stringify(
-                        previewMeta.jsonld,
-                        null,
-                        2,
-                      )}</pre>
-                  </details>
-                {/if}
-              </div>
-            </ScrollArea>
-          {:else}
-            <div
-              class="border-border-brand-muted flex shrink-0 items-center justify-end border-b-[2px] px-2 py-1"
-            >
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                class="text-text-brand-muted hover:text-text-brand"
-                onclick={() => {
-                  panelOpen = false;
-                  localStorage.setItem('hister-panel-open', 'false');
-                }}
-              >
-                <X class="size-4" />
-              </Button>
-            </div>
-            <div class="flex flex-1 flex-col items-center justify-center gap-2 opacity-40">
-              <Eye class="size-6" />
-              <p class="font-inter text-text-brand-muted text-sm">Focus a result to read it</p>
-            </div>
-          {/if}
-        </div>
+        <PreviewPanel
+          url={panelUrl}
+          hintTitle={panelHintTitle}
+          onclose={() => {
+            panelOpen = false;
+            localStorage.setItem('hister-panel-open', 'false');
+          }}
+        />
       {/if}
     </div>
   </div>

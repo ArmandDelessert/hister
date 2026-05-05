@@ -102,6 +102,13 @@ export function formatRelativeTime(unixTimestamp: number): string {
   return yearsAgo === 1 ? '1 year ago' : `${yearsAgo} years ago`;
 }
 
+export function formatMetaDate(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toISOString().slice(0, 10);
+}
+
 function downloadFile(content: string, filename: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const a = document.createElement('a');

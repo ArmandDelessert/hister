@@ -8,8 +8,8 @@
   import { Separator } from '@hister/components/ui/separator';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
   import { PageHeader } from '@hister/components';
-  import { StatusMessage } from '$lib/components';
-  import { Search, Clock, RotateCw, Trash2 } from 'lucide-svelte';
+  import { StatusMessage, PreviewPopup, PreviewPanel } from '$lib/components';
+  import { Search, Clock, RotateCw, Trash2, Eye } from 'lucide-svelte';
 
   let items: HistoryItem[] = $state([]);
   let loading = $state(true);
@@ -24,6 +24,44 @@
       ? localStorage.getItem('historyOpenedOnly') === 'true'
       : false,
   );
+
+  // Preview state
+  let isDesktop = $state(false);
+  let showPopup = $state(false);
+  let popupUrl = $state('');
+  let popupHintTitle = $state('');
+  let panelUrl = $state('');
+  let panelHintTitle = $state('');
+  let panelOpen = $state(
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('hister-history-panel-open') !== 'false'
+      : true,
+  );
+
+  $effect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)');
+    isDesktop = mq.matches;
+    const handler = (e: MediaQueryListEvent) => {
+      isDesktop = e.matches;
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  });
+
+  function openPreview(url: string, title: string) {
+    if (isDesktop) {
+      if (!panelOpen) {
+        panelOpen = true;
+        localStorage.setItem('hister-history-panel-open', 'true');
+      }
+      panelHintTitle = title;
+      panelUrl = url;
+      return;
+    }
+    popupHintTitle = title;
+    popupUrl = url;
+    showPopup = true;
+  }
 
   $effect(() => {
     localStorage.setItem('historyOpenedOnly', String(openedOnly));
@@ -375,64 +413,90 @@
       {/each}
     </div>
 
-    <ScrollArea orientation="vertical" class="min-h-0 max-w-full min-w-0 flex-1 overflow-x-hidden">
-      <div class="w-full space-y-4 overflow-hidden px-3 py-3 md:space-y-6 md:px-6 md:py-5">
-        {#each groups as group, gi}
-          {@const color = getGlobalGroupColor(group.key)}
-          <div id="group-{encodeURIComponent(group.key)}" class="space-y-2">
-            <span class="font-outfit text-sm font-bold" style="color: {getColorVar(color)};"
-              >{group.label}</span
-            >
-            <Separator class="h-0.5" style="background-color: {getColorVar(color)};" />
+    <div class="flex min-h-0 flex-1 overflow-hidden">
+      <ScrollArea
+        orientation="vertical"
+        class="min-h-0 max-w-full min-w-0 flex-1 overflow-x-hidden"
+      >
+        <div class="w-full space-y-4 overflow-hidden px-3 py-3 md:space-y-6 md:px-6 md:py-5">
+          {#each groups as group, gi}
+            {@const color = getGlobalGroupColor(group.key)}
+            <div id="group-{encodeURIComponent(group.key)}" class="space-y-2">
+              <span class="font-outfit text-sm font-bold" style="color: {getColorVar(color)};"
+                >{group.label}</span
+              >
+              <Separator class="h-0.5" style="background-color: {getColorVar(color)};" />
 
-            <div class="space-y-0">
-              {#each group.items as item, ii}
-                {@const itemColor = color}
-                <article
-                  class="bg-card-surface border-b-brutal-border flex items-start gap-2 overflow-hidden border-b-[3px] px-2.5 py-2 md:items-center md:gap-3 md:px-3.5 md:py-2.5"
-                  style="border-left: 3px solid {getColorVar(itemColor)};"
-                >
-                  <div class="w-0 min-w-0 flex-1 space-y-0.5">
-                    <a
-                      href={item.url}
-                      class="font-outfit text-hister-cyan block truncate font-bold no-underline hover:underline md:text-lg"
-                      target="_blank"
-                      rel="noopener"
-                    >
-                      {(item.title || item.url).replace(/<[^>]*>/g, '')}
-                    </a>
-                    <div
-                      class="items-left flex flex-col gap-0 md:flex-row md:items-center md:gap-2"
-                    >
-                      {#if item.added}
-                        <span
-                          class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
-                          title={formatTimestamp(item.added)}
-                          >{formatRelativeTime(item.added)} ·</span
-                        >
-                      {/if}
-                      <span
-                        class="font-fira text-text-brand-muted block truncate text-xs md:text-sm"
-                        title={item.url}>{item.url}</span
+              <div class="space-y-0">
+                {#each group.items as item, ii}
+                  {@const itemColor = color}
+                  <article
+                    class="bg-card-surface border-b-brutal-border flex items-start gap-2 overflow-hidden border-b-[3px] px-2.5 py-2 md:items-center md:gap-3 md:px-3.5 md:py-2.5"
+                    style="border-left: 3px solid {getColorVar(itemColor)};"
+                  >
+                    <div class="w-0 min-w-0 flex-1 space-y-0.5">
+                      <a
+                        href={item.url}
+                        class="font-outfit text-hister-cyan block truncate font-bold no-underline hover:underline md:text-lg"
+                        target="_blank"
+                        rel="noopener"
                       >
+                        {(item.title || item.url).replace(/<[^>]*>/g, '')}
+                      </a>
+                      <div
+                        class="items-left flex flex-col gap-0 md:flex-row md:items-center md:gap-2"
+                      >
+                        {#if item.added}
+                          <span
+                            class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
+                            title={formatTimestamp(item.added)}
+                            >{formatRelativeTime(item.added)} ·</span
+                          >
+                        {/if}
+                        <span
+                          class="font-fira text-text-brand-muted block truncate text-xs md:text-sm"
+                          title={item.url}>{item.url}</span
+                        >
+                      </div>
                     </div>
-                  </div>
-                  <nav class="flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="text-text-brand-muted hover:text-hister-rose size-7 shrink-0"
-                      onclick={() => deleteItem(item)}
-                    >
-                      <Trash2 class="size-3.5" />
-                    </Button>
-                  </nav>
-                </article>
-              {/each}
+                    <nav class="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="text-text-brand-muted hover:text-hister-teal size-7 shrink-0"
+                        onclick={() => openPreview(item.url, item.title || item.url)}
+                      >
+                        <Eye class="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="text-text-brand-muted hover:text-hister-rose size-7 shrink-0"
+                        onclick={() => deleteItem(item)}
+                      >
+                        <Trash2 class="size-3.5" />
+                      </Button>
+                    </nav>
+                  </article>
+                {/each}
+              </div>
             </div>
-          </div>
-        {/each}
-      </div>
-    </ScrollArea>
+          {/each}
+        </div>
+      </ScrollArea>
+
+      {#if panelOpen && isDesktop}
+        <PreviewPanel
+          url={panelUrl}
+          hintTitle={panelHintTitle}
+          onclose={() => {
+            panelOpen = false;
+            localStorage.setItem('hister-history-panel-open', 'false');
+          }}
+        />
+      {/if}
+    </div>
   </div>
 {/if}
+
+<PreviewPopup bind:open={showPopup} url={popupUrl} hintTitle={popupHintTitle} />

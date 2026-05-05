@@ -42,11 +42,33 @@ func Build(s string) query.Query {
 			qs = append(qs, q)
 		}
 	}
+	if len(qt) > 1 {
+		// create a full phrase query from the query string to get exact matches for the full query
+		pq := createMatchPhraseQuery(s, 2)
+		qs = []query.Query{
+			bleve.NewDisjunctionQuery(
+				bleve.NewConjunctionQuery(qs...),
+				pq,
+			),
+		}
+	}
 	return query.NewBooleanQuery(qs, nil, nqs)
 }
 
 func createSimpleQuery(s string) query.Query {
 	return bleve.NewQueryStringQuery(s)
+}
+
+func createMatchPhraseQuery(s string, boost float64) query.Query {
+	tiq := bleve.NewMatchPhraseQuery(s)
+	tiq.SetField("title")
+	tiq.SetBoost(weights["title"])
+	teq := bleve.NewMatchPhraseQuery(s)
+	teq.SetField("text")
+	teq.SetBoost(weights["text"])
+	q := bleve.NewDisjunctionQuery(tiq, teq)
+	q.SetBoost(boost)
+	return q
 }
 
 func getTokenQuery(t Token) (query.Query, bool) {
@@ -85,13 +107,7 @@ func getTokenQuery(t Token) (query.Query, bool) {
 			q.SetBoost(weights[field])
 			return q, negated
 		}
-		titleq := bleve.NewMatchPhraseQuery(v)
-		titleq.SetField("title")
-		titleq.SetBoost(weights["title"])
-		textq := bleve.NewMatchPhraseQuery(v)
-		textq.SetField("text")
-		textq.SetBoost(weights["text"])
-		return bleve.NewDisjunctionQuery(titleq, textq), negated
+		return createMatchPhraseQuery(v, 1), negated
 	case TokenWord:
 		if strings.HasPrefix(t.Value, "-") && len(t.Value) > 1 {
 			negated = true

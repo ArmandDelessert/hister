@@ -837,7 +837,7 @@ func serveAdd(c *webContext) {
 		d.Title = f.Get("title")
 		d.Text = f.Get("text")
 	}
-	if !c.effectiveRules().IsSkip(d.URL) && !strings.HasPrefix(d.URL, c.Config.BaseURL("/")) {
+	if !c.effectiveRules().IsSkip(d.URL) && !c.Config.IsSameHost(d.URL) {
 		d.UserID = c.UserID
 		if c.Config.App.UserHandling && c.IsAdmin {
 			if h := c.Request.Header.Get("X-Hister-Target-User-ID"); h != "" {

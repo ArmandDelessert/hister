@@ -636,6 +636,19 @@ var indexCmd = &cobra.Command{
 		if len(args) == 0 {
 			exit(1, "at least one URL is required")
 		}
+
+		// Create the crawler once so the bidi backend reuses its
+		// WebSocket connection and session across all URLs.
+		cr, err := crawler.New(&cfg.Crawler, robotsCache)
+		if err != nil {
+			exit(1, "Failed to create crawler: "+err.Error())
+		}
+		defer func() {
+			if err := cr.Close(); err != nil {
+				log.Warn().Err(err).Msg("crawler close error")
+			}
+		}()
+
 		c := newClient(clientOpts...)
 		for _, u := range args {
 			if !force {
@@ -647,7 +660,7 @@ var indexCmd = &cobra.Command{
 					continue
 				}
 			}
-			if err := indexURL(u, label, robotsCache, clientOpts...); err != nil {
+			if err := indexURL(cr, u, label, clientOpts...); err != nil {
 				log.Warn().Err(err).Str("URL", u).Msg("Failed to index URL")
 			}
 		}
@@ -1310,21 +1323,11 @@ func yesNoPrompt(label string, def bool) bool {
 //	}
 //}
 
-func indexURL(u string, label string, robots *crawler.RobotsCache, clientOpts ...client.Option) error {
+func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.Option) error {
 	if u == "" {
 		log.Warn().Msg("URL must not be empty")
 		return nil
 	}
-	cfg.Crawler.UserAgent = UserAgent
-	cr, err := crawler.New(&cfg.Crawler, robots)
-	if err != nil {
-		return fmt.Errorf("failed to create crawler: %w", err)
-	}
-	defer func() {
-		if err := cr.Close(); err != nil {
-			log.Warn().Err(err).Msg("crawler close error")
-		}
-	}()
 	v, err := crawler.NewValidator(&crawler.ValidatorRules{MaxLinks: 1})
 	if err != nil {
 		return fmt.Errorf("failed to create validator: %w", err)
@@ -1488,6 +1491,18 @@ func importDB(dbFile string, table string, cmd *cobra.Command) {
 
 	fmt.Println(cliBoldStyle.Render("IMPORTING"))
 
+	// Create the crawler once so it is reused across all URLs.
+	cfg.Crawler.UserAgent = UserAgent
+	cr, crErr := crawler.New(&cfg.Crawler, nil)
+	if crErr != nil {
+		log.Fatal().Err(crErr).Msg("Failed to create crawler")
+	}
+	defer func() {
+		if err := cr.Close(); err != nil {
+			log.Warn().Err(err).Msg("crawler close error")
+		}
+	}()
+
 	rows, err := db.Query(q, "url")
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to execute database query")
@@ -1524,7 +1539,7 @@ func importDB(dbFile string, table string, cmd *cobra.Command) {
 			continue
 		}
 		fmt.Printf("[%d/%d] %s\n", i, count, u)
-		if err := indexURL(u, "", nil); err != nil {
+		if err := indexURL(cr, u, ""); err != nil {
 			log.Warn().Err(err).Str("url", u).Msg("Failed to index URL")
 		}
 	}

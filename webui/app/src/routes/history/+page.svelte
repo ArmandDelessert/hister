@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount, untrack } from 'svelte';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
-  import { formatTimestamp, formatRelativeTime } from '$lib/search';
+  import { formatTimestamp, formatRelativeTime, KeyHandler, scrollTo } from '$lib/search';
   import type { HistoryItem } from '$lib/types';
   import { Button } from '@hister/components/ui/button';
   import { Input } from '@hister/components/ui/input';
@@ -24,6 +25,11 @@
       ? localStorage.getItem('historyOpenedOnly') === 'true'
       : false,
   );
+
+  // Keyboard navigation
+  let keyHandler: KeyHandler | undefined;
+  let openResultsOnNewTab = $state(false);
+  let highlightIdx = $state(0);
 
   // Preview state
   let isDesktop = $state(false);
@@ -254,7 +260,87 @@
       error = String(e);
     }
   }
+
+  function selectNthResult(n: number) {
+    if (!filteredItems.length) return;
+    highlightIdx = (highlightIdx + n + filteredItems.length) % filteredItems.length;
+    const results = document.querySelectorAll('[data-result]');
+    scrollTo(results[highlightIdx]);
+  }
+
+  function selectNextResult(e?: KeyboardEvent) {
+    if (e) e.preventDefault();
+    selectNthResult(1);
+  }
+
+  function selectPreviousResult(e?: KeyboardEvent) {
+    if (e) e.preventDefault();
+    selectNthResult(-1);
+  }
+
+  function openSelectedResult(e?: KeyboardEvent, _isInputFocus?: boolean, newWindow = false) {
+    if (e) e.preventDefault();
+    const item = filteredItems[highlightIdx];
+    if (!item) return;
+    if (openResultsOnNewTab) newWindow = true;
+    window.open(item.url, newWindow ? '_blank' : '_self');
+  }
+
+  function viewResultPopup(e?: KeyboardEvent) {
+    if (e) e.preventDefault();
+    const item = filteredItems[highlightIdx];
+    if (!item) return;
+    if (showPopup) {
+      showPopup = false;
+      return;
+    }
+    openPreview(item.url, item.title || item.url);
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    const target = e.target as HTMLElement;
+    const isInputFocus =
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+    keyHandler?.handle(e, isInputFocus);
+  }
+
+  const hotkeyActions: Record<
+    string,
+    (e?: KeyboardEvent, isInputFocus?: boolean) => void | boolean
+  > = {
+    open_result: openSelectedResult,
+    open_result_in_new_tab: (e?: KeyboardEvent, i?: boolean) => openSelectedResult(e, i, true),
+    select_next_result: selectNextResult,
+    select_previous_result: selectPreviousResult,
+    view_result_popup: viewResultPopup,
+  };
+
+  onMount(async () => {
+    const cfg = await fetchConfig();
+    openResultsOnNewTab = (cfg as any).openResultsOnNewTab ?? false;
+    keyHandler = new KeyHandler((cfg as any).hotkeys ?? {}, hotkeyActions);
+  });
+
+  // Reset highlight when filtered list changes
+  $effect(() => {
+    filteredItems;
+    highlightIdx = 0;
+  });
+
+  // Auto-update panel on desktop when focused item changes
+  $effect(() => {
+    const idx = highlightIdx;
+    filteredItems;
+    if (!isDesktop || !panelOpen || !filteredItems.length) return;
+    const item = filteredItems[idx];
+    if (!item) return;
+    if (untrack(() => panelUrl) === item.url) return;
+    panelHintTitle = item.title || item.url;
+    panelUrl = item.url;
+  });
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <svelte:head>
   <title>Hister - History</title>
@@ -421,6 +507,9 @@
         <div class="w-full space-y-4 overflow-hidden px-3 py-3 md:space-y-6 md:px-6 md:py-5">
           {#each groups as group, gi}
             {@const color = getGlobalGroupColor(group.key)}
+            {@const groupOffset = groups
+              .slice(0, gi)
+              .reduce((acc: number, g) => acc + g.items.length, 0)}
             <div id="group-{encodeURIComponent(group.key)}" class="space-y-2">
               <span class="font-outfit text-sm font-bold" style="color: {getColorVar(color)};"
                 >{group.label}</span
@@ -430,16 +519,22 @@
               <div class="space-y-0">
                 {#each group.items as item, ii}
                   {@const itemColor = color}
+                  {@const flatIdx = groupOffset + ii}
                   <article
-                    class="bg-card-surface border-b-brutal-border flex items-start gap-2 overflow-hidden border-b-[3px] px-2.5 py-2 md:items-center md:gap-3 md:px-3.5 md:py-2.5"
-                    style="border-left: 3px solid {getColorVar(itemColor)};"
+                    data-result
+                    class="bg-card-surface border-b-brutal-border flex items-start gap-2 overflow-hidden border-b-[3px] px-2.5 py-2 transition-all duration-150 md:items-center md:gap-3 md:px-3.5 md:py-2.5"
+                    style={flatIdx === highlightIdx
+                      ? `border-left: 3px solid ${getColorVar(itemColor)}; background: linear-gradient(90deg, transparent, rgba(90, 138, 138, 0.12), transparent);`
+                      : `border-left: 3px solid ${getColorVar(itemColor)};`}
                   >
                     <div class="w-0 min-w-0 flex-1 space-y-0.5">
                       <a
+                        data-result-link={item.url}
                         href={item.url}
                         class="font-outfit text-hister-cyan block truncate font-bold no-underline hover:underline md:text-lg"
                         target="_blank"
                         rel="noopener"
+                        onclick={() => (highlightIdx = flatIdx)}
                       >
                         {(item.title || item.url).replace(/<[^>]*>/g, '')}
                       </a>
@@ -464,7 +559,10 @@
                         variant="ghost"
                         size="icon-sm"
                         class="text-text-brand-muted hover:text-hister-teal size-7 shrink-0"
-                        onclick={() => openPreview(item.url, item.title || item.url)}
+                        onclick={() => {
+                          highlightIdx = flatIdx;
+                          openPreview(item.url, item.title || item.url);
+                        }}
                       >
                         <Eye class="size-3.5" />
                       </Button>

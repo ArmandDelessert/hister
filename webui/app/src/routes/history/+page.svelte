@@ -524,7 +524,7 @@
                     data-result
                     class="bg-card-surface border-b-brutal-border flex items-start gap-2 overflow-hidden border-b-[3px] px-2.5 py-2 transition-all duration-150 md:items-center md:gap-3 md:px-3.5 md:py-2.5"
                     style={flatIdx === highlightIdx
-                      ? `border-left: 3px solid ${getColorVar(itemColor)}; background: linear-gradient(90deg, transparent, rgba(90, 138, 138, 0.12), transparent);`
+                      ? `border-left: 6px solid ${getColorVar(itemColor)}; background: linear-gradient(90deg, transparent, rgba(90, 138, 138, 0.12), transparent);`
                       : `border-left: 3px solid ${getColorVar(itemColor)};`}
                   >
                     <div class="w-0 min-w-0 flex-1 space-y-0.5">

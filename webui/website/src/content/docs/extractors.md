@@ -125,6 +125,26 @@ Add an instance of your extractor to the `extractors` slice in
 Place it **before** the generic fallbacks so that it takes priority for the
 pages it targets.
 
+## Writing a new extractor
+
+A ready-to-use starting point lives at
+[`server/extractor/extractors/_extractor_template/extractor.go`](https://github.com/asciimoo/hister/blob/main/server/extractor/extractors/_extractor_template/extractor.go).
+The directory begins with `_` so the Go toolchain ignores it during normal
+builds, but the file itself is valid, fully-commented Go.
+
+### Quick-start steps
+
+1. Copy `server/extractor/extractors/_extractor_template/` to
+   `server/extractor/extractors/<myname>/` (remove the leading `_`).
+2. Change the `package` declaration to match the new directory name.
+3. Rename `TemplateExtractor` to something descriptive (e.g. `HackerNewsExtractor`).
+4. Update `matchURLPrefix` and the `Match` function for your target site.
+5. Implement `Extract` to populate `d.Title`, `d.Text`, and optionally `d.Metadata`.
+6. Implement `Preview` to return sanitized HTML (or return `ExtractorContinue`
+   to reuse the generic readability preview).
+7. Add an import and a `&MyExtractor{}` entry to the `extractors` slice in
+   `server/extractor/extractor.go`, before the `&readabilityExtractor{}` line.
+
 ## Configuration
 
 Each extractor can be enabled or disabled, and may expose custom options,

@@ -114,6 +114,7 @@ type CrawlerConfig struct {
 	UserAgent      string            `yaml:"user_agent"      mapstructure:"user_agent"`
 	Headers        map[string]string `yaml:"headers"         mapstructure:"headers"`
 	Cookies        []CrawlerCookie   `yaml:"cookies"         mapstructure:"cookies"`
+	NoRobots       bool              `yaml:"no_robots"       mapstructure:"no_robots"`
 }
 
 type Hotkeys struct {

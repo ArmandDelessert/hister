@@ -463,6 +463,7 @@ without losing progress. See [Terminal Client](terminal-client) for usage detail
 | `user_agent`      | string            | (none)  | Custom `User-Agent` header sent with every request (both backends).        |
 | `headers`         | map[string]string | (none)  | Extra HTTP headers sent with every request (both backends).                |
 | `cookies`         | Cookie[]          | (none)  | Cookies sent with every request. See [Crawler Cookies](#crawler-cookies).  |
+| `no_robots`       | bool              | `false` | Disable robots.txt compliance during crawling.                             |
 
 ### Crawler Backend Options
 

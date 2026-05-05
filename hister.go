@@ -478,7 +478,7 @@ var indexCmd = &cobra.Command{
 		applyCrawlerBackendFlags(cmd)
 
 		var robotsCache *crawler.RobotsCache
-		if !noRobots {
+		if !noRobots && !cfg.Crawler.NoRobots {
 			robotsCache = crawler.NewRobotsCache(cfg.Crawler.UserAgent)
 		}
 

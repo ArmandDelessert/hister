@@ -399,11 +399,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query:
-          'url:"' +
-          url.replaceAll('"', '\\"') +
-          '"' +
-          (getUserId() !== undefined ? ' user_id:' + getUserId() : ''),
+        query: 'url:"' + url.replaceAll('"', '\\"') + '"',
       }),
     });
     accumulatedDocs = accumulatedDocs.filter((d) => d.url !== url);

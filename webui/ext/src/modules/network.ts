@@ -73,4 +73,13 @@ async function sendResult(url, res, customHeaders = []) {
   return fetchAPI(url, { body: res, customHeaders });
 }
 
-export { fetchAPI, sendPageData, sendResult };
+async function sendPDFData(
+  url: string,
+  doc: Record<string, unknown>,
+  pdfBase64: string,
+  customHeaders: { name: string; value: string }[] = [],
+): Promise<Response> {
+  return fetchAPI(url, { body: { document: doc, pdf: pdfBase64 }, customHeaders });
+}
+
+export { fetchAPI, sendPageData, sendResult, sendPDFData };

@@ -1,4 +1,4 @@
-import { fetchAPI, sendPageData, sendResult } from '../modules/network';
+import { fetchAPI, sendPageData, sendPDFData, sendResult } from '../modules/network';
 
 const missingURLMsg = {
   error: 'Missing or invalid Hister server URL. Configure it in the addon popup.',
@@ -159,6 +159,88 @@ async function updateTabIcon(tabId: number, url: string): Promise<void> {
   }
 }
 
+// --- PDF tab indexing ---
+
+function isPDFUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.endsWith('.pdf');
+  } catch (_) {
+    return false;
+  }
+}
+
+async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
+  const data = await chrome.storage.local.get([
+    'histerURL',
+    'histerToken',
+    'indexingEnabled',
+    'histerCustomHeaders',
+    'histerLabel',
+  ]);
+
+  if (data['indexingEnabled'] === false) return;
+
+  const serverURL: string = data['histerURL'] || '';
+  if (!serverURL) return;
+
+  const customHeaders: { name: string; value: string }[] = Array.isArray(
+    data['histerCustomHeaders'],
+  )
+    ? data['histerCustomHeaders']
+    : [];
+  if (data['histerToken']) {
+    customHeaders.push({ name: 'X-Access-Token', value: data['histerToken'] });
+  }
+
+  const patterns = await getSkipPatterns(serverURL, customHeaders);
+  if (patterns.some((re) => re.test(tab.url!))) {
+    await setGreyIcon(tabId);
+    return;
+  }
+
+  const u = serverURL.endsWith('/') ? serverURL : serverURL + '/';
+
+  try {
+    const response = await fetch(tab.url!, { credentials: 'include' });
+    if (!response.ok) {
+      setErrorBadge(tabId);
+      return;
+    }
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const pdfBase64 = btoa(binary);
+
+    const doc: Record<string, unknown> = {
+      url: tab.url!,
+      title: tab.title || tab.url!,
+    };
+    if (data['histerLabel']) {
+      doc['label'] = data['histerLabel'];
+    }
+
+    const r = await sendPDFData(u + 'api/add_pdf', doc, pdfBase64, customHeaders);
+    if (r.status === 201) {
+      clearBadge(tabId);
+      setNormalIcon(tabId);
+    } else if (r.status === 406) {
+      skipRulesCache = null;
+      setGreyIcon(tabId);
+    } else if (r.status === 422) {
+      tabSensitiveState.set(tabId, tab.url!);
+      setGreyIcon(tabId);
+    } else {
+      setErrorBadge(tabId);
+    }
+  } catch (err) {
+    setErrorBadge(tabId);
+  }
+}
+
 // --- Tab listeners ---
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
@@ -171,6 +253,9 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url) {
     await updateTabIcon(tabId, tab.url);
+    if (isPDFUrl(tab.url)) {
+      await indexPDFTab(tabId, tab);
+    }
   }
 });
 

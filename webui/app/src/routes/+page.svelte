@@ -24,7 +24,8 @@
     openURL,
   } from '$lib/search';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
-  import { SkipRuleActions, buildUrlSkipPattern, buildDomainSkipPattern } from '@hister/components';
+  import { SkipRuleActions } from '@hister/components';
+  import { ResultState } from '$lib/result-state.svelte';
   import { showHelp } from '$lib/stores';
   import type { SearchResults, SemanticHit, SearchResult, SearchQueryOptions } from '$lib/search';
   import { RESULTS_PER_PAGE } from '$lib/search';
@@ -106,9 +107,6 @@
   let popupUrl = $state('');
   let popupHintTitle = $state('');
   let previewFullscreen = $state(false);
-  let actionsQuery = $state('');
-  let actionsMessage: string | null = $state(null);
-  let actionsError = $state(false);
 
   // Desktop split-pane readability panel state
   let panelUrl = $state('');
@@ -149,12 +147,6 @@
   let showDeleteAllConfirm = $state(false);
   let deleteError: string | null = $state(null);
   let deleteErrorTimer: any = null;
-
-  let labelInput = $state('');
-  let labelInputUrl = $state('');
-  let labelMessage: string | null = $state(null);
-  let labelError = $state(false);
-  let labelOverrides = $state<Map<string, string | undefined>>(new Map());
 
   let recentSearches: string[] = $state([]);
   let rulesCount = $state(0);
@@ -208,6 +200,7 @@
     text?: string;
     favicon?: string;
     added?: number;
+    label?: string;
     semanticScore?: number;
     finalScore: number;
     sourceType: 'keyword' | 'semantic' | 'both';
@@ -475,10 +468,7 @@
       setDeleteError('Document not found in index. Run "hister reindex" to fix stale entries.');
       return;
     }
-    accumulatedDocs = accumulatedDocs.filter((d) => d.url !== url);
-    if (lastResults) {
-      lastResults = { ...lastResults, documents: accumulatedDocs };
-    }
+    removeResult(url);
   }
 
   function deleteSelectedResult(e?: KeyboardEvent) {
@@ -546,23 +536,23 @@
     showDeleteAllConfirm = false;
   }
 
-  async function updateLabel(url: string, label: string) {
-    labelMessage = null;
-    labelError = false;
-    const res = await apiFetch('/label', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, label }),
-    });
-    if (res.ok) {
-      labelMessage = label ? 'Label saved.' : 'Label cleared.';
-      labelError = false;
-      labelOverrides.set(url, label || undefined);
-      labelOverrides = new Map(labelOverrides);
-    } else {
-      labelMessage = 'Failed to save label.';
-      labelError = true;
+  const resultStates = new Map<string, ResultState>();
+
+  function getResultState(url: string, initialLabel?: string): ResultState {
+    if (!resultStates.has(url)) {
+      resultStates.set(url, new ResultState(initialLabel));
     }
+    return resultStates.get(url)!;
+  }
+
+  function removeResult(url: string) {
+    accumulatedDocs = accumulatedDocs.filter((d) => d.url !== url);
+    if (lastResults) lastResults = { ...lastResults, documents: accumulatedDocs };
+  }
+
+  function removeResultsByDomain(domain: string) {
+    accumulatedDocs = accumulatedDocs.filter((d) => d.domain !== domain);
+    if (lastResults) lastResults = { ...lastResults, documents: accumulatedDocs };
   }
 
   // Convert a file:// URL to a server-side /api/file?path= URL for in-browser viewing.
@@ -572,68 +562,6 @@
     let path = url.slice('file://'.length);
     if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
     return 'api/file?path=' + encodeURIComponent(path);
-  }
-
-  function updatePriorityResult(url: string, title: string, remove: boolean) {
-    const q = actionsQuery || query;
-    if (!q) return;
-    saveHistoryItem(url, stripHtml(title), q, remove, () => {
-      actionsMessage = `Priority result ${remove ? 'deleted' : 'added'}.`;
-      actionsError = false;
-    });
-  }
-
-  async function addSkipRuleForResult(
-    url: string,
-    domain: string,
-    type: 'url' | 'domain',
-    deleteMatches: boolean,
-  ) {
-    actionsMessage = null;
-    actionsError = false;
-    try {
-      const pattern = type === 'url' ? buildUrlSkipPattern(url) : buildDomainSkipPattern(url);
-      const rulesResp = await apiFetch('/rules');
-      const rules = await rulesResp.json();
-      const skipList: string[] = rules.skip || [];
-      if (!skipList.includes(pattern)) {
-        skipList.push(pattern);
-      }
-      const formData = new URLSearchParams();
-      formData.set('skip', skipList.join('\n'));
-      formData.set('priority', (rules.priority || []).join('\n'));
-      await apiFetch('/rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-      });
-      if (deleteMatches) {
-        const uid = getUserId();
-        const userFilter = uid !== undefined ? ` user_id:${uid}` : '';
-        const deleteQuery =
-          type === 'url'
-            ? `url:"${url.replaceAll('"', '\\"')}"${userFilter}`
-            : `domain:${domain}${userFilter}`;
-        await apiFetch('/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: deleteQuery }),
-        });
-        if (type === 'url') {
-          accumulatedDocs = accumulatedDocs.filter((d) => d.url !== url);
-        } else {
-          accumulatedDocs = accumulatedDocs.filter((d) => d.domain !== domain);
-        }
-        if (lastResults) {
-          lastResults = { ...lastResults, documents: accumulatedDocs };
-        }
-      }
-      actionsMessage = `Skip rule added${deleteMatches ? ' and documents deleted' : ''}.`;
-      actionsError = false;
-    } catch {
-      actionsMessage = 'Failed to add skip rule.';
-      actionsError = true;
-    }
   }
 
   function openReadable(e: Event, url: string, title: string) {
@@ -1535,6 +1463,7 @@
               {#if lastResults?.history?.length}
                 {#each lastResults.history as r, i}
                   {@const favSrc = getFaviconSrc(r.favicon, r.url)}
+                  {@const state = getResultState(r.url, r.label)}
                   <article
                     data-result
                     class="flex w-full scroll-my-[6em] gap-3 overflow-hidden py-3.5 transition-all duration-150"
@@ -1587,14 +1516,7 @@
                         <DropdownMenu.Root
                           onOpenChange={(open) => {
                             if (!open) return;
-                            actionsMessage = null;
-                            actionsError = false;
-                            labelInputUrl = r.url;
-                            labelInput = labelOverrides.has(r.url)
-                              ? (labelOverrides.get(r.url) ?? '')
-                              : (r.label ?? '');
-                            labelMessage = null;
-                            labelError = false;
+                            state.onOpen();
                           }}
                         >
                           <DropdownMenu.Trigger>
@@ -1624,7 +1546,7 @@
                                   size="sm"
                                   class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 w-full border-[2px] text-xs"
                                   onclick={() =>
-                                    updatePriorityResult(r.url, r.title || '*title*', true)}
+                                    state.pin(r.url, r.title || '*title*', query, true)}
                                 >
                                   <PinOff class="size-3.5" />
                                   Unpin
@@ -1632,7 +1554,14 @@
                               </div>
                               <SkipRuleActions
                                 onAddSkipRule={(type, deleteMatches) =>
-                                  addSkipRuleForResult(r.url, r.domain, type, deleteMatches)}
+                                  state.addSkipRule(
+                                    r.url,
+                                    r.domain,
+                                    type,
+                                    deleteMatches,
+                                    removeResult,
+                                    removeResultsByDomain,
+                                  )}
                               />
                               <hr />
                               <div class="space-y-2">
@@ -1643,7 +1572,7 @@
                                 </p>
                                 <div class="flex items-center gap-2">
                                   <Input
-                                    bind:value={labelInput}
+                                    bind:value={state.labelInput}
                                     placeholder="Add a label…"
                                     size="sm"
                                     class="font-inter border-border-brand-muted flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
@@ -1652,29 +1581,29 @@
                                     variant="outline"
                                     size="sm"
                                     class="border-[2px] text-xs"
-                                    onclick={() => updateLabel(r.url, labelInput)}
+                                    onclick={() => state.updateLabel(r.url)}
                                   >
                                     <Tag class="size-3.5" />
                                     Save
                                   </Button>
                                 </div>
-                                {#if labelMessage && labelInputUrl === r.url}
+                                {#if state.labelMessage}
                                   <p
-                                    class="font-inter text-xs {labelError
+                                    class="font-inter text-xs {state.labelError
                                       ? 'text-hister-rose'
-                                      : 'text-hister-tea'}"
+                                      : 'text-hister-teal'}"
                                   >
-                                    {labelMessage}
+                                    {state.labelMessage}
                                   </p>
                                 {/if}
                               </div>
-                              {#if actionsMessage}
+                              {#if state.actionsMessage}
                                 <p
-                                  class="font-inter text-xs {actionsError
+                                  class="font-inter text-xs {state.actionsError
                                     ? 'text-hister-rose'
                                     : 'text-hister-teal'}"
                                 >
-                                  {actionsMessage}
+                                  {state.actionsMessage}
                                 </p>
                               {/if}
                             </div>
@@ -1691,15 +1620,13 @@
                           class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
                           >pinned</Badge
                         >
-                        {#if labelOverrides.has(r.url) ? labelOverrides.get(r.url) : r.label}
-                          {@const displayLabel =
-                            (labelOverrides.has(r.url) ? labelOverrides.get(r.url) : r.label) || ''}
+                        {#if state.displayLabel}
                           <Badge
                             variant="secondary"
                             class="bg-hister-teal/20 max-w-[8rem] shrink-0 truncate border-0 px-1.5 py-0"
-                            title={displayLabel}
+                            title={state.displayLabel}
                           >
-                            <Tag class="mr-0.5 size-2.5 shrink-0" />{displayLabel}
+                            <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
                           </Badge>
                         {/if}
                         <Button
@@ -1733,6 +1660,7 @@
                   {@const color = 'hister-cyan'}
                   {@const favSrc = getFaviconSrc(r.favicon, r.url)}
                   {@const isSemOnly = r.sourceType === 'semantic'}
+                  {@const state = getResultState(r.url, r.label)}
                   <article
                     data-result
                     class="flex w-full scroll-my-[6em] gap-3 overflow-hidden py-3.5 transition-all duration-150"
@@ -1787,14 +1715,7 @@
                         <DropdownMenu.Root
                           onOpenChange={(open) => {
                             if (!open) return;
-                            actionsMessage = null;
-                            actionsError = false;
-                            labelInputUrl = r.url;
-                            labelInput = labelOverrides.has(r.url)
-                              ? (labelOverrides.get(r.url) ?? '')
-                              : (r.label ?? '');
-                            labelMessage = null;
-                            labelError = false;
+                            state.onOpen();
                           }}
                         >
                           <DropdownMenu.Trigger>
@@ -1821,7 +1742,7 @@
                                 </p>
                                 <div class="flex items-center gap-2">
                                   <Input
-                                    bind:value={actionsQuery}
+                                    bind:value={state.actionsQuery}
                                     placeholder="Query.."
                                     size="sm"
                                     class="font-inter border-border-brand-muted focus-visible:border-hister-indigo flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
@@ -1830,8 +1751,7 @@
                                     variant="outline"
                                     size="sm"
                                     class="border-hister-indigo text-hister-indigo border-[2px] text-xs"
-                                    onclick={() =>
-                                      updatePriorityResult(r.url, r.title || '*title*', false)}
+                                    onclick={() => state.pin(r.url, r.title || '*title*', query)}
                                   >
                                     <Pin class="size-3.5" />
                                     Pin
@@ -1841,7 +1761,14 @@
                               </div>
                               <SkipRuleActions
                                 onAddSkipRule={(type, deleteMatches) =>
-                                  addSkipRuleForResult(r.url, r.domain, type, deleteMatches)}
+                                  state.addSkipRule(
+                                    r.url,
+                                    r.domain,
+                                    type,
+                                    deleteMatches,
+                                    removeResult,
+                                    removeResultsByDomain,
+                                  )}
                               />
                               <hr />
                               <div class="space-y-2">
@@ -1852,7 +1779,7 @@
                                 </p>
                                 <div class="flex items-center gap-2">
                                   <Input
-                                    bind:value={labelInput}
+                                    bind:value={state.labelInput}
                                     placeholder="Add a label…"
                                     size="sm"
                                     class="font-inter border-border-brand-muted focus-visible:border-hister-amber flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
@@ -1861,19 +1788,19 @@
                                     variant="outline"
                                     size="sm"
                                     class="border-[2px] text-xs"
-                                    onclick={() => updateLabel(r.url, labelInput)}
+                                    onclick={() => state.updateLabel(r.url)}
                                   >
                                     <Tag class="size-3.5" />
                                     Save
                                   </Button>
                                 </div>
-                                {#if labelMessage && labelInputUrl === r.url}
+                                {#if state.labelMessage}
                                   <p
-                                    class="font-inter text-xs {labelError
+                                    class="font-inter text-xs {state.labelError
                                       ? 'text-hister-rose'
                                       : 'text-hister-teal'}"
                                   >
-                                    {labelMessage}
+                                    {state.labelMessage}
                                   </p>
                                 {/if}
                               </div>
@@ -1887,13 +1814,13 @@
                                 <Trash2 class="size-3.5" />
                                 Delete result
                               </Button>
-                              {#if actionsMessage}
+                              {#if state.actionsMessage}
                                 <p
-                                  class="font-inter text-xs {actionsError
+                                  class="font-inter text-xs {state.actionsError
                                     ? 'text-hister-rose'
                                     : 'text-hister-teal'}"
                                 >
-                                  {actionsMessage}
+                                  {state.actionsMessage}
                                 </p>
                               {/if}
                             </div>
@@ -1911,15 +1838,13 @@
                             title={formatTimestamp(r.added)}>· {formatRelativeTime(r.added)}</span
                           >
                         {/if}
-                        {#if labelOverrides.has(r.url) ? labelOverrides.get(r.url) : r.label}
-                          {@const displayLabel =
-                            (labelOverrides.has(r.url) ? labelOverrides.get(r.url) : r.label) || ''}
+                        {#if state.displayLabel}
                           <Badge
                             variant="secondary"
                             class="bg-hister-teal/20 h-4 max-w-[8rem] shrink-0 truncate border-0 px-1.5 py-0"
-                            title={displayLabel}
+                            title={state.displayLabel}
                           >
-                            <Tag class="mr-0.5 size-2.5 shrink-0" />{displayLabel}
+                            <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
                           </Badge>
                         {/if}
                         <Button

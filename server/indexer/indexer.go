@@ -554,6 +554,7 @@ func (i *indexer) save(d *document.Document) error {
 	return i.getOrCreate(d.Language).Index(d.ID(), d)
 }
 
+// Saves a document without any processing
 func Save(d *document.Document) error {
 	return i.save(d)
 }

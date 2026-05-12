@@ -188,6 +188,21 @@
 
   const isSearching = $derived(query.length > 0 || resultsShown);
 
+  interface DisplayResult {
+    url: string;
+    title: string;
+    domain: string;
+    score?: number;
+    text?: string;
+    favicon?: string;
+    added?: number;
+    label?: string;
+    semanticScore?: number;
+    finalScore?: number;
+    sourceType?: 'keyword' | 'semantic' | 'both';
+    isPinned: boolean;
+  }
+
   interface MergedResult {
     url: string;
     title: string;
@@ -274,6 +289,10 @@
   const docsLen = $derived(mergedResults.length);
   const totalResults = $derived(historyLen + docsLen);
   const hasResults = $derived(totalResults > 0);
+  const displayResults = $derived<DisplayResult[]>([
+    ...(lastResults?.history ?? []).map((r): DisplayResult => ({ ...r, isPinned: true })),
+    ...mergedResults.map((r): DisplayResult => ({ ...r, isPinned: false })),
+  ]);
 
   function connect() {
     wsManager = new WebSocketManager(config.wsUrl, {
@@ -943,16 +962,11 @@
   // Tracks mergedResults (not just lastResults) so that reordering caused by
   // the semantic weight slider also refreshes the panel.
   // Uses data instead of DOM queries so it works when results are hidden (fullscreen mode).
-  // highlightIdx spans all results: 0..historyLen-1 are priority results,
-  // historyLen..totalResults-1 are merged results, look up accordingly.
   $effect(() => {
     const idx = highlightIdx;
-    const priorityResults = (lastResults?.history as SearchResult[] | undefined) ?? [];
-    const results = mergedResults; // reactive dependency: reorders trigger this
+    const result = displayResults[idx]; // reactive: covers both pinned and regular results
     const isFullscreen = previewFullscreen;
     if (!isDesktop || (!panelOpen && !isFullscreen)) return;
-    const result =
-      idx < priorityResults.length ? priorityResults[idx] : results[idx - priorityResults.length];
     if (!result) return;
     const url = result.url;
     if (url === untrack(() => panelUrl)) return;
@@ -1456,125 +1470,15 @@
                 </p>
               {/if}
 
-              {#if lastResults?.history?.length}
-                {#each lastResults.history as r, i}
+              {#if displayResults.length > 0}
+                {#each displayResults as r, i}
+                  {@const color = r.isPinned ? 'hister-teal' : 'hister-cyan'}
                   {@const favSrc = getFaviconSrc(r.favicon, r.url)}
                   {@const state = getResultState(r.url, r.label)}
                   <article
                     data-result
                     class="flex w-full scroll-my-[6em] gap-3 overflow-hidden py-3.5 transition-all duration-150"
                     style={i === highlightIdx
-                      ? 'background: linear-gradient(90deg, transparent, rgba(90, 138, 138, 0.12), transparent); border-left: 3px solid var(--hister-teal); padding-left: 0.75rem;'
-                      : ''}
-                  >
-                    <div class="w-0 min-w-0 flex-1 space-y-0.5">
-                      <div class="flex items-center gap-1.5">
-                        <div
-                          class="bg-hister-teal flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden"
-                        >
-                          {#if favSrc}
-                            <img
-                              src={favSrc}
-                              alt=""
-                              class="h-full w-full object-cover"
-                              onload={(e) => {
-                                (
-                                  e.target as HTMLImageElement
-                                ).parentElement!.style.backgroundColor = 'transparent';
-                              }}
-                              onerror={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                (e.target as HTMLImageElement).nextElementSibling?.classList.remove(
-                                  'hidden',
-                                );
-                              }}
-                            />
-                            <Star class="hidden size-3 text-white" />
-                          {:else}
-                            <Star class="size-3 text-white" />
-                          {/if}
-                        </div>
-                        <a
-                          data-result-link={r.url}
-                          href={fileResultUrl(r.url)}
-                          class="font-outfit text-md text-hister-teal min-w-0 flex-1 font-semibold hover:underline md:overflow-hidden md:text-xl"
-                          target={config.openResultsOnNewTab ? '_blank' : undefined}
-                          onclick={() => {
-                            sendHistoryBeacon(r.url, r.title || '*title*', query);
-                          }}
-                          onauxclick={(e) => {
-                            if (e.button === 1)
-                              sendHistoryBeacon(r.url, r.title || '*title*', query);
-                          }}
-                        >
-                          {r.title || '*title*'}
-                        </a>
-                        <ResultActionsMenu
-                          url={r.url}
-                          title={r.title || '*title*'}
-                          domain={r.domain}
-                          {state}
-                          {query}
-                          pinned
-                          {removeResult}
-                          {removeResultsByDomain}
-                        />
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <span
-                          class="font-fira text-hister-teal truncate overflow-hidden text-ellipsis whitespace-nowrap"
-                          >{r.url}</span
-                        >
-                        <Badge
-                          variant="secondary"
-                          class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
-                          >pinned</Badge
-                        >
-                        {#if state.displayLabel}
-                          <Badge
-                            variant="secondary"
-                            class="bg-hister-teal/20 max-w-[8rem] shrink-0 truncate border-0 px-1.5 py-0"
-                            title={state.displayLabel}
-                          >
-                            <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
-                          </Badge>
-                        {/if}
-                        <Button
-                          data-readable
-                          variant="link"
-                          size="sm"
-                          class="text-hister-indigo h-auto shrink-0 cursor-pointer gap-0.5 p-0 text-xs font-medium md:text-sm"
-                          onclick={(e) => {
-                            highlightIdx = i;
-                            openReadable(e, r.url, r.title || '*title*');
-                          }}
-                        >
-                          <Eye class="size-3" /><span>view</span>
-                        </Button>
-                      </div>
-                      {#if r.text}
-                        <p
-                          class="font-inter text-text-brand-secondary text-sm leading-[1.4] md:text-base"
-                        >
-                          {@html r.text}
-                        </p>
-                      {/if}
-                    </div>
-                  </article>
-                {/each}
-              {/if}
-
-              {#if mergedResults.length > 0}
-                {#each mergedResults as r, i}
-                  {@const idx = historyLen + i}
-                  {@const color = 'hister-cyan'}
-                  {@const favSrc = getFaviconSrc(r.favicon, r.url)}
-                  {@const isSemOnly = r.sourceType === 'semantic'}
-                  {@const state = getResultState(r.url, r.label)}
-                  <article
-                    data-result
-                    class="flex w-full scroll-my-[6em] gap-3 overflow-hidden py-3.5 transition-all duration-150"
-                    style={idx === highlightIdx
                       ? `background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--${color}) 12%, transparent), transparent); border-left: 3px solid var(--${color}); padding-left: 0.75rem;`
                       : ''}
                   >
@@ -1601,7 +1505,13 @@
                                 );
                               }}
                             />
-                            <Globe class="hidden size-3 text-white" />
+                            {#if r.isPinned}
+                              <Star class="hidden size-3 text-white" />
+                            {:else}
+                              <Globe class="hidden size-3 text-white" />
+                            {/if}
+                          {:else if r.isPinned}
+                            <Star class="size-3 text-white" />
                           {:else}
                             <Globe class="size-3 text-white" />
                           {/if}
@@ -1628,7 +1538,8 @@
                           domain={r.domain}
                           {state}
                           {query}
-                          onDelete={() => deleteResult(r.url)}
+                          pinned={r.isPinned}
+                          onDelete={r.isPinned ? undefined : () => deleteResult(r.url)}
                           {removeResult}
                           {removeResultsByDomain}
                         />
@@ -1638,7 +1549,13 @@
                           class="font-fira text-hister-teal truncate overflow-hidden text-xs text-ellipsis whitespace-nowrap md:text-sm"
                           >{r.url}</span
                         >
-                        {#if r.added}
+                        {#if r.isPinned}
+                          <Badge
+                            variant="secondary"
+                            class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
+                            >pinned</Badge
+                          >
+                        {:else if r.added}
                           <span
                             class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
                             title={formatTimestamp(r.added)}>· {formatRelativeTime(r.added)}</span
@@ -1659,13 +1576,13 @@
                           size="sm"
                           class="text-hister-indigo h-auto shrink-0 cursor-pointer gap-0.5 p-0 text-xs font-medium md:text-sm"
                           onclick={(e) => {
-                            highlightIdx = idx;
+                            highlightIdx = i;
                             openReadable(e, r.url, r.title || '*title*');
                           }}
                         >
                           <Eye class="size-3" /><span>view</span>
                         </Button>
-                        {#if r.finalScore && config.semanticEnabled && semanticOn}
+                        {#if !r.isPinned && r.finalScore && config.semanticEnabled && semanticOn}
                           <Tooltip.Provider delayDuration={0}>
                             <Tooltip.Root>
                               <Tooltip.Trigger>

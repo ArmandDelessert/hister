@@ -535,6 +535,9 @@ func (i *indexer) AddDocument(d *document.Document) error {
 				embedDocumentChunks(i, d)
 			})
 		}
+		if d.Label == "" {
+			d.Label = getLabel(d.ID())
+		}
 		if err := i.save(d); err != nil {
 			return err
 		}
@@ -945,6 +948,20 @@ func GetByDocID(id string) *document.Document {
 		return nil
 	}
 	return resFromHit(res.Hits[0], true, true)
+}
+
+func getLabel(id string) string {
+	q := bleve.NewDocIDQuery([]string{id})
+	req := bleve.NewSearchRequest(q)
+	req.Fields = []string{"label"}
+	res, err := i.idx.Search(req)
+	if err != nil || len(res.Hits) < 1 {
+		return ""
+	}
+	if l, ok := res.Hits[0].Fields["label"].(string); ok {
+		return l
+	}
+	return ""
 }
 
 func Iterate(fn func(*document.Document)) {

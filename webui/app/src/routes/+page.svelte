@@ -24,7 +24,6 @@
     openURL,
   } from '$lib/search';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
-  import { SkipRuleActions } from '@hister/components';
   import { ResultState } from '$lib/result-state.svelte';
   import { showHelp } from '$lib/stores';
   import type { SearchResults, SemanticHit, SearchResult, SearchQueryOptions } from '$lib/search';
@@ -39,17 +38,14 @@
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
   import * as Tooltip from '@hister/components/ui/tooltip';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
-  import { PreviewPanel } from '$lib/components';
+  import { PreviewPanel, ResultActionsMenu } from '$lib/components';
   import { Kbd } from '@hister/components/ui/kbd';
   import {
     Search,
     Star,
     Globe,
-    MoreVertical,
     Eye,
     Trash2,
-    Pin,
-    PinOff,
     Tag,
     Download,
     ExternalLink,
@@ -1513,102 +1509,16 @@
                         >
                           {r.title || '*title*'}
                         </a>
-                        <DropdownMenu.Root
-                          onOpenChange={(open) => {
-                            if (!open) return;
-                            state.onOpen();
-                          }}
-                        >
-                          <DropdownMenu.Trigger>
-                            {#snippet child({ props })}
-                              <Button
-                                {...props}
-                                variant="ghost"
-                                size="icon-sm"
-                                class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
-                              >
-                                <MoreVertical class="size-4" />
-                              </Button>
-                            {/snippet}
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Content
-                            class="border-brutal-border bg-card-surface w-72 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-                          >
-                            <div class="space-y-3">
-                              <div class="space-y-2">
-                                <p
-                                  class="font-outfit text-text-brand-muted mb-1 text-xs font-bold tracking-widest uppercase"
-                                >
-                                  Priority
-                                </p>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 w-full border-[2px] text-xs"
-                                  onclick={() =>
-                                    state.pin(r.url, r.title || '*title*', query, true)}
-                                >
-                                  <PinOff class="size-3.5" />
-                                  Unpin
-                                </Button>
-                              </div>
-                              <SkipRuleActions
-                                onAddSkipRule={(type, deleteMatches) =>
-                                  state.addSkipRule(
-                                    r.url,
-                                    r.domain,
-                                    type,
-                                    deleteMatches,
-                                    removeResult,
-                                    removeResultsByDomain,
-                                  )}
-                              />
-                              <hr />
-                              <div class="space-y-2">
-                                <p
-                                  class="font-outfit mb-1 text-xs font-bold tracking-widest uppercase"
-                                >
-                                  Label:
-                                </p>
-                                <div class="flex items-center gap-2">
-                                  <Input
-                                    bind:value={state.labelInput}
-                                    placeholder="Add a label…"
-                                    size="sm"
-                                    class="font-inter border-border-brand-muted flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
-                                  />
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    class="border-[2px] text-xs"
-                                    onclick={() => state.updateLabel(r.url)}
-                                  >
-                                    <Tag class="size-3.5" />
-                                    Save
-                                  </Button>
-                                </div>
-                                {#if state.labelMessage}
-                                  <p
-                                    class="font-inter text-xs {state.labelError
-                                      ? 'text-hister-rose'
-                                      : 'text-hister-teal'}"
-                                  >
-                                    {state.labelMessage}
-                                  </p>
-                                {/if}
-                              </div>
-                              {#if state.actionsMessage}
-                                <p
-                                  class="font-inter text-xs {state.actionsError
-                                    ? 'text-hister-rose'
-                                    : 'text-hister-teal'}"
-                                >
-                                  {state.actionsMessage}
-                                </p>
-                              {/if}
-                            </div>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Root>
+                        <ResultActionsMenu
+                          url={r.url}
+                          title={r.title || '*title*'}
+                          domain={r.domain}
+                          {state}
+                          {query}
+                          pinned
+                          {removeResult}
+                          {removeResultsByDomain}
+                        />
                       </div>
                       <div class="flex items-center gap-2">
                         <span
@@ -1712,120 +1622,16 @@
                         >
                           {r.title || '*title*'}
                         </a>
-                        <DropdownMenu.Root
-                          onOpenChange={(open) => {
-                            if (!open) return;
-                            state.onOpen();
-                          }}
-                        >
-                          <DropdownMenu.Trigger>
-                            {#snippet child({ props })}
-                              <Button
-                                {...props}
-                                variant="ghost"
-                                size="icon-sm"
-                                class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
-                              >
-                                <MoreVertical class="size-4" />
-                              </Button>
-                            {/snippet}
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Content
-                            class="border-brutal-border bg-card-surface w-100 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-                          >
-                            <div class="space-y-3">
-                              <div class="space-y-2">
-                                <p
-                                  class="font-outfit mb-1 text-xs font-bold tracking-widest uppercase"
-                                >
-                                  Prioritize this result in query:
-                                </p>
-                                <div class="flex items-center gap-2">
-                                  <Input
-                                    bind:value={state.actionsQuery}
-                                    placeholder="Query.."
-                                    size="sm"
-                                    class="font-inter border-border-brand-muted focus-visible:border-hister-indigo flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
-                                  />
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    class="border-hister-indigo text-hister-indigo border-[2px] text-xs"
-                                    onclick={() => state.pin(r.url, r.title || '*title*', query)}
-                                  >
-                                    <Pin class="size-3.5" />
-                                    Pin
-                                  </Button>
-                                </div>
-                                <hr />
-                              </div>
-                              <SkipRuleActions
-                                onAddSkipRule={(type, deleteMatches) =>
-                                  state.addSkipRule(
-                                    r.url,
-                                    r.domain,
-                                    type,
-                                    deleteMatches,
-                                    removeResult,
-                                    removeResultsByDomain,
-                                  )}
-                              />
-                              <hr />
-                              <div class="space-y-2">
-                                <p
-                                  class="font-outfit mb-1 text-xs font-bold tracking-widest uppercase"
-                                >
-                                  Label:
-                                </p>
-                                <div class="flex items-center gap-2">
-                                  <Input
-                                    bind:value={state.labelInput}
-                                    placeholder="Add a label…"
-                                    size="sm"
-                                    class="font-inter border-border-brand-muted focus-visible:border-hister-amber flex-1 border-[2px] text-sm shadow-none focus-visible:ring-0"
-                                  />
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    class="border-[2px] text-xs"
-                                    onclick={() => state.updateLabel(r.url)}
-                                  >
-                                    <Tag class="size-3.5" />
-                                    Save
-                                  </Button>
-                                </div>
-                                {#if state.labelMessage}
-                                  <p
-                                    class="font-inter text-xs {state.labelError
-                                      ? 'text-hister-rose'
-                                      : 'text-hister-teal'}"
-                                  >
-                                    {state.labelMessage}
-                                  </p>
-                                {/if}
-                              </div>
-                              <hr />
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 w-full border-[2px] text-xs"
-                                onclick={() => deleteResult(r.url)}
-                              >
-                                <Trash2 class="size-3.5" />
-                                Delete result
-                              </Button>
-                              {#if state.actionsMessage}
-                                <p
-                                  class="font-inter text-xs {state.actionsError
-                                    ? 'text-hister-rose'
-                                    : 'text-hister-teal'}"
-                                >
-                                  {state.actionsMessage}
-                                </p>
-                              {/if}
-                            </div>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Root>
+                        <ResultActionsMenu
+                          url={r.url}
+                          title={r.title || '*title*'}
+                          domain={r.domain}
+                          {state}
+                          {query}
+                          onDelete={() => deleteResult(r.url)}
+                          {removeResult}
+                          {removeResultsByDomain}
+                        />
                       </div>
                       <div class="flex items-center gap-2">
                         <span

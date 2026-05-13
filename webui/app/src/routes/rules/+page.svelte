@@ -117,7 +117,11 @@
   function addRule() {
     if (!newRulePattern.trim()) return;
     const pattern = newRulePattern.trim();
-    if (rules.skip.includes(pattern) || rules.priority.includes(pattern) || rules.versioning.includes(pattern)) {
+    if (
+      rules.skip.includes(pattern) ||
+      rules.priority.includes(pattern) ||
+      rules.versioning.includes(pattern)
+    ) {
       message = `Rule "${pattern}" already exists.`;
       isError = true;
       return;
@@ -236,7 +240,10 @@
     const row = ruleRows[editingRuleIndex!];
     // Reject if the new pattern already exists elsewhere (different item)
     const isDuplicate =
-      (rules.skip.includes(trimmed) || rules.priority.includes(trimmed) || rules.versioning.includes(trimmed)) && trimmed !== row.pattern;
+      (rules.skip.includes(trimmed) ||
+        rules.priority.includes(trimmed) ||
+        rules.versioning.includes(trimmed)) &&
+      trimmed !== row.pattern;
     if (isDuplicate) {
       message = `Rule "${trimmed}" already exists.`;
       isError = true;
@@ -330,7 +337,8 @@
             <Link2 class="size-6 text-white" />
           </div>
           <div class="flex flex-col gap-1">
-            <Card.Title class="font-space text-xl font-extrabold tracking-[1px] text-white uppercase"
+            <Card.Title
+              class="font-space text-xl font-extrabold tracking-[1px] text-white uppercase"
               >Search aliases</Card.Title
             >
             <Card.Description class="font-inter text-sm text-white/70"
@@ -373,169 +381,101 @@
         </div>
 
         <Card.Content class="flex-1 p-0">
-          <!-- Desktop table -->
-          <div class="hidden md:block">
-            <Table.Root>
-              <Table.Header>
-                <Table.Row
-                  class="bg-muted-surface border-brutal-border hover:bg-muted-surface border-b-[3px]"
+          <!-- Aliases table -->
+          <Table.Root>
+            <Table.Header>
+              <Table.Row
+                class="bg-muted-surface border-brutal-border hover:bg-muted-surface border-b-[3px]"
+              >
+                <Table.Head
+                  class="font-space text-text-brand-muted h-auto w-20 px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:w-35 md:px-5"
+                  >Keyword</Table.Head
                 >
-                  <Table.Head
-                    class="font-space text-text-brand-muted h-auto w-35 px-5 py-3 text-xs font-bold tracking-[1px] uppercase"
-                    >Keyword</Table.Head
-                  >
-                  <Table.Head
-                    class="font-space text-text-brand-muted h-auto px-5 py-3 text-xs font-bold tracking-[1px] uppercase"
-                    >Expands to</Table.Head
-                  >
-                  <Table.Head class="h-auto w-10 px-5 py-3"></Table.Head>
+                <Table.Head
+                  class="font-space text-text-brand-muted h-auto px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:px-5"
+                  >Expands to</Table.Head
+                >
+                <Table.Head class="h-auto w-16 px-2 py-3 md:w-20 md:px-5"></Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each Object.entries(rules.aliases) as [keyword, value]}
+                <Table.Row class="border-brutal-border border-b-[3px]">
+                  {#if editingAliasKey === keyword}
+                    <Table.Cell class="px-2 py-2 md:px-3" colspan={2}>
+                      <div class="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          variant="brutal"
+                          bind:value={editAliasKeyword}
+                          class="bg-card-surface focus-visible:border-hister-indigo h-8 w-20 px-2 text-sm md:w-28"
+                        />
+                        <Input
+                          type="text"
+                          variant="brutal"
+                          bind:value={editAliasValue}
+                          class="bg-card-surface focus-visible:border-hister-indigo h-8 flex-1 px-2 text-sm"
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter') saveEditAlias();
+                            if (e.key === 'Escape') cancelEditAlias();
+                          }}
+                        />
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell class="w-16 px-1 py-2 md:w-20 md:px-3">
+                      <div class="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-hister-teal shrink-0 transition-colors"
+                          onclick={saveEditAlias}
+                        >
+                          <Check class="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-text-brand-muted shrink-0 transition-colors"
+                          onclick={cancelEditAlias}
+                        >
+                          <X class="size-4" />
+                        </Button>
+                      </div>
+                    </Table.Cell>
+                  {:else}
+                    <Table.Cell
+                      class="font-fira text-text-brand w-20 px-2 py-3 text-sm font-semibold md:w-35 md:px-5"
+                      >{keyword}</Table.Cell
+                    >
+                    <Table.Cell
+                      class="font-fira text-text-brand-secondary max-w-0 truncate px-2 py-3 text-sm md:px-5"
+                      >{value}</Table.Cell
+                    >
+                    <Table.Cell class="w-16 px-1 py-3 md:w-20 md:px-3">
+                      <div class="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-text-brand-muted hover:text-hister-indigo shrink-0 transition-colors"
+                          onclick={() => startEditAlias(keyword, value)}
+                        >
+                          <Pencil class="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-text-brand-muted hover:text-hister-rose shrink-0 transition-colors"
+                          onclick={() => deleteAlias(keyword)}
+                        >
+                          <Trash2 class="size-4" />
+                        </Button>
+                      </div>
+                    </Table.Cell>
+                  {/if}
                 </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {#each Object.entries(rules.aliases) as [keyword, value]}
-                  <Table.Row class="border-brutal-border border-b-[3px]">
-                    {#if editingAliasKey === keyword}
-                      <Table.Cell class="w-35 px-3 py-2" colspan={2}>
-                        <div class="flex items-center gap-2">
-                          <Input
-                            type="text"
-                            variant="brutal"
-                            bind:value={editAliasKeyword}
-                            class="bg-card-surface focus-visible:border-hister-indigo h-8 w-28 px-2 text-sm"
-                          />
-                          <Input
-                            type="text"
-                            variant="brutal"
-                            bind:value={editAliasValue}
-                            class="bg-card-surface focus-visible:border-hister-indigo h-8 flex-1 px-2 text-sm"
-                            onkeydown={(e) => {
-                              if (e.key === 'Enter') saveEditAlias();
-                              if (e.key === 'Escape') cancelEditAlias();
-                            }}
-                          />
-                        </div>
-                      </Table.Cell>
-                      <Table.Cell class="w-20 px-3 py-2">
-                        <div class="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-hister-teal shrink-0 transition-colors"
-                            onclick={saveEditAlias}
-                          >
-                            <Check class="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-text-brand-muted shrink-0 transition-colors"
-                            onclick={cancelEditAlias}
-                          >
-                            <X class="size-4" />
-                          </Button>
-                        </div>
-                      </Table.Cell>
-                    {:else}
-                      <Table.Cell
-                        class="font-fira text-text-brand w-35 px-5 py-3 text-sm font-semibold"
-                        >{keyword}</Table.Cell
-                      >
-                      <Table.Cell
-                        class="font-fira text-text-brand-secondary max-w-0 truncate px-5 py-3 text-sm"
-                        >{value}</Table.Cell
-                      >
-                      <Table.Cell class="w-20 px-3 py-3">
-                        <div class="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-text-brand-muted hover:text-hister-indigo shrink-0 transition-colors"
-                            onclick={() => startEditAlias(keyword, value)}
-                          >
-                            <Pencil class="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-text-brand-muted hover:text-hister-rose shrink-0 transition-colors"
-                            onclick={() => deleteAlias(keyword)}
-                          >
-                            <Trash2 class="size-4" />
-                          </Button>
-                        </div>
-                      </Table.Cell>
-                    {/if}
-                  </Table.Row>
-                {/each}
-              </Table.Body>
-            </Table.Root>
-          </div>
-
-          <!-- Mobile stacked list -->
-          <div class="divide-brutal-border divide-y-[3px] md:hidden">
-            {#each Object.entries(rules.aliases) as [keyword, value]}
-              <div class="flex items-center gap-3 px-4 py-3.5">
-                {#if editingAliasKey === keyword}
-                  <div class="flex flex-1 flex-col gap-2">
-                    <Input
-                      type="text"
-                      variant="brutal"
-                      bind:value={editAliasKeyword}
-                      class="bg-card-surface focus-visible:border-hister-indigo h-8 px-2 text-sm"
-                    />
-                    <Input
-                      type="text"
-                      variant="brutal"
-                      bind:value={editAliasValue}
-                      class="bg-card-surface focus-visible:border-hister-indigo h-8 px-2 text-sm"
-                    />
-                  </div>
-                  <div class="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="text-hister-teal shrink-0 transition-colors"
-                      onclick={saveEditAlias}
-                    >
-                      <Check class="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="text-text-brand-muted shrink-0 transition-colors"
-                      onclick={cancelEditAlias}
-                    >
-                      <X class="size-4" />
-                    </Button>
-                  </div>
-                {:else}
-                  <div class="min-w-0 flex-1">
-                    <span class="font-fira text-text-brand text-sm font-semibold">{keyword}</span>
-                    <span class="font-inter text-text-brand-muted mx-1.5 text-xs">&rarr;</span>
-                    <span class="font-fira text-text-brand-secondary block truncate text-sm"
-                      >{value}</span
-                    >
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    class="text-text-brand-muted hover:text-hister-indigo shrink-0 transition-colors"
-                    onclick={() => startEditAlias(keyword, value)}
-                  >
-                    <Pencil class="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    class="text-text-brand-muted hover:text-hister-rose shrink-0 transition-colors"
-                    onclick={() => deleteAlias(keyword)}
-                  >
-                    <Trash2 class="size-4" />
-                  </Button>
-                {/if}
-              </div>
-            {/each}
-          </div>
+              {/each}
+            </Table.Body>
+          </Table.Root>
 
           {#if Object.keys(rules.aliases).length === 0}
             <div class="flex flex-col items-center justify-center gap-3 py-10">
@@ -558,7 +498,8 @@
             <Shield class="size-6 text-white" />
           </div>
           <div class="flex flex-col gap-1">
-            <Card.Title class="font-space text-xl font-extrabold tracking-[1px] text-white uppercase"
+            <Card.Title
+              class="font-space text-xl font-extrabold tracking-[1px] text-white uppercase"
               >Indexing rules</Card.Title
             >
             <Card.Description class="font-inter text-sm text-white/70"
@@ -605,191 +546,112 @@
         </div>
 
         <Card.Content class="flex-1 p-0">
-          <!-- Desktop table -->
-          <div class="hidden md:block">
-            <Table.Root>
-              <Table.Header>
-                <Table.Row
-                  class="bg-muted-surface border-brutal-border hover:bg-muted-surface border-b-[3px]"
+          <!-- Rules table -->
+          <Table.Root>
+            <Table.Header>
+              <Table.Row
+                class="bg-muted-surface border-brutal-border hover:bg-muted-surface border-b-[3px]"
+              >
+                <Table.Head
+                  class="font-space text-text-brand-muted h-auto px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:px-5"
+                  >Pattern</Table.Head
                 >
-                  <Table.Head
-                    class="font-space text-text-brand-muted h-auto px-5 py-3 text-xs font-bold tracking-[1px] uppercase"
-                    >Pattern</Table.Head
-                  >
-                  <Table.Head
-                    class="font-space text-text-brand-muted h-auto w-28 px-5 py-3 text-xs font-bold tracking-[1px] uppercase"
-                    >Type</Table.Head
-                  >
-                  <Table.Head class="h-auto w-20 px-5 py-3"></Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {#each ruleRows as row, i}
-                  <Table.Row class="border-brutal-border border-b-[3px]">
-                    {#if editingRuleIndex === i}
-                      <Table.Cell class="px-3 py-2" colspan={2}>
-                        <div class="flex items-center gap-2">
-                          <Input
-                            type="text"
-                            variant="brutal"
-                            bind:value={editRulePattern}
-                            class="bg-card-surface focus-visible:border-hister-coral h-8 flex-1 px-2 text-sm"
-                            onkeydown={(e) => {
-                              if (e.key === 'Enter') saveEditRule();
-                              if (e.key === 'Escape') cancelEditRule();
-                            }}
-                          />
-                          <select
-                            bind:value={editRuleType}
-                            class="bg-card-surface border-brutal-border font-space text-text-brand h-8 w-25 shrink-0 cursor-pointer appearance-none border-[3px] px-3 text-center text-xs font-bold tracking-[0.5px] outline-none"
-                          >
-                            <option value="skip">skip</option>
-                            <option value="priority">priority</option>
-                            <option value="versioning">version</option>
-                          </select>
-                        </div>
-                      </Table.Cell>
-                      <Table.Cell class="w-20 px-3 py-2">
-                        <div class="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-hister-teal shrink-0 transition-colors"
-                            onclick={saveEditRule}
-                          >
-                            <Check class="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-text-brand-muted shrink-0 transition-colors"
-                            onclick={cancelEditRule}
-                          >
-                            <X class="size-4" />
-                          </Button>
-                        </div>
-                      </Table.Cell>
-                    {:else}
-                      <Table.Cell
-                        class="font-fira text-text-brand max-w-0 truncate px-5 py-3 text-sm"
-                        >{row.pattern}</Table.Cell
-                      >
-                      <Table.Cell class="w-28 px-5 py-3">
-                        <Badge
-                          variant="default"
-                          class="font-space border-0 px-3 py-1 text-xs font-bold tracking-[0.5px] uppercase {row.type ===
-                          'skip'
-                            ? 'bg-hister-rose text-white'
-                            : row.type === 'priority'
-                              ? 'bg-hister-teal text-white'
-                              : 'bg-violet-500 text-white'}"
+                <Table.Head
+                  class="font-space text-text-brand-muted h-auto w-20 px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:w-28 md:px-5"
+                  >Type</Table.Head
+                >
+                <Table.Head class="h-auto w-16 px-2 py-3 md:w-20 md:px-5"></Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each ruleRows as row, i}
+                <Table.Row class="border-brutal-border border-b-[3px]">
+                  {#if editingRuleIndex === i}
+                    <Table.Cell class="px-2 py-2 md:px-3" colspan={2}>
+                      <div class="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          variant="brutal"
+                          bind:value={editRulePattern}
+                          class="bg-card-surface focus-visible:border-hister-coral h-8 flex-1 px-2 text-sm"
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter') saveEditRule();
+                            if (e.key === 'Escape') cancelEditRule();
+                          }}
+                        />
+                        <select
+                          bind:value={editRuleType}
+                          class="bg-card-surface border-brutal-border font-space text-text-brand h-8 w-20 shrink-0 cursor-pointer appearance-none border-[3px] px-2 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-25 md:px-3"
                         >
-                          {row.type}
-                        </Badge>
-                      </Table.Cell>
-                      <Table.Cell class="w-20 px-3 py-3">
-                        <div class="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-text-brand-muted hover:text-hister-coral shrink-0 transition-colors"
-                            onclick={() => startEditRule(i)}
-                          >
-                            <Pencil class="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="text-text-brand-muted hover:text-hister-rose shrink-0 transition-colors"
-                            onclick={() => removeRule(row.pattern, row.type)}
-                          >
-                            <Trash2 class="size-4" />
-                          </Button>
-                        </div>
-                      </Table.Cell>
-                    {/if}
-                  </Table.Row>
-                {/each}
-              </Table.Body>
-            </Table.Root>
-          </div>
-
-          <!-- Mobile stacked list -->
-          <div class="divide-brutal-border divide-y-[3px] md:hidden">
-            {#each ruleRows as row, i}
-              <div class="flex items-center gap-3 px-4 py-3.5">
-                {#if editingRuleIndex === i}
-                  <div class="flex flex-1 flex-col gap-2">
-                    <Input
-                      type="text"
-                      variant="brutal"
-                      bind:value={editRulePattern}
-                      class="bg-card-surface focus-visible:border-hister-coral h-8 px-2 text-sm"
-                    />
-                    <select
-                      bind:value={editRuleType}
-                      class="bg-card-surface border-brutal-border font-space text-text-brand h-8 w-full cursor-pointer appearance-none border-[3px] px-3 text-xs font-bold tracking-[0.5px] outline-none"
+                          <option value="skip">skip</option>
+                          <option value="priority">priority</option>
+                          <option value="versioning">version</option>
+                        </select>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell class="w-16 px-1 py-2 md:w-20 md:px-3">
+                      <div class="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-hister-teal shrink-0 transition-colors"
+                          onclick={saveEditRule}
+                        >
+                          <Check class="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-text-brand-muted shrink-0 transition-colors"
+                          onclick={cancelEditRule}
+                        >
+                          <X class="size-4" />
+                        </Button>
+                      </div>
+                    </Table.Cell>
+                  {:else}
+                    <Table.Cell
+                      class="font-fira text-text-brand max-w-0 truncate px-2 py-3 text-sm md:px-5"
+                      >{row.pattern}</Table.Cell
                     >
-                      <option value="skip">skip</option>
-                      <option value="priority">priority</option>
-                      <option value="versioning">version</option>
-                    </select>
-                  </div>
-                  <div class="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="text-hister-teal shrink-0 transition-colors"
-                      onclick={saveEditRule}
-                    >
-                      <Check class="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="text-text-brand-muted shrink-0 transition-colors"
-                      onclick={cancelEditRule}
-                    >
-                      <X class="size-4" />
-                    </Button>
-                  </div>
-                {:else}
-                  <div class="min-w-0 flex-1">
-                    <span class="font-fira text-text-brand block truncate text-sm"
-                      >{row.pattern}</span
-                    >
-                  </div>
-                  <Badge
-                    variant="default"
-                    class="font-space shrink-0 border-0 px-2.5 py-0.5 text-xs font-bold tracking-[0.5px] uppercase {row.type ===
-                    'skip'
-                      ? 'bg-hister-rose text-white'
-                      : row.type === 'priority'
-                        ? 'bg-hister-teal text-white'
-                        : 'bg-violet-500 text-white'}"
-                  >
-                    {row.type}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    class="text-text-brand-muted hover:text-hister-coral shrink-0 transition-colors"
-                    onclick={() => startEditRule(i)}
-                  >
-                    <Pencil class="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    class="text-text-brand-muted hover:text-hister-rose shrink-0 transition-colors"
-                    onclick={() => removeRule(row.pattern, row.type)}
-                  >
-                    <Trash2 class="size-4" />
-                  </Button>
-                {/if}
-              </div>
-            {/each}
-          </div>
+                    <Table.Cell class="w-20 px-2 py-3 md:w-28 md:px-5">
+                      <Badge
+                        variant="default"
+                        class="font-space border-0 px-2 py-1 text-xs font-bold tracking-[0.5px] uppercase md:px-3 {row.type ===
+                        'skip'
+                          ? 'bg-hister-rose text-white'
+                          : row.type === 'priority'
+                            ? 'bg-hister-teal text-white'
+                            : 'bg-violet-500 text-white'}"
+                      >
+                        {row.type}
+                      </Badge>
+                    </Table.Cell>
+                    <Table.Cell class="w-16 px-1 py-3 md:w-20 md:px-3">
+                      <div class="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-text-brand-muted hover:text-hister-coral shrink-0 transition-colors"
+                          onclick={() => startEditRule(i)}
+                        >
+                          <Pencil class="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-text-brand-muted hover:text-hister-rose shrink-0 transition-colors"
+                          onclick={() => removeRule(row.pattern, row.type)}
+                        >
+                          <Trash2 class="size-4" />
+                        </Button>
+                      </div>
+                    </Table.Cell>
+                  {/if}
+                </Table.Row>
+              {/each}
+            </Table.Body>
+          </Table.Root>
 
           {#if ruleRows.length === 0}
             <div class="flex flex-col items-center justify-center gap-3 py-10">

@@ -154,7 +154,7 @@
 
     if (itemDate.getTime() === today.getTime()) return 'Today';
     if (itemDate.getTime() === yesterday.getTime()) return 'Yesterday';
-    return itemDate.toLocaleDateString('en-US', {
+    return itemDate.toLocaleDateString(undefined, {
       weekday: 'short',
       month: 'short',
       day: 'numeric',

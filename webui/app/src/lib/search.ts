@@ -71,7 +71,9 @@ function escape(s: string): string {
 }
 
 export function formatTimestamp(unixTimestamp: number): string {
-  return new Date(unixTimestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
+  const d = new Date(unixTimestamp * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 export function formatRelativeTime(unixTimestamp: number): string {
@@ -107,7 +109,8 @@ export function formatMetaDate(iso: string | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toISOString().slice(0, 10);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function downloadFile(content: string, filename: string, mimeType: string): void {

@@ -343,14 +343,14 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 	total := idx.Total()
 	batchSize := 50
 	page := 0
-	latest := ""
+	var sortKey []string
 	req := bleve.NewSearchRequest(q)
 	req.Fields = allFields
 	req.Size = batchSize
 	req.SortBy([]string{"_id"})
 	for {
-		if latest != "" {
-			req.SetSearchAfter([]string{latest})
+		if len(sortKey) > 0 {
+			req.SetSearchAfter(sortKey)
 		}
 		res, err := idx.idx.Search(req)
 		if err != nil || len(res.Hits) < 1 {
@@ -416,7 +416,7 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 		}
 		runtime.GC()
 		page += 1
-		latest = res.Hits[n-1].Fields["url"].(string)
+		sortKey = res.Hits[n-1].Sort
 		log.Info().Msg(fmt.Sprintf("Reindexed [%d/%d]", page*batchSize, total))
 	}
 	idx.vectorStore = nil // prevent Close() from closing the store we're still using
@@ -974,10 +974,10 @@ func Iterate(fn func(*document.Document)) {
 	req.Fields = []string{"url"}
 	req.Size = 200
 	req.SortBy([]string{"_id"})
-	latest := ""
+	var sortKey []string
 	for {
-		if latest != "" {
-			req.SetSearchAfter([]string{latest})
+		if len(sortKey) > 0 {
+			req.SetSearchAfter(sortKey)
 		}
 		res, err := i.idx.Search(req)
 		n := len(res.Hits)
@@ -988,7 +988,7 @@ func Iterate(fn func(*document.Document)) {
 			d := resFromHit(h, true, true)
 			fn(d)
 		}
-		latest = res.Hits[n-1].Fields["url"].(string)
+		sortKey = res.Hits[n-1].Sort
 	}
 }
 

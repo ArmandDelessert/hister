@@ -430,22 +430,22 @@ hotkeys:
 
 TUI keyboard shortcuts are configured in `tui.yaml` under the `hotkeys` section. See the [tui.yaml example](#tui-configuration) above.
 
-| Action            | Description                                                     |
-| ----------------- | --------------------------------------------------------------- |
-| `quit`            | Exit the TUI                                                    |
-| `toggle_help`     | Show/hide the keybindings help overlay                          |
-| `toggle_focus`    | Switch between search input and results list                    |
-| `scroll_up`       | Move selection up                                               |
-| `scroll_down`     | Move selection down                                             |
-| `open_result`     | Open the selected result in your browser                        |
-| `delete_result`   | Delete the selected entry from the index                        |
-| `toggle_theme`    | Open the interactive theme picker overlay                       |
-| `toggle_settings` | Open the keybinding editor overlay                              |
-| `toggle_sort`     | Toggle domain-based sorting for search results                  |
-| `tab_search`      | Switch to the Search tab                                        |
-| `tab_history`     | Switch to the History tab (view recent searches)                |
-| `tab_rules`       | Switch to the Rules tab (manage blacklist/priority/alias rules) |
-| `tab_add`         | Switch to the Add tab (manually add URLs to index)              |
+| Action            | Description                                                                 |
+| ----------------- | --------------------------------------------------------------------------- |
+| `quit`            | Exit the TUI                                                                |
+| `toggle_help`     | Show/hide the keybindings help overlay                                      |
+| `toggle_focus`    | Switch between search input and results list                                |
+| `scroll_up`       | Move selection up                                                           |
+| `scroll_down`     | Move selection down                                                         |
+| `open_result`     | Open the selected result in your browser                                    |
+| `delete_result`   | Delete the selected entry from the index                                    |
+| `toggle_theme`    | Open the interactive theme picker overlay                                   |
+| `toggle_settings` | Open the keybinding editor overlay                                          |
+| `toggle_sort`     | Toggle domain-based sorting for search results                              |
+| `tab_search`      | Switch to the Search tab                                                    |
+| `tab_history`     | Switch to the History tab (view recent searches)                            |
+| `tab_rules`       | Switch to the Rules tab (manage skip/priority/versioning rules and aliases) |
+| `tab_add`         | Switch to the Add tab (manually add URLs to index)                          |
 
 ## `crawler` Section
 

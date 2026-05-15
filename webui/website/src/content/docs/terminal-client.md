@@ -164,7 +164,7 @@ hister search
 
 - **Search** (Alt+1): Main search interface
 - **History** (Alt+2): View your recent search history
-- **Rules** (Alt+3): Manage blacklist, priority, and alias rules
+- **Rules** (Alt+3): Manage skip, priority, versioning, and alias rules
 - **Add** (Alt+4): Manually add URLs to the index
 
 ### TUI Keybindings

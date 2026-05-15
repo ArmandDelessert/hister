@@ -74,7 +74,7 @@ hister import-browser firefox ~/.mozilla/firefox/abc123.default/places.sqlite
 ```
 
 This will print a count of how many (unique) URLs have been detected, and ask for confirmation before proceeding (press Enter to submit your choice, `Y` being the default).
-Note that Hister doesn't print URLs it skips importing, which can happen if it is covered by a [skip rule] (TODO) or has already been indexed previously.
+Note that Hister doesn't print URLs it skips importing, which can happen if it is covered by a [skip rule](rules) or has already been indexed previously.
 
 It is okay to interrupt the importing process in any way!
 Since URLs previously indexed are not fetched again, it is possible to re-run the `hister import-browser` command later, and it will roughly resume from where it left off.

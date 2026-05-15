@@ -138,6 +138,7 @@ When user handling is enabled, each user has their own set of rules and aliases 
 
 - **Skip rules**: URLs matching a user's skip rules are silently ignored when indexing, just as in single-user mode.
 - **Priority rules**: A user's priority rules boost matching results to the top of their search results.
+- **Versioning rules**: URLs matching a user's versioning rules have their content diffed and stored on each re-index.
 - **Search aliases**: Aliases defined by a user apply only to that user's searches.
 
 Users can view and edit their rules and aliases through the **Rules** tab in the web interface, or via the API endpoints.

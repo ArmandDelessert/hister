@@ -91,7 +91,7 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
 2. (Re)start the Hister server to apply the change.
 3. Set up your favourite reverse proxy. Here are some examples:
 
-   <details><summary>Caddy</summary>
+### Caddy
 
    In your `Caddyfile`:
 
@@ -107,8 +107,7 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
    caddy reverse-proxy --from hister.example.com --to localhost:4433
    ```
 
-   </details>
-   <details><summary>Nginx</summary>
+### Nginx
 
    ```nginx
    # Make sure you have a good TLS configuration!
@@ -172,7 +171,6 @@ In particular, some, like [Caddy] or [Traefik], have built-in support for automa
 
    **Note**: if search doesn't work, there likely is a problem with WebSocket connections; troubleshooting info can be gathered from Nginx's `access.log` (tells you whether requests reached Nginx) and `error.log` (tells if you if any errors occurred _within_ Nginx).
 
-   </details>
 
 ## AppArmor Profile
 

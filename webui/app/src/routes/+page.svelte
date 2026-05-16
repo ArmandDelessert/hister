@@ -163,6 +163,101 @@
 
   let animationHandles: any[] = [];
 
+  type TipPart =
+    | { type: 'text'; value: string }
+    | { type: 'kbd'; value: string }
+    | { type: 'code'; value: string }
+    | { type: 'link'; value: string; href: string }
+    | { type: 'hotkey'; action: string };
+
+  const tips: TipPart[][] = [
+    [
+      { type: 'text', value: 'Press' },
+      { type: 'hotkey', action: 'focus_search_input' },
+      { type: 'text', value: 'to focus search anywhere' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: '"quotes"' },
+      { type: 'text', value: 'to search for an exact phrase' },
+    ],
+    [
+      { type: 'text', value: 'Prefix a term with' },
+      { type: 'code', value: '-' },
+      { type: 'text', value: 'to exclude it from results' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: 'domain:example.com' },
+      { type: 'text', value: 'to search within a specific domain' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: 'title:keyword' },
+      { type: 'text', value: 'to search only in page titles' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: 'url:*pattern*' },
+      { type: 'text', value: 'to match URL patterns with wildcards' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: '(a|b|c)' },
+      { type: 'text', value: 'to match any of the listed terms' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: 'type:web' },
+      { type: 'text', value: 'or' },
+      { type: 'code', value: 'type:local' },
+      { type: 'text', value: 'to filter by document type' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: 'language:en' },
+      { type: 'text', value: 'to filter results by language' },
+    ],
+    [
+      { type: 'text', value: 'Press' },
+      { type: 'hotkey', action: 'open_result' },
+      { type: 'text', value: 'to open the first result directly' },
+    ],
+    [
+      { type: 'text', value: 'Press' },
+      { type: 'hotkey', action: 'select_next_result' },
+      { type: 'text', value: '/' },
+      { type: 'hotkey', action: 'select_previous_result' },
+      { type: 'text', value: 'to navigate between results' },
+    ],
+    [
+      { type: 'text', value: 'Press' },
+      { type: 'hotkey', action: 'open_result_in_new_tab' },
+      { type: 'text', value: 'to open a result in a new tab' },
+    ],
+    [
+      { type: 'text', value: 'Press' },
+      { type: 'hotkey', action: 'open_query_in_search_engine' },
+      { type: 'text', value: 'to open the query in your configured search engine' },
+    ],
+    [
+      { type: 'text', value: 'Define aliases in the' },
+      { type: 'link', value: 'Rules page', href: '/rules' },
+      { type: 'text', value: 'to shorten common queries' },
+    ],
+    [
+      { type: 'text', value: 'Use' },
+      { type: 'code', value: 'word*' },
+      { type: 'text', value: 'for wildcard searches' },
+    ],
+  ];
+
+  const currentTip = tips[Math.floor(Math.random() * tips.length)];
+
+  const hotkeyByAction = $derived(
+    Object.fromEntries(Object.entries(config.hotkeys).map(([key, action]) => [action, key])),
+  );
+
   const chipColors = [
     { border: 'border-hister-indigo', bg: 'bg-hister-indigo/10', text: 'text-hister-indigo' },
     { border: 'border-hister-teal', bg: 'bg-hister-teal/10', text: 'text-hister-teal' },
@@ -1726,13 +1821,33 @@
       bind:this={hintEl}
       class="font-inter text-text-brand-muted hidden items-center gap-1 text-xs md:flex md:gap-2"
     >
-      <span>Pro tip: Press</span>
-      <Kbd
-        bind:ref={kbdEl}
-        class="bg-muted-surface border-border-brand-muted font-fira text-text-brand-secondary rounded-none border-[2px] px-2 py-0.5 text-xs font-semibold"
-        >/</Kbd
-      >
-      <span>to focus search anywhere</span>
+      <span>Pro tip:</span>
+      {#each currentTip as part}
+        {#if part.type === 'text'}
+          <span>{part.value}</span>
+        {:else if part.type === 'kbd'}
+          <Kbd
+            bind:ref={kbdEl}
+            class="bg-muted-surface border-border-brand-muted font-fira text-text-brand-secondary rounded-none border-[2px] px-2 py-0.5 text-xs font-semibold"
+            >{part.value}</Kbd
+          >
+        {:else if part.type === 'hotkey'}
+          {#if hotkeyByAction[part.action]}
+            <Kbd
+              bind:ref={kbdEl}
+              class="bg-muted-surface border-border-brand-muted font-fira text-text-brand-secondary rounded-none border-[2px] px-2 py-0.5 text-xs font-semibold"
+              >{hotkeyByAction[part.action]}</Kbd
+            >
+          {/if}
+        {:else if part.type === 'code'}
+          <code
+            class="bg-muted-surface border-border-brand-muted font-fira text-text-brand-secondary rounded-none border-[2px] px-2 py-0.5 font-semibold"
+            >{part.value}</code
+          >
+        {:else if part.type === 'link'}
+          <a href={part.href} class="text-hister-indigo hover:underline">{part.value}</a>
+        {/if}
+      {/each}
     </div>
 
     {#if recentSearches.length > 0}

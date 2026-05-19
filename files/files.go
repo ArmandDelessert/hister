@@ -166,6 +166,21 @@ func handleWrite(event fsnotify.Event, dirs []*config.Directory, mu *sync.Mutex,
 	mu.Unlock()
 }
 
+// handleRemove processes a file removal or rename event. If the file belongs
+// to a directory configured with delete_on_remove, the onRemove callback is
+// invoked with the file path. Directories and files that do not match the
+// configured filters are silently ignored.
+func handleRemove(event fsnotify.Event, dirs []*config.Directory, onRemove func(string)) {
+	if onRemove == nil {
+		return
+	}
+	dir := FindMatchingDir(dirs, event.Name)
+	if dir == nil || !dir.DeleteOnRemove || !dir.IsMatching(event.Name) {
+		return
+	}
+	onRemove(event.Name)
+}
+
 // handleCreate processes a file or directory creation event: new directories
 // are added to the watcher, new files matching filters are passed to the callback.
 func handleCreate(event fsnotify.Event, dirs []*config.Directory, watcher *fsnotify.Watcher, callback func(string)) {
@@ -192,7 +207,7 @@ func handleCreate(event fsnotify.Event, dirs []*config.Directory, watcher *fsnot
 	callback(event.Name)
 }
 
-func WatchDirectories(ctx context.Context, dirs []*config.Directory, callback func(string)) error {
+func WatchDirectories(ctx context.Context, dirs []*config.Directory, callback func(string), onRemove func(string)) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("failed to create file watcher: %w", err)
@@ -222,6 +237,8 @@ func WatchDirectories(ctx context.Context, dirs []*config.Directory, callback fu
 				handleWrite(event, dirs, &mu, debounced, callback)
 			case event.Has(fsnotify.Create):
 				handleCreate(event, dirs, watcher, callback)
+			case event.Has(fsnotify.Remove), event.Has(fsnotify.Rename):
+				handleRemove(event, dirs, onRemove)
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {

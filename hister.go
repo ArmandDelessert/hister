@@ -165,6 +165,10 @@ var listenCmd = &cobra.Command{
 					if err := indexer.IndexFile(path); err != nil {
 						log.Debug().Err(err).Str("path", path).Msg("Failed to index file")
 					}
+				}, func(path string) {
+					if err := indexer.DeleteFile(path); err != nil {
+						log.Debug().Err(err).Str("path", path).Msg("Failed to delete file from index")
+					}
 				}); err != nil {
 					log.Error().Err(err).Msg("File watcher failed")
 				}

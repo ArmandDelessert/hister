@@ -125,3 +125,16 @@ func IndexFile(path string) error {
 	doc.Text = string(content)
 	return i.AddDocument(doc)
 }
+
+// DeleteFile removes the document for the given filesystem path from the index.
+// It uses a url: field query so it removes the file across all users and
+// language-specific sub-indexes. Returns nil if the document is not found.
+func DeleteFile(path string) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path: %w", err)
+	}
+	fileURL := files.PathToFileURL(absPath)
+	_, err = DeleteByQuery("url:"+fileURL, nil, nil)
+	return err
+}

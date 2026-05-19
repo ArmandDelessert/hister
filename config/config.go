@@ -84,11 +84,12 @@ type OAuthEntry struct {
 }
 
 type Directory struct {
-	Path          string   `yaml:"path"           mapstructure:"path"`
-	Filetypes     []string `yaml:"filetypes"      mapstructure:"filetypes"`
-	Patterns      []string `yaml:"patterns"       mapstructure:"patterns"`
-	Excludes      []string `yaml:"excludes"       mapstructure:"excludes"`
-	IncludeHidden bool     `yaml:"include_hidden" mapstructure:"include_hidden"`
+	Path           string   `yaml:"path"              mapstructure:"path"`
+	Filetypes      []string `yaml:"filetypes"         mapstructure:"filetypes"`
+	Patterns       []string `yaml:"patterns"          mapstructure:"patterns"`
+	Excludes       []string `yaml:"excludes"          mapstructure:"excludes"`
+	IncludeHidden  bool     `yaml:"include_hidden"    mapstructure:"include_hidden"`
+	DeleteOnRemove bool     `yaml:"delete_on_remove"  mapstructure:"delete_on_remove"`
 }
 
 type Indexer struct {

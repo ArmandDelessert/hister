@@ -201,13 +201,14 @@ TUI settings are configured in a separate `tui.yaml` file located in the same di
 
 Each entry in `directories` is an object with the following keys:
 
-| Key              | Type     | Default | Description                                                                                                                                                                                                           |
-| ---------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`           | string   | ""      | **(required)** Directory path to index. Paths starting with `~/` are expanded to your home directory.                                                                                                                 |
-| `filetypes`      | string[] | (none)  | Only index files with these extensions (without the dot). e.g. `['txt', 'md']`.                                                                                                                                       |
-| `patterns`       | string[] | (none)  | Only index files whose names match at least one glob pattern. e.g. `['doc_*', 'README*']`.                                                                                                                            |
-| `excludes`       | string[] | (none)  | Skip files whose names match any of these glob patterns. e.g. `['*secret*', '*.tmp']`.                                                                                                                                |
-| `include_hidden` | bool     | `false` | When `true`, index hidden files/directories (starting with `.`) and well-known dependency/cache directories (`node_modules`, `__pycache__`, etc.) that are skipped by default. User-specified `excludes` still apply. |
+| Key                | Type     | Default | Description                                                                                                                                                                                                           |
+| ------------------ | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`             | string   | ""      | **(required)** Directory path to index. Paths starting with `~/` are expanded to your home directory.                                                                                                                 |
+| `filetypes`        | string[] | (none)  | Only index files with these extensions (without the dot). e.g. `['txt', 'md']`.                                                                                                                                       |
+| `patterns`         | string[] | (none)  | Only index files whose names match at least one glob pattern. e.g. `['doc_*', 'README*']`.                                                                                                                            |
+| `excludes`         | string[] | (none)  | Skip files whose names match any of these glob patterns. e.g. `['*secret*', '*.tmp']`.                                                                                                                                |
+| `include_hidden`   | bool     | `false` | When `true`, index hidden files/directories (starting with `.`) and well-known dependency/cache directories (`node_modules`, `__pycache__`, etc.) that are skipped by default. User-specified `excludes` still apply. |
+| `delete_on_remove` | bool     | `false` | When `true`, automatically remove a file from the index when it is deleted or renamed on the filesystem.                                                                                                              |
 
 When multiple filters are specified, they are applied in order: excludes first, then filetypes, then patterns. A file must pass all specified filters to be indexed. When a filter is omitted, it is not applied (all files pass).
 
@@ -236,6 +237,8 @@ Files are indexed recursively, with the following rules:
 - Files matching `sensitive_content_patterns` are skipped
 
 Changes to indexed directories are picked up automatically by the file watcher, no server restart is needed. On server start, only files that have been modified since they were last indexed are re-processed. File results appear with the domain `local` and are served through the Hister web interface directly.
+
+When `delete_on_remove: true` is set on a directory, deleting or renaming a file on the filesystem also removes it from the index automatically. This is opt-in and disabled by default.
 
 No reindex is required when adding or removing files. Files are detected and indexed automatically.
 

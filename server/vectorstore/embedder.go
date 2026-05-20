@@ -4,10 +4,13 @@ package vectorstore
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/asciimoo/hister/config"
@@ -27,6 +30,8 @@ type Embedder struct {
 	queryPrefix      string
 	documentPrefix   string
 }
+
+const embeddingMaxAttempts = 3
 
 // NewEmbedder creates an Embedder from the semantic search config.
 func NewEmbedder(cfg *config.SemanticSearch) *Embedder {
@@ -57,9 +62,57 @@ type embeddingResponse struct {
 	} `json:"data"`
 }
 
-// doEmbeddingRequest sends an embedding request to the endpoint and returns the
-// parsed response. input is either a string (single) or []string (batch).
-func (e *Embedder) doEmbeddingRequest(input any) (_ *embeddingResponse, err error) {
+type embeddingStatusError struct {
+	statusCode int
+	body       string
+}
+
+func (e *embeddingStatusError) Error() string {
+	return fmt.Sprintf("embedding endpoint returned %d: %s", e.statusCode, e.body)
+}
+
+func (e *embeddingStatusError) transient() bool {
+	switch e.statusCode {
+	case http.StatusRequestTimeout,
+		http.StatusTooEarly,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func embeddingRetryDelay(attempt int) time.Duration {
+	return time.Duration(1<<attempt) * 250 * time.Millisecond
+}
+
+func shouldRetryEmbeddingError(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+
+	var statusErr *embeddingStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.transient()
+	}
+
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
+}
+
+// doEmbeddingRequestOnce sends one embedding request to the endpoint and returns
+// the parsed response. input is either a string (single) or []string (batch).
+func (e *Embedder) doEmbeddingRequestOnce(ctx context.Context, input any) (_ *embeddingResponse, err error) {
 	body, err := json.Marshal(embeddingRequest{
 		Model: e.model,
 		Input: input,
@@ -68,7 +121,7 @@ func (e *Embedder) doEmbeddingRequest(input any) (_ *embeddingResponse, err erro
 		return nil, fmt.Errorf("marshal embedding request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", e.endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", e.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create embedding request: %w", err)
 	}
@@ -92,7 +145,7 @@ func (e *Embedder) doEmbeddingRequest(input any) (_ *embeddingResponse, err erro
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("embedding endpoint returned %d: %s", resp.StatusCode, string(respBody))
+		return nil, &embeddingStatusError{statusCode: resp.StatusCode, body: string(respBody)}
 	}
 
 	var result embeddingResponse
@@ -102,9 +155,38 @@ func (e *Embedder) doEmbeddingRequest(input any) (_ *embeddingResponse, err erro
 	return &result, nil
 }
 
+// doEmbeddingRequest sends an embedding request, retrying transient endpoint or
+// network failures while respecting the caller's context.
+func (e *Embedder) doEmbeddingRequest(ctx context.Context, input any) (*embeddingResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var err error
+	for attempt := range embeddingMaxAttempts {
+		var result *embeddingResponse
+		result, err = e.doEmbeddingRequestOnce(ctx, input)
+		if err == nil {
+			return result, nil
+		}
+		if attempt == embeddingMaxAttempts-1 || !shouldRetryEmbeddingError(ctx, err) {
+			return nil, err
+		}
+
+		timer := time.NewTimer(embeddingRetryDelay(attempt))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, err
+}
+
 // Embed converts a single text into a float32 vector.
-func (e *Embedder) Embed(text string) ([]float32, error) {
-	result, err := e.doEmbeddingRequest(text)
+func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	result, err := e.doEmbeddingRequest(ctx, text)
 	if err != nil {
 		return nil, err
 	}
@@ -120,13 +202,13 @@ func (e *Embedder) Embed(text string) ([]float32, error) {
 // EmbedQuery embeds a search query, prepending the configured query prefix
 // (e.g. "search_query: ") when set. Many embedding models (BGE, E5, Nomic,
 // GTE) produce better recall when queries and documents use distinct prefixes.
-func (e *Embedder) EmbedQuery(text string) ([]float32, error) {
-	return e.Embed(e.queryPrefix + text)
+func (e *Embedder) EmbedQuery(ctx context.Context, text string) ([]float32, error) {
+	return e.Embed(ctx, e.queryPrefix+text)
 }
 
 // EmbedBatch converts multiple texts in a single request.
-func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
-	result, err := e.doEmbeddingRequest(texts)
+func (e *Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	result, err := e.doEmbeddingRequest(ctx, texts)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +234,7 @@ func toFloat32(f64 []float64) []float32 {
 // metadata title and the configured document prefix to each chunk,
 // batch-embeds them, and returns Chunk values ready for storage. Returns nil
 // (not an error) when the text is empty.
-func (e *Embedder) ChunkAndEmbed(text, title string) ([]Chunk, error) {
+func (e *Embedder) ChunkAndEmbed(ctx context.Context, text, title string) ([]Chunk, error) {
 	textChunks := ChunkText(text, e.maxContextLength, e.chunkOverlap)
 	if len(textChunks) == 0 {
 		return nil, nil
@@ -165,7 +247,7 @@ func (e *Embedder) ChunkAndEmbed(text, title string) ([]Chunk, error) {
 		texts[i] = header + tc.Text
 	}
 
-	vectors, err := e.EmbedBatch(texts)
+	vectors, err := e.EmbedBatch(ctx, texts)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +50,8 @@ type indexer struct {
 	reindexInProgress bool
 	embedder          *vectorstore.Embedder
 	vectorStore       vectorstore.VectorStore
+	embedCtx          context.Context
+	embedCancel       context.CancelFunc
 	embedWg           sync.WaitGroup // tracks in-flight async embeddings
 }
 
@@ -265,12 +268,15 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 		}
 	}
 	idx.SetName(defaultIndexerName)
+	embedCtx, embedCancel := context.WithCancel(context.Background())
 	i := &indexer{
 		idx: bleve.NewIndexAlias(idx),
 		indexers: map[string]bleve.Index{
 			defaultIndexerName: idx,
 		},
-		dir: basePath,
+		dir:         basePath,
+		embedCtx:    embedCtx,
+		embedCancel: embedCancel,
 	}
 	if !detectLanguages {
 		i.langDetector = document.NewNullLanguageDetector()
@@ -482,10 +488,14 @@ func truncateText(s string, maxRunes int) string {
 // embedDocumentChunks splits the document text into chunks, batch-embeds them,
 // and stores the resulting chunk vectors. Errors are logged but not propagated
 // so that Bleve indexing can still proceed.
-func embedDocumentChunks(idx *indexer, d *document.Document) {
+func embedDocumentChunks(ctx context.Context, idx *indexer, d *document.Document) {
 	start := time.Now()
-	chunks, err := idx.embedder.ChunkAndEmbed(d.Title+" "+d.Text, d.Title)
+	chunks, err := idx.embedder.ChunkAndEmbed(ctx, d.Title+" "+d.Text, d.Title)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			log.Debug().Str("url", d.URL).Msg("chunk embedding canceled")
+			return
+		}
 		log.Warn().Err(err).Str("url", d.URL).Msg("chunk embedding failed, skipping vectors")
 		return
 	}
@@ -535,7 +545,7 @@ func (i *indexer) AddDocument(d *document.Document) error {
 	if !d.SkipIndexing {
 		if i.embedder != nil && i.vectorStore != nil {
 			i.embedWg.Go(func() {
-				embedDocumentChunks(i, d)
+				embedDocumentChunks(i.embedCtx, i, d)
 			})
 		}
 		if d.Label == "" {
@@ -640,6 +650,9 @@ func (i *indexer) addIndexer(name, lang string) error {
 }
 
 func (i *indexer) Close() {
+	if i.embedCancel != nil {
+		i.embedCancel()
+	}
 	// Wait for any in-flight async embeddings before closing the vector store.
 	i.embedWg.Wait()
 	if i.vectorStore != nil {
@@ -682,7 +695,7 @@ func (b *MultiBatch) Add(d *document.Document) error {
 		}
 	}
 	if b.indexer.embedder != nil && b.indexer.vectorStore != nil {
-		embedDocumentChunks(b.indexer, d)
+		embedDocumentChunks(b.indexer.embedCtx, b.indexer, d)
 	}
 	idx := b.indexer.getOrCreate(d.Language)
 	return b.getOrCreateBatch(idx.Name(), idx).Index(d.ID(), d)
@@ -859,7 +872,7 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	// Run semantic search if enabled and the embedding infrastructure is available.
 	if q.SemanticEnabled && i.embedder != nil && i.vectorStore != nil && q.Text != "" {
 		r.SemanticEnabled = true
-		vec, err := i.embedder.EmbedQuery(q.Text)
+		vec, err := i.embedder.EmbedQuery(context.Background(), q.Text)
 		if err != nil {
 			log.Warn().Err(err).Msg("semantic query embedding failed")
 		} else {

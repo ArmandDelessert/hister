@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/asciimoo/hister/config"
@@ -48,7 +49,7 @@ type indexer struct {
 	dir               string
 	dataDir           string
 	langDetector      document.LanguageDetector
-	reindexInProgress bool
+	reindexInProgress atomic.Bool
 	embedder          *vectorstore.Embedder
 	vectorStore       vectorstore.VectorStore
 	embedCtx          context.Context
@@ -312,16 +313,11 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 
 func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages bool, dirs []*config.Directory) error {
 	// TODO store new documents in both indexes while running reindex to guarantee not losing any data.
-	if i.reindexInProgress {
+	if !i.reindexInProgress.CompareAndSwap(false, true) {
 		return errors.New("Reindex is already running")
 	}
 	idx := i
-	idx.reindexInProgress = true
-	defer func() {
-		if idx != nil {
-			idx.reindexInProgress = false
-		}
-	}()
+	defer idx.reindexInProgress.Store(false)
 	tmpBasePath := filepath.Join(basePath, "reindex")
 	if _, err := os.Stat(tmpBasePath); err == nil {
 		if err := os.RemoveAll(tmpBasePath); err != nil {

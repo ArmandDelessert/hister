@@ -488,6 +488,18 @@ var indexCmd = &cobra.Command{
 		noRobots, _ := cmd.Flags().GetBool("no-robots")
 		cfg.Crawler.UserAgent = UserAgent
 		applyCrawlerBackendFlags(cmd)
+		if ua, _ := cmd.Flags().GetString("user-agent"); ua != "" {
+			UserAgent = ua
+			cfg.Crawler.UserAgent = ua
+		}
+		if cmd.Flags().Changed("delay") {
+			d, _ := cmd.Flags().GetInt("delay")
+			cfg.Crawler.Delay = d
+		}
+		if cmd.Flags().Changed("timeout") {
+			t, _ := cmd.Flags().GetInt("timeout")
+			cfg.Crawler.Timeout = t
+		}
 
 		var robotsCache *crawler.RobotsCache
 		if !noRobots && !cfg.Crawler.NoRobots {
@@ -697,6 +709,9 @@ func init() {
 	indexCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
 	indexCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 	indexCmd.Flags().Bool("no-robots", false, "Disable robots.txt compliance during crawling")
+	indexCmd.Flags().Int("delay", 0, "Delay in seconds between requests (0 = no delay; overrides config)")
+	indexCmd.Flags().Int("timeout", 0, "Request timeout in seconds (0 = 5s default; overrides config)")
+	indexCmd.Flags().String("user-agent", "", "User-agent string for requests (overrides config)")
 }
 
 var deleteCmd = &cobra.Command{

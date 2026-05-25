@@ -41,7 +41,7 @@ jobs:
 
       - name: Run golangci-lint
         if: steps.changes.outputs.skip != 'true'
-        uses: golangci/golangci-lint-action@v9.2.0
+        uses: golangci/golangci-lint-action@v9.2.1
 
   npm-format:
     name: NPM formatting

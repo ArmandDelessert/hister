@@ -62,17 +62,16 @@ Run `hister import-browser auto-detect` with no arguments to auto-detect browser
 
 ### Manual
 
-Run `hister import-browser [operation] [arg1] [arg2]` to target a specific browser or database file:
+Run `hister import-browser [arg1] [arg2]` to target a specific browser or database file:
 
-- `[operation]` is required: 
-  - `auto-detect`: for auto-detecting
-  - `browser`: arg1: the browser, arg2: database file; Omit to auto-detect
-  - `file`: arg1: the database file, arg2 is not needed
+- `arg1` a browser or database
+- `arg2` a database: optional if browser is used in `arg1`, not needed if a database is specified in `arg1`
+- Omit both to use auto-detection
 
 For example:
 
 ```bash
-hister import-browser browser firefox ~/.mozilla/firefox/abc123.default/places.sqlite
+hister import-browser firefox ~/.mozilla/firefox/abc123.default/places.sqlite
 ```
 
 This will print a count of how many (unique) URLs have been detected, and ask for confirmation before proceeding (press Enter to submit your choice, `Y` being the default).

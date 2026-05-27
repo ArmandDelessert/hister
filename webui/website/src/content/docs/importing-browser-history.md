@@ -58,14 +58,15 @@ Examples for Chrome: (note that some parts _will_ be different for you!)
 
 ### Auto Detection
 
-Run `hister import-browser` with no arguments to auto-detect browser histories. Hister will find histories for Firefox, Firefox Developer Edition, Zen, Waterfox, Chrome, Chromium, Brave, Vivaldi, Edge and Opera if they are in the standard locations.
+Run `hister import-browser` with no arguments to auto-detect browser histories. Hister will find histories for Firefox, Firefox Developer Edition, Zen, Waterfox, Chrome, Chromium, Brave, Vivaldi, Edge, Opera and Ladybird if they are in the standard locations.
 
 ### Manual
 
-Run `hister import-browser [browser] [path]` to target a specific browser or database file:
+Run `hister import-browser [arg1] [arg2]` to target a specific browser or database file:
 
-- `[browser]` is optional: either `firefox` or `chrome`. Omit to auto-detect.
-- `[path]` is optional: path to the browser history database. Omit to use the default location for the given browser.
+- `arg1` a browser or database
+- `arg2` a database: optional if browser is used in `arg1`, not needed if a database is specified in `arg1`
+- Omit both to use auto-detection
 
 For example:
 

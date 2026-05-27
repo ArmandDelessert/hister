@@ -290,15 +290,16 @@ Import browsing history from a supported browser.
 
 Usage:
   import-browser                        - auto-detect all installed browsers
-  import-browser BROWSER_TYPE           - auto-discover the database for the given browser
-  import-browser BROWSER_TYPE DB_PATH   - use the explicit database path
+  import-browser BROWSER_TYPE 			- auto-detect database path
+  import-browser DB_PATH				- auto-detect browser type
+  import-browser BROWSER_TYPE DB_PATH   - import a browser type with a specific database path
 
-Supported browser types: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox
+Supported for browser types for auto-detecting: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox, Ladybird
 
 The Firefox URL database is usually located at ~/.mozilla/firefox/*.default/places.sqlite
 The Chrome/Chromium URL database is usually located at ~/.config/chromium/Default/History
 `,
-	Args: ZeroToTwoArgs(),
+	Args: cobra.RangeArgs(0, 2),
 	Run:  importHistory,
 }
 
@@ -1469,29 +1470,28 @@ func importHistory(cmd *cobra.Command, args []string) {
 			}
 		}
 
-	case 1:
-		// Browser name given; auto-discover its database.
-		browser := strings.ToLower(args[0])
-		var found bool
-		for _, db := range getDBPaths() {
-			if strings.HasPrefix(strings.ToLower(db.name), browser) {
-				found = true
-				for _, path := range db.paths {
-					importDB(path, db.table_name, cmd)
-				}
+	case 1, 2:
+		if len(args) == 1 {
+			// check if args[0] is a file or not and call the correct function
+			if _, err := os.Stat(args[0]); os.IsNotExist(err) {
+				importBrowser(strings.ToLower(args[0]), cmd)
+			} else {
+				importHistoryFile(args[0], cmd)
 			}
-		}
-		if !found {
-			log.Fatal().Str("browser", args[0]).Msg("no database found for browser")
+		} else {
+			browser := args[0]
+			table_name := browserTableName(browser)
+			println(browser)
+			println(table_name)
+			if table_name == "" {
+				log.Warn().Msg(fmt.Sprintf("Unknown browser, couldn't auto detect table name using %s as table name", browser))
+				table_name = browser
+			}
+			importDB(args[1], table_name, cmd)
 		}
 
-	case 2:
-		// Browser name + explicit path.
-		table := browserTableName(args[0])
-		if table == "" {
-			log.Fatal().Str("browser", args[0]).Msg("unknown browser type")
-		}
-		importDB(args[1], table, cmd)
+	default:
+		log.Fatal().Msg(cmd.Long)
 	}
 
 	// TODO optional date filter
@@ -1500,6 +1500,38 @@ func importHistory(cmd *cobra.Command, args []string) {
 	//	vf = "last_visit_date"
 	//}
 	//q += fmt.Sprintf(" AND %s >= datetime('now', 'localtime', '-1 month')", vf)
+}
+
+func importBrowser(browser string, cmd *cobra.Command) {
+	var found bool
+
+	for _, db := range getDBPaths() {
+		if strings.HasPrefix(strings.ToLower(db.name), browser) {
+			found = true
+			for _, path := range db.paths {
+				importDB(path, db.table_name, cmd)
+			}
+		}
+	}
+	if !found {
+		log.Fatal().Str("browser", browser).Msg("no database found for browser")
+	}
+}
+
+func importHistoryFile(file_path string, cmd *cobra.Command) {
+	var table string
+
+	if strings.HasSuffix(file_path, "places.sqlite") {
+		table = "moz_places"
+	} else if strings.HasSuffix(file_path, "History") {
+		table = "urls"
+	} else if strings.HasSuffix(file_path, "History.db") {
+		table = "History"
+	} else {
+		log.Fatal().Str("file", file_path).Msg("Couldn't auto detect table")
+	}
+
+	importDB(file_path, table, cmd)
 }
 
 func importDB(dbFile string, table string, cmd *cobra.Command) {
@@ -1919,24 +1951,8 @@ func browserTableName(browser string) string {
 		return "moz_places"
 	case "chrome", "chromium", "brave", "edge", "vivaldi", "opera":
 		return "urls"
+	case "ladybird":
+		return "History"
 	}
 	return ""
-}
-
-func ZeroOrTwoArgs() cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) != 0 && len(args) != 2 {
-			return fmt.Errorf("accepts 0 or 2 arguments, received %d", len(args))
-		}
-		return nil
-	}
-}
-
-func ZeroToTwoArgs() cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) > 2 {
-			return fmt.Errorf("accepts 0, 1, or 2 arguments, received %d", len(args))
-		}
-		return nil
-	}
 }

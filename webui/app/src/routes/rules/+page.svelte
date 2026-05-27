@@ -8,6 +8,7 @@
   import * as Table from '@hister/components/ui/table';
   import { Shield, Link2, Plus, Trash2, Pencil, Check, X } from '@lucide/svelte';
   import { PageHeader } from '@hister/components';
+  import { Label } from '@hister/components/ui/label';
   import * as Alert from '@hister/components/ui/alert';
   import AlertCircle from '@lucide/svelte/icons/circle-alert';
   import CheckCircle from '@lucide/svelte/icons/circle-check';
@@ -337,22 +338,26 @@
         >
           <form
             onsubmit={addAlias}
-            class="flex w-full flex-col items-stretch gap-3 md:flex-row md:items-center"
+            class="flex w-full flex-col items-stretch gap-3 md:flex-row md:items-end"
           >
-            <div class="flex items-center gap-3 md:contents">
+            <div class="flex flex-col gap-1">
+              <Label class="font-outfit text-text-brand text-sm font-bold">Keyword</Label>
               <Input
                 type="text"
                 variant="brutal"
                 bind:value={newAliasKeyword}
                 placeholder="keyword..."
-                class="bg-card-surface focus-visible:border-hister-indigo h-10 w-28 px-3 md:w-35"
+                class="bg-card-surface focus-visible:border-hister-indigo h-10 w-full px-3 md:w-35"
               />
+            </div>
+            <div class="flex flex-1 flex-col gap-1">
+              <Label class="font-outfit text-text-brand text-sm font-bold">Expands to</Label>
               <Input
                 type="text"
                 variant="brutal"
                 bind:value={newAliasValue}
                 placeholder="expands to..."
-                class="bg-card-surface focus-visible:border-hister-indigo h-10 flex-1 px-3"
+                class="bg-card-surface focus-visible:border-hister-indigo h-10 w-full px-3"
               />
             </div>
             <Button
@@ -501,18 +506,22 @@
         <div
           class="bg-muted-surface border-brutal-border flex items-center border-b-[3px] px-4 py-4 md:px-5 md:py-5"
         >
-          <div class="flex w-full flex-col items-stretch gap-3 md:flex-row md:items-center">
-            <div class="flex items-center gap-3 md:contents">
+          <div class="flex w-full flex-col items-stretch gap-3 md:flex-row md:items-end">
+            <div class="flex flex-1 flex-col gap-1">
+              <Label class="font-outfit text-text-brand text-sm font-bold">Pattern</Label>
               <Input
                 type="text"
                 variant="brutal"
                 bind:value={newRulePattern}
                 placeholder="Enter Go regexp pattern"
-                class="bg-card-surface focus-visible:border-hister-coral h-10 flex-1 px-3"
+                class="bg-card-surface focus-visible:border-hister-coral h-10 w-full px-3"
               />
+            </div>
+            <div class="flex flex-col gap-1">
+              <Label class="font-outfit text-text-brand text-sm font-bold">Type</Label>
               <select
                 bind:value={newRuleType}
-                class="bg-card-surface border-brutal-border font-space text-text-brand h-10 w-25 shrink-0 cursor-pointer appearance-none border-[3px] px-3 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-27.5"
+                class="bg-card-surface border-brutal-border font-space text-text-brand h-10 w-full shrink-0 cursor-pointer appearance-none border-[3px] px-3 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-27.5"
               >
                 <option value="skip">SKIP</option>
                 <option value="priority">PRIORITY</option>

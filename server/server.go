@@ -1177,6 +1177,28 @@ func serveRules(c *webContext) {
 	serve200(c)
 }
 
+func serveGetFacets(c *webContext) {
+	params := c.Request.URL.Query()
+	q := &indexer.Query{
+		Text:       params.Get("q"),
+		Facets:     true,
+		FacetsOnly: true,
+	}
+	for param, field := range map[string]*int64{"date_from": &q.DateFrom, "date_to": &q.DateTo} {
+		if v := params.Get(param); v != "" {
+			if t, err := strconv.ParseInt(v, 10, 64); err == nil {
+				*field = t
+			}
+		}
+	}
+	res, err := doSearch(q, c.Config, c.effectiveRules(), c.UserID)
+	if err != nil || res.Facets == nil {
+		c.JSON(map[string]any{})
+		return
+	}
+	c.JSON(res.Facets)
+}
+
 func serveGet(c *webContext) {
 	u := c.Request.URL.Query().Get("url")
 	doc := indexer.GetByURLAndUser(u, c.UserID)

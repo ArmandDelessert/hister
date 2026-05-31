@@ -462,6 +462,34 @@ func init() {
 			},
 		},
 		{
+			Name:         "Get facets",
+			Path:         "/api/facets",
+			Method:       GET,
+			CSRFRequired: false,
+			Handler:      serveGetFacets,
+			Description:  "Return facet counts (domains, languages, date histogram) for a query without fetching documents",
+			Args: []*EndpointArg{
+				{
+					Name:        "q",
+					Type:        "string",
+					Required:    true,
+					Description: "Search query text",
+				},
+				{
+					Name:        "date_from",
+					Type:        "integer",
+					Required:    false,
+					Description: "Unix timestamp lower bound for the added field",
+				},
+				{
+					Name:        "date_to",
+					Type:        "integer",
+					Required:    false,
+					Description: "Unix timestamp upper bound for the added field",
+				},
+			},
+		},
+		{
 			Name:         "Rules",
 			Path:         "/api/rules",
 			Method:       GET,

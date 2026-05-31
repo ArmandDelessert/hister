@@ -82,6 +82,9 @@ type Query struct {
 	// (domain, language). Zero uses the default. Useful for completion
 	// callers that want to post-filter a larger pool by prefix.
 	FacetTermSize int `json:"facet_term_size,omitempty"`
+	// FacetsOnly skips document fetching (size=0) and returns only facet
+	// counts. Requires Facets=true. Used by the /api/facets endpoint.
+	FacetsOnly bool `json:"facets_only,omitempty"`
 	// MatchAll bypasses the text-DSL builder and runs a match-all query.
 	// Combine with UserID / Facets / DateFrom / DateTo for cheap aggregate
 	// queries (e.g. completion sources). Text is ignored when set.
@@ -1002,7 +1005,10 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	req := bleve.NewSearchRequest(q.create())
 	req.Fields = allFields
 
-	if q.Limit > 0 {
+	if q.FacetsOnly {
+		req.Size = 0
+		req.Fields = nil
+	} else if q.Limit > 0 {
 		req.Size = q.Limit
 	} else {
 		req.Size = 100

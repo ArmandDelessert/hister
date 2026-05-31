@@ -26,7 +26,13 @@
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
   import { ResultState } from '$lib/result-state.svelte';
   import { showHelp } from '$lib/stores';
-  import type { SearchResults, SemanticHit, SearchResult, SearchQueryOptions } from '$lib/search';
+  import type {
+    SearchResults,
+    SemanticHit,
+    SearchResult,
+    SearchQueryOptions,
+    FacetsResult,
+  } from '$lib/search';
   import { RESULTS_PER_PAGE } from '$lib/search';
   import { animate } from 'animejs';
   import { Input } from '@hister/components/ui/input';
@@ -59,6 +65,7 @@
     Calendar,
     Filter,
     Sparkles,
+    SlidersHorizontal,
   } from '@lucide/svelte';
   import type { HistoryItem } from '$lib/types';
 
@@ -397,6 +404,130 @@
     ...(lastResults?.history ?? []).map((r): DisplayResult => ({ ...r, isPinned: true })),
     ...mergedResults.map((r): DisplayResult => ({ ...r, isPinned: false })),
   ]);
+
+  // Faceted navigation — lazy fetch on dropdown open
+  const bucketLabels: Record<string, string> = {
+    last_24h: 'Last 24 hours',
+    last_7d: 'Last 7 days',
+    last_30d: 'Last 30 days',
+    last_year: 'Last year',
+    older: 'Older',
+  };
+
+  // facetsCache maps a query+date key to the fetched FacetsResult
+  let facetsCache = $state(new Map<string, FacetsResult>());
+  let facetsLoading = $state(false);
+  let filtersDropdownOpen = $state(false);
+
+  function facetsCacheKey(): string {
+    return `${query}|${dateFrom}|${dateTo}`;
+  }
+
+  const currentFacets = $derived(facetsCache.get(facetsCacheKey()));
+
+  async function fetchFacets() {
+    if (!query || facetsLoading) return;
+    const key = facetsCacheKey();
+    if (facetsCache.has(key)) return;
+    facetsLoading = true;
+    try {
+      const params = new URLSearchParams({ q: query });
+      if (dateFrom) {
+        params.set('date_from', String(Math.floor(new Date(dateFrom).getTime() / 1000)));
+      }
+      if (dateTo) {
+        params.set('date_to', String(Math.floor(new Date(dateTo).getTime() / 1000)));
+      }
+      const res = await fetch(`api/facets?${params}`);
+      if (res.ok) {
+        const data: FacetsResult = await res.json();
+        facetsCache = new Map(facetsCache).set(key, data);
+      }
+    } finally {
+      facetsLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (filtersDropdownOpen) fetchFacets();
+  });
+
+  // Invalidate cache when query or dates change so next open re-fetches
+  $effect(() => {
+    // track as dependencies
+    const _q = query;
+    const _df = dateFrom;
+    const _dt = dateTo;
+    facetsCache = new Map();
+  });
+
+  function dateRangeForBucket(name: string): { from: string; to: string } {
+    const now = new Date();
+    const toISO = (d: Date) => d.toISOString().slice(0, 10);
+    const ago = (days: number) => toISO(new Date(now.getTime() - days * 86400 * 1000));
+    switch (name) {
+      case 'last_24h':
+        return { from: ago(1), to: '' };
+      case 'last_7d':
+        return { from: ago(7), to: '' };
+      case 'last_30d':
+        return { from: ago(30), to: '' };
+      case 'last_year':
+        return { from: ago(365), to: '' };
+      case 'older':
+        return { from: '', to: ago(365) };
+      default:
+        return { from: '', to: '' };
+    }
+  }
+
+  const activeDomainFilters = $derived(
+    new Set([...query.matchAll(/\bdomain:(\S+)/g)].map((m) => m[1])),
+  );
+  const activeLanguageFilters = $derived(
+    new Set([...query.matchAll(/\blanguage:(\S+)/g)].map((m) => m[1])),
+  );
+  const activeDateBucket = $derived(
+    (() => {
+      if (!dateFrom && !dateTo) return null;
+      const now = new Date();
+      const toISO = (d: Date) => d.toISOString().slice(0, 10);
+      const ago = (days: number) => toISO(new Date(now.getTime() - days * 86400 * 1000));
+      const buckets = [
+        { name: 'last_24h', from: ago(1), to: '' },
+        { name: 'last_7d', from: ago(7), to: '' },
+        { name: 'last_30d', from: ago(30), to: '' },
+        { name: 'last_year', from: ago(365), to: '' },
+        { name: 'older', from: '', to: ago(365) },
+      ];
+      return buckets.find((b) => b.from === dateFrom && b.to === dateTo)?.name ?? null;
+    })(),
+  );
+  const activeFilterCount = $derived(
+    activeDomainFilters.size + activeLanguageFilters.size + (activeDateBucket ? 1 : 0),
+  );
+  const showFiltersButton = $derived(hasResults || activeFilterCount > 0);
+
+  function toggleQueryToken(prefix: string, value: string) {
+    const token = `${prefix}:${value}`;
+    if (query.includes(token)) {
+      query = query.replace(token, '').replace(/\s+/g, ' ').trim();
+    } else {
+      query = query.trim() ? `${query.trim()} ${token}` : token;
+    }
+  }
+
+  function toggleDateBucket(name: string) {
+    if (activeDateBucket === name) {
+      dateFrom = '';
+      dateTo = '';
+      sendQuery(query);
+    } else {
+      const { from, to } = dateRangeForBucket(name);
+      dateFrom = from;
+      dateTo = to;
+    }
+  }
 
   function connect() {
     wsManager = new WebSocketManager(config.wsUrl, {
@@ -1390,6 +1521,127 @@
                       <Eye class="size-3" />
                       Preview
                     </Button>
+                  {/if}
+                  {#if showFiltersButton}
+                    <DropdownMenu.Root bind:open={filtersDropdownOpen}>
+                      <DropdownMenu.Trigger>
+                        {#snippet child({ props })}
+                          <Button
+                            {...props}
+                            variant="ghost"
+                            size="sm"
+                            class="font-inter text-text-brand-muted hover:text-hister-indigo gap-1 text-xs"
+                          >
+                            <SlidersHorizontal class="size-3" />
+                            Filters
+                            {#if activeFilterCount > 0}
+                              <span
+                                class="bg-hister-indigo text-background flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none"
+                                >{activeFilterCount}</span
+                              >
+                            {/if}
+                            <ChevronDown class="size-3" />
+                          </Button>
+                        {/snippet}
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Content
+                        class="border-brutal-border bg-card-surface w-72 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
+                      >
+                        <div class="space-y-3">
+                          {#if facetsLoading}
+                            <p class="font-inter text-text-brand-muted text-xs">Loading filters…</p>
+                          {:else}
+                            {#if currentFacets?.domains?.length}
+                              <div class="space-y-1.5">
+                                <p
+                                  class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                                >
+                                  <Globe class="size-3" />
+                                  Domains
+                                </p>
+                                <div class="flex flex-wrap gap-1">
+                                  {#each currentFacets.domains as { term, count } (term)}
+                                    <button
+                                      class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeDomainFilters.has(
+                                        term,
+                                      )
+                                        ? 'border-hister-indigo bg-hister-indigo text-background'
+                                        : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                                      onclick={() => toggleQueryToken('domain', term)}
+                                    >
+                                      {term}
+                                      <span class="opacity-60">({count})</span>
+                                    </button>
+                                  {/each}
+                                </div>
+                              </div>
+                            {/if}
+                            {#if currentFacets?.languages?.length}
+                              {#if currentFacets?.domains?.length}
+                                <Separator class="bg-border-brand-muted" />
+                              {/if}
+                              <div class="space-y-1.5">
+                                <p
+                                  class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                                >
+                                  <Globe class="size-3" />
+                                  Languages
+                                </p>
+                                <div class="flex flex-wrap gap-1">
+                                  {#each currentFacets.languages as { term, count } (term)}
+                                    <button
+                                      class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeLanguageFilters.has(
+                                        term,
+                                      )
+                                        ? 'border-hister-indigo bg-hister-indigo text-background'
+                                        : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                                      onclick={() => toggleQueryToken('language', term)}
+                                    >
+                                      {term}
+                                      <span class="opacity-60">({count})</span>
+                                    </button>
+                                  {/each}
+                                </div>
+                              </div>
+                            {/if}
+                            {#if currentFacets?.date_histogram?.some((b) => b.count > 0)}
+                              {#if currentFacets?.domains?.length || currentFacets?.languages?.length}
+                                <Separator class="bg-border-brand-muted" />
+                              {/if}
+                              <div class="space-y-1.5">
+                                <p
+                                  class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                                >
+                                  <Calendar class="size-3" />
+                                  Date Added
+                                </p>
+                                <div class="flex flex-col gap-1">
+                                  {#each currentFacets.date_histogram as { name, count } (name)}
+                                    {#if count > 0}
+                                      <button
+                                        class="font-inter flex cursor-pointer items-center justify-between rounded-none border-[2px] px-2 py-1 text-xs transition-colors {activeDateBucket ===
+                                        name
+                                          ? 'border-hister-indigo bg-hister-indigo text-background'
+                                          : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                                        onclick={() => toggleDateBucket(name)}
+                                      >
+                                        <span>{bucketLabels[name] ?? name}</span>
+                                        <span class="opacity-60">{count}</span>
+                                      </button>
+                                    {/if}
+                                  {/each}
+                                </div>
+                              </div>
+                            {/if}
+                            {#if !currentFacets?.domains?.length && !currentFacets?.languages?.length && !currentFacets?.date_histogram?.some((b) => b.count > 0)}
+                              <p class="font-inter text-text-brand-muted text-xs">
+                                No filters available for this query.
+                              </p>
+                            {/if}
+                          {/if}
+                        </div>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Root>
                   {/if}
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger>

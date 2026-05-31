@@ -127,6 +127,31 @@ func createMatchQuery(s string, boost float64) query.Query {
 	return q
 }
 
+// buildFieldQuery creates the appropriate Bleve query for a named field and value.
+// It uses WildcardQuery when v contains '*', TermQuery for url/domain fields,
+// and MatchQuery for all other fields.
+func buildFieldQuery(field, v string) query.Query {
+	if strings.Contains(v, "*") {
+		q := bleve.NewWildcardQuery(strings.ToLower(v))
+		q.SetField(field)
+		q.SetBoost(weights[field])
+		return q
+	}
+	if field == "url" || field == "domain" {
+		if field == "url" {
+			v = normalizeFileURL(v)
+		}
+		q := bleve.NewTermQuery(v)
+		q.SetField(field)
+		q.SetBoost(weights[field])
+		return q
+	}
+	q := bleve.NewMatchQuery(v)
+	q.SetField(field)
+	q.SetBoost(weights[field])
+	return q
+}
+
 // Matches exact phrases without stopwords
 func createMatchPhraseQuery(s string, boost float64) query.Query {
 	tiq := bleve.NewMatchPhraseQuery(s)
@@ -162,19 +187,7 @@ func getTokenQuery(t Token) (query.Query, bool) {
 				negated = true
 				v = v[1:]
 			}
-			if field == "url" || field == "domain" {
-				if field == "url" {
-					v = normalizeFileURL(v)
-				}
-				q := bleve.NewTermQuery(v)
-				q.SetField(field)
-				q.SetBoost(weights[field])
-				return q, negated
-			}
-			q := bleve.NewMatchQuery(v)
-			q.SetField(field)
-			q.SetBoost(weights[field])
-			return q, negated
+			return buildFieldQuery(field, v), negated
 		}
 		return createMatchPhraseQuery(v, 1), negated
 	case TokenWord:
@@ -238,40 +251,12 @@ func getTokenQuery(t Token) (query.Query, bool) {
 					}
 				}
 			}
-			if strings.Contains(v, "*") {
-				q := bleve.NewWildcardQuery(strings.ToLower(v))
-				q.SetField(field)
-				q.SetBoost(weights[field])
-				return q, negated
-			}
-			if field == "url" || field == "domain" {
-				if field == "url" {
-					v = normalizeFileURL(v)
-				}
-				q := bleve.NewTermQuery(v)
-				q.SetField(field)
-				q.SetBoost(weights[field])
-				return q, negated
-			}
-			q := bleve.NewMatchQuery(v)
-			q.SetField(field)
-			q.SetBoost(weights[field])
-			return q, negated
+			return buildFieldQuery(field, v), negated
 		}
 
 		qs := []query.Query{}
 		for _, f := range []string{"title", "text"} {
-			if strings.Contains(t.Value, "*") {
-				q := bleve.NewWildcardQuery(strings.ToLower(t.Value))
-				q.SetField(f)
-				q.SetBoost(weights[f])
-				qs = append(qs, q)
-			} else {
-				q := bleve.NewMatchQuery(t.Value)
-				q.SetField(f)
-				q.SetBoost(weights[f])
-				qs = append(qs, q)
-			}
+			qs = append(qs, buildFieldQuery(f, t.Value))
 		}
 		wcq := t.Value
 		if !strings.HasPrefix(wcq, "*") {
@@ -280,16 +265,8 @@ func getTokenQuery(t Token) (query.Query, bool) {
 		if !strings.HasSuffix(wcq, "*") {
 			wcq = wcq + "*"
 		}
-
-		urlq := bleve.NewWildcardQuery(wcq)
-		urlq.SetField("url")
-		urlq.SetBoost(weights["url"])
-		qs = append(qs, urlq)
-
-		domainq := bleve.NewWildcardQuery(wcq)
-		domainq.SetField("domain")
-		domainq.SetBoost(weights["domain"])
-		qs = append(qs, domainq)
+		qs = append(qs, buildFieldQuery("url", wcq))
+		qs = append(qs, buildFieldQuery("domain", wcq))
 		return bleve.NewDisjunctionQuery(qs...), negated
 
 	case TokenAlternation:

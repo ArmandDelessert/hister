@@ -136,23 +136,8 @@ func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error)
 	if pu.Scheme == "" || pu.Host == "" {
 		return errors.New("invalid URL: missing scheme/host")
 	}
-	if pu.Fragment != "" {
-		pu.Fragment = ""
-		d.URL = pu.String()
-	}
+	d.normalizeWebURL(pu)
 	d.Added = time.Now().Unix()
-	q := pu.Query()
-	qChange := false
-	for k := range q {
-		if k == "utm" || strings.HasPrefix(k, "utm_") {
-			qChange = true
-			q.Del(k)
-		}
-	}
-	if qChange {
-		pu.RawQuery = q.Encode()
-		d.URL = pu.String()
-	}
 	d.Type = types.Web
 	d.Domain = pu.Host
 	if d.HTML != "" {
@@ -160,17 +145,31 @@ func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error)
 			return err
 		}
 	}
-
-	d.Language = ld.DetectLanguage(d.Text)
-
-	d.processed = true
+	d.finalizeDocument(ld)
 	return nil
 }
 
-func (d *Document) processFile(ld LanguageDetector) error {
-	if ld == nil {
-		ld = NewNullLanguageDetector()
+// normalizeWebURL strips the URL fragment and removes UTM tracking parameters.
+func (d *Document) normalizeWebURL(pu *url.URL) {
+	if pu.Fragment != "" {
+		pu.Fragment = ""
+		d.URL = pu.String()
 	}
+	q := pu.Query()
+	changed := false
+	for k := range q {
+		if k == "utm" || strings.HasPrefix(k, "utm_") {
+			changed = true
+			q.Del(k)
+		}
+	}
+	if changed {
+		pu.RawQuery = q.Encode()
+		d.URL = pu.String()
+	}
+}
+
+func (d *Document) processFile(ld LanguageDetector) error {
 	osPath := files.FileURLToPath(d.URL)
 	if d.Text == "" {
 		content, err := os.ReadFile(osPath)
@@ -199,9 +198,14 @@ func (d *Document) processFile(ld LanguageDetector) error {
 	if d.Added == 0 {
 		d.Added = time.Now().Unix()
 	}
+	d.finalizeDocument(ld)
+	return nil
+}
+
+// finalizeDocument sets the document language and marks it as processed.
+func (d *Document) finalizeDocument(ld LanguageDetector) {
 	d.Language = ld.DetectLanguage(d.Text)
 	d.processed = true
-	return nil
 }
 
 // SetSkipSensitiveCheck controls whether sensitive content checks are skipped

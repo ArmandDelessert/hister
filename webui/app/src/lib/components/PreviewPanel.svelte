@@ -202,127 +202,127 @@
     </div>
   {:else if content || templateData}
     <div
-      class="border-border-brand-muted flex shrink-0 items-start gap-2 border-b-[2px] px-4 py-2.5"
+      class="border-border-brand-muted flex shrink-0 flex-col gap-0.5 border-b-[2px] px-4 py-2.5"
     >
-      <div class="flex flex-1 flex-col gap-0.5">
+      <div class="flex items-start gap-2">
         <h2
-          class="font-outfit text-text-brand line-clamp-2 text-lg leading-snug font-bold md:text-3xl"
+          class="font-outfit text-text-brand line-clamp-2 min-w-0 flex-1 text-lg leading-snug font-bold md:text-3xl"
         >
           <a href={url} target="_blank" rel="noopener noreferrer" class="hover:underline">{title}</a
           >
         </h2>
-        {#if meta?.author || meta?.published || meta?.type}
-          <span class="font-inter text-text-brand-muted text-xs">
-            {#if meta?.author}<span>{meta.author}</span>{/if}
-            {#if meta?.author && meta?.published}<span class="mx-1">·</span>{/if}
-            {#if meta?.published}<span>{formatMetaDate(meta.published)}</span>{/if}
-            {#if (meta?.author || meta?.published) && meta?.type}<span class="mx-1">·</span>{/if}
-            {#if meta?.type}<span class="uppercase">{meta.type}</span>{/if}
-          </span>
-        {/if}
-        {#if added}
-          <span
-            class="font-inter inline-flex flex-wrap items-center gap-1.5 text-xs"
-            title={formatTimestamp(added)}
+        <div class="mt-1 flex shrink-0 items-center gap-1">
+          <DropdownMenu.Root
+            onOpenChange={(open) => {
+              if (open) loadExtractors(url);
+            }}
           >
-            <span>indexed {formatTimestamp(added)}</span>
-            {#if versionCount > 0}
-              <span class="text-text-brand-muted">·</span>
-              <button
-                onclick={() => toggleVersions(url)}
-                class="font-inter text-hister-teal inline-flex cursor-pointer items-center gap-1 text-xs hover:underline"
-              >
-                <History class="size-3" />
-                {versionCount}
-                {versionCount === 1 ? 'previous version' : 'previous versions'}
-              </button>
-            {/if}
-          </span>
-        {/if}
-        {#if meta?.description}
-          <p class="font-inter text-text-brand-secondary mt-1 line-clamp-3 text-sm">
-            {meta.description}
-          </p>
-        {/if}
-        {#if meta?.videos?.length}
-          <button
-            onclick={() => (showEmbeddedVideos = !showEmbeddedVideos)}
-            class="font-inter mt-1 inline-flex cursor-pointer items-center gap-1.5 text-xs {showEmbeddedVideos
-              ? 'text-hister-teal'
-              : 'text-text-brand-muted hover:text-text-brand'}"
-          >
-            <Video class="size-3.5 shrink-0" />
-            {showEmbeddedVideos ? 'Hide' : 'Show'} embedded
-            {(meta.videos as EmbeddedVideo[]).length === 1 ? 'video' : 'videos'}
-          </button>
-        {/if}
-      </div>
-      <div class="mt-1 flex shrink-0 items-center gap-1">
-        <DropdownMenu.Root
-          onOpenChange={(open) => {
-            if (open) loadExtractors(url);
-          }}
-        >
-          <DropdownMenu.Trigger>
-            {#snippet child({ props })}
-              <Button
-                {...props}
-                variant="ghost"
-                size="icon-sm"
-                class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
-                title="Change extractor"
-              >
-                <MoreVertical class="size-4" />
-              </Button>
-            {/snippet}
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Content
-            class="border-brutal-border bg-card-surface w-44 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-          >
-            <div class="space-y-2">
-              <p
-                class="font-outfit text-text-brand-muted mb-1 text-xs font-bold tracking-widest uppercase"
-              >
-                Extractor
-              </p>
-              {#if extractorsLoading}
-                <p class="font-inter text-text-brand-muted text-xs">Loading…</p>
-              {:else if availableExtractors.length}
-                <DropdownMenu.RadioGroup
-                  value={extractorName || availableExtractors[0].name}
-                  onValueChange={(v) => {
-                    extractorName = v;
-                  }}
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  variant="ghost"
+                  size="icon-sm"
+                  class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
+                  title="Change extractor"
                 >
-                  {#each availableExtractors as ext, i (ext.name)}
-                    <DropdownMenu.RadioItem value={ext.name}>{ext.name}</DropdownMenu.RadioItem>
-                  {/each}
-                </DropdownMenu.RadioGroup>
+                  <MoreVertical class="size-4" />
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content
+              class="border-brutal-border bg-card-surface w-44 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
+            >
+              <div class="space-y-2">
+                <p
+                  class="font-outfit text-text-brand-muted mb-1 text-xs font-bold tracking-widest uppercase"
+                >
+                  Extractor
+                </p>
+                {#if extractorsLoading}
+                  <p class="font-inter text-text-brand-muted text-xs">Loading…</p>
+                {:else if availableExtractors.length}
+                  <DropdownMenu.RadioGroup
+                    value={extractorName || availableExtractors[0].name}
+                    onValueChange={(v) => {
+                      extractorName = v;
+                    }}
+                  >
+                    {#each availableExtractors as ext, i (ext.name)}
+                      <DropdownMenu.RadioItem value={ext.name}>{ext.name}</DropdownMenu.RadioItem>
+                    {/each}
+                  </DropdownMenu.RadioGroup>
+                {:else}
+                  <p class="font-inter text-text-brand-muted text-xs">No extractors available</p>
+                {/if}
+              </div>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+          {#if onfullscreentoggle}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="hover:text-text-brand"
+              onclick={onfullscreentoggle}
+              title={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {#if fullscreen}
+                <Minimize2 class="size-4" />
               {:else}
-                <p class="font-inter text-text-brand-muted text-xs">No extractors available</p>
+                <Maximize2 class="size-4" />
               {/if}
-            </div>
-          </DropdownMenu.Content>
-        </DropdownMenu.Root>
-        {#if onfullscreentoggle}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            class="hover:text-text-brand"
-            onclick={onfullscreentoggle}
-            title={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          >
-            {#if fullscreen}
-              <Minimize2 class="size-4" />
-            {:else}
-              <Maximize2 class="size-4" />
-            {/if}
+            </Button>
+          {/if}
+          <Button variant="ghost" size="icon-sm" class="hover:text-text-brand" onclick={onclose}>
+            <X class="size-4" />
           </Button>
-        {/if}
-        <Button variant="ghost" size="icon-sm" class="hover:text-text-brand" onclick={onclose}>
-          <X class="size-4" />
-        </Button>
+        </div>
       </div>
+      {#if meta?.author || meta?.published || meta?.type}
+        <span class="font-inter text-text-brand-muted text-xs">
+          {#if meta?.author}<span>{meta.author}</span>{/if}
+          {#if meta?.author && meta?.published}<span class="mx-1">·</span>{/if}
+          {#if meta?.published}<span>{formatMetaDate(meta.published)}</span>{/if}
+          {#if (meta?.author || meta?.published) && meta?.type}<span class="mx-1">·</span>{/if}
+          {#if meta?.type}<span class="uppercase">{meta.type}</span>{/if}
+        </span>
+      {/if}
+      {#if added}
+        <span
+          class="font-inter inline-flex flex-wrap items-center gap-1.5 text-xs"
+          title={formatTimestamp(added)}
+        >
+          <span>indexed {formatTimestamp(added)}</span>
+          {#if versionCount > 0}
+            <span class="text-text-brand-muted">·</span>
+            <button
+              onclick={() => toggleVersions(url)}
+              class="font-inter text-hister-teal inline-flex cursor-pointer items-center gap-1 text-xs hover:underline"
+            >
+              <History class="size-3" />
+              {versionCount}
+              {versionCount === 1 ? 'previous version' : 'previous versions'}
+            </button>
+          {/if}
+        </span>
+      {/if}
+      {#if meta?.description}
+        <p class="font-inter text-text-brand-secondary mt-1 line-clamp-3 text-sm">
+          {meta.description}
+        </p>
+      {/if}
+      {#if meta?.videos?.length}
+        <button
+          onclick={() => (showEmbeddedVideos = !showEmbeddedVideos)}
+          class="font-inter mt-1 inline-flex cursor-pointer items-center gap-1.5 text-xs {showEmbeddedVideos
+            ? 'text-hister-teal'
+            : 'text-text-brand-muted hover:text-text-brand'}"
+        >
+          <Video class="size-3.5 shrink-0" />
+          {showEmbeddedVideos ? 'Hide' : 'Show'} embedded
+          {(meta.videos as EmbeddedVideo[]).length === 1 ? 'video' : 'videos'}
+        </button>
+      {/if}
     </div>
     <ScrollArea class="min-h-0 flex-1">
       {#if showVersions}

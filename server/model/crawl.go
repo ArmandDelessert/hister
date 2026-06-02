@@ -109,7 +109,50 @@ func InsertCrawlURLIfNotExists(jobID, rawURL string, depth int) error {
 	return DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&cu).Error
 }
 
-// InsertCrawlURLDone records a URL as already done without going through the
+// BulkInsertCrawlURLs inserts all URLs for the given job in a single
+// transaction, silently skipping any that are already present.
+func BulkInsertCrawlURLs(jobID string, urls []string, depth int) error {
+	if len(urls) == 0 {
+		return nil
+	}
+	records := make([]CrawlURL, 0, len(urls))
+	for _, u := range urls {
+		records = append(records, CrawlURL{
+			JobID:  jobID,
+			URL:    u,
+			Depth:  depth,
+			Status: CrawlURLPending,
+		})
+	}
+	// CreateInBatches wraps each batch in its own transaction and generates a
+	// single multi-row INSERT per batch, keeping the statement size bounded.
+	return DB.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(records, 500).Error
+}
+
+// MarkDoneAndEnqueueLinks marks a crawl URL as done and inserts all discovered
+// child URLs in a single transaction, minimising the number of SQLite commits.
+func MarkDoneAndEnqueueLinks(id uint, jobID string, links []string, depth int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&CrawlURL{}).Where("id = ?", id).
+			Updates(map[string]any{"status": CrawlURLDone, "error": ""}).Error; err != nil {
+			return err
+		}
+		if len(links) == 0 {
+			return nil
+		}
+		records := make([]CrawlURL, 0, len(links))
+		for _, u := range links {
+			records = append(records, CrawlURL{
+				JobID:  jobID,
+				URL:    u,
+				Depth:  depth,
+				Status: CrawlURLPending,
+			})
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(records, 500).Error
+	})
+}
+
 // pending state (used for redirect targets that have been fetched indirectly).
 func InsertCrawlURLDone(jobID, rawURL string, depth int) error {
 	// Update if already present, otherwise insert as done.

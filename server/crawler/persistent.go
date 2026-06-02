@@ -164,8 +164,25 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 			}
 		}
 
-		if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLDone, ""); err != nil {
-			log.Warn().Err(err).Msg("failed to mark URL done")
+		// Resolve all discovered links first, then enqueue them together with
+		// the mark-done update in a single transaction.
+		finalParsed, err := url.Parse(finalURL)
+		if err != nil {
+			finalParsed = parsedURL
+		}
+		finalParsed.Fragment = ""
+
+		resolved := make([]string, 0, len(links))
+		for _, link := range links {
+			abs, err := resolveURL(finalParsed, link)
+			if err != nil || abs == "" {
+				continue
+			}
+			resolved = append(resolved, abs)
+		}
+
+		if err := model.MarkDoneAndEnqueueLinks(cur.ID, c.jobID, resolved, cur.Depth+1); err != nil {
+			log.Warn().Err(err).Msg("failed to mark URL done and enqueue links")
 		}
 
 		doc := &document.Document{
@@ -177,25 +194,6 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 		case ch <- doc:
 		case <-ctx.Done():
 			return model.UpdateCrawlJobStatus(c.jobID, model.CrawlJobInterrupted)
-		}
-
-		// Resolve and enqueue discovered links.
-		finalParsed, err := url.Parse(finalURL)
-		if err != nil {
-			finalParsed = parsedURL
-		}
-		finalParsed.Fragment = ""
-
-		for _, link := range links {
-			abs, err := resolveURL(finalParsed, link)
-			if err != nil || abs == "" {
-				continue
-			}
-			if err := model.InsertCrawlURLIfNotExists(c.jobID, abs, cur.Depth+1); err != nil {
-				if !model.IsUniqueConstraintError(err) {
-					log.Warn().Err(err).Str("url", abs).Msg("failed to insert discovered URL")
-				}
-			}
 		}
 	}
 

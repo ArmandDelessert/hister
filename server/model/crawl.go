@@ -8,7 +8,9 @@ import (
 	"errors"
 	"time"
 
+	sqlite3 "github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // CrawlJobStatus values.
@@ -88,17 +90,23 @@ func UpdateCrawlJobStatus(id, status string) error {
 	return DB.Model(&CrawlJob{}).Where("id = ?", id).Update("status", status).Error
 }
 
+// IsUniqueConstraintError reports whether err is a SQLite unique constraint
+// violation, meaning the row already exists in the database.
+func IsUniqueConstraintError(err error) bool {
+	var sqliteErr sqlite3.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique
+}
+
 // InsertCrawlURLIfNotExists adds a URL to the job's queue only when it has not
 // been seen before (the unique index on job_id+url enforces this).
 func InsertCrawlURLIfNotExists(jobID, rawURL string, depth int) error {
-	cu := CrawlURL{JobID: jobID, URL: rawURL}
-	result := DB.Where(cu).FirstOrCreate(&cu, CrawlURL{
+	cu := CrawlURL{
 		JobID:  jobID,
 		URL:    rawURL,
 		Depth:  depth,
 		Status: CrawlURLPending,
-	})
-	return result.Error
+	}
+	return DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&cu).Error
 }
 
 // InsertCrawlURLDone records a URL as already done without going through the

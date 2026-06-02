@@ -192,7 +192,9 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 				continue
 			}
 			if err := model.InsertCrawlURLIfNotExists(c.jobID, abs, cur.Depth+1); err != nil {
-				log.Warn().Err(err).Str("url", abs).Msg("failed to insert discovered URL")
+				if !model.IsUniqueConstraintError(err) {
+					log.Warn().Err(err).Str("url", abs).Msg("failed to insert discovered URL")
+				}
 			}
 		}
 	}

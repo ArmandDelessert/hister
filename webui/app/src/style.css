@@ -49,11 +49,24 @@
     text-decoration: underline;
   }
 
+  a:focus-visible,
+  button:focus-visible,
+  [role='button']:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--color-ring) 72%, transparent);
+    outline-offset: 3px;
+  }
+
   img[src] {
     display: block;
   }
 
   img:not([src]) {
+    display: none;
+  }
+
+  input[type='search']::-webkit-search-cancel-button,
+  input[type='search']::-webkit-search-decoration {
+    appearance: none;
     display: none;
   }
 
@@ -79,6 +92,12 @@
     font-weight: 600;
     background: transparent;
     color: inherit;
+  }
+
+  .dark mark {
+    color: var(--color-hister-amber);
+    background: color-mix(in srgb, var(--color-hister-amber) 16%, transparent);
+    padding: 0 0.12em;
   }
 
   /* Preview panel: wrap wide tables so horizontal overflow scrolls,

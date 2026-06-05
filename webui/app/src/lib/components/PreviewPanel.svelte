@@ -14,6 +14,7 @@
     onclose: () => void;
     fullscreen?: boolean;
     onfullscreentoggle?: () => void;
+    connected?: boolean;
   }
 
   interface DocumentVersion {
@@ -23,7 +24,14 @@
     text_diff: string;
   }
 
-  let { url, hintTitle = '', onclose, fullscreen = false, onfullscreentoggle }: Props = $props();
+  let {
+    url,
+    hintTitle = '',
+    onclose,
+    fullscreen = false,
+    onfullscreentoggle,
+    connected = false,
+  }: Props = $props();
 
   let title = $state('');
   let content = $state('');
@@ -165,9 +173,11 @@
 </script>
 
 <div
-  class="border-border-brand bg-card-surface flex flex-1 flex-col overflow-hidden {fullscreen
+  class="preview-panel border-border-brand bg-card-surface flex flex-1 flex-col overflow-hidden {fullscreen
     ? ''
-    : 'shrink-0 border-l-[3px]'}"
+    : connected
+      ? 'preview-panel-connected shrink-0 border-l-0'
+      : 'shrink-0 border-l-[3px]'}"
 >
   {#if loading}
     <div
@@ -202,7 +212,7 @@
     </div>
   {:else if content || templateData}
     <div
-      class="border-border-brand-muted flex shrink-0 flex-col gap-0.5 border-b-[2px] px-4 py-2.5"
+      class="preview-header border-border-brand-muted flex shrink-0 flex-col gap-0.5 border-b-[2px] px-4 py-2.5"
     >
       <div class="flex items-start gap-2">
         <h2
@@ -364,7 +374,7 @@
         </div>
       {:else}
         <div
-          class="font-inter text-text-brand-secondary prose dark:prose-invert prose-a:text-hister-teal w-full max-w-[60em] p-4 text-sm"
+          class="preview-content font-inter text-text-brand-secondary prose dark:prose-invert prose-a:text-hister-teal w-full max-w-[60em] p-4 text-sm"
         >
           {#if meta?.videos?.length && showEmbeddedVideos}
             <div class="not-prose mb-6 space-y-4">
@@ -471,3 +481,9 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .preview-panel-connected .preview-header {
+    background: var(--card-surface);
+  }
+</style>

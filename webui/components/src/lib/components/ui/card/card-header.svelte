@@ -16,8 +16,8 @@
 <div
   bind:this={ref}
   data-slot="card-header"
-  class={cn('flex items-center gap-4 px-6 py-6', className)}
-  style={color ? `background-color: var(--${color});` : undefined}
+  class={cn('flex items-center gap-4 px-6 py-6', color && 'card-header-accented', className)}
+  style={color ? `--card-header-color: var(--${color});` : undefined}
   {...restProps}
 >
   {@render children?.()}

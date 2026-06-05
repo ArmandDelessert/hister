@@ -19,18 +19,18 @@
   } = $props();
 
   const sizes = {
-    xs: { gap: 'gap-2', bar: 'w-1 h-6', text: 'text-sm md:text-lg tracking-[1px] font-extrabold' },
+    xs: { gap: 'gap-2', bar: 'w-1 h-6', text: 'text-sm md:text-lg font-extrabold' },
     sm: {
       gap: 'gap-2',
       bar: 'w-1.5 h-8',
-      text: 'text-lg md:text-xl tracking-[1px] font-extrabold',
+      text: 'text-lg md:text-xl font-extrabold',
     },
     md: {
       gap: 'gap-3',
       bar: 'w-1.5 h-8',
-      text: 'text-2xl md:text-3xl tracking-[2px] font-extrabold',
+      text: 'text-2xl md:text-3xl font-extrabold',
     },
-    lg: { gap: 'gap-6', bar: 'w-1.5 h-10', text: 'text-3xl md:text-5xl tracking-[3px] font-black' },
+    lg: { gap: 'gap-6', bar: 'w-1.5 h-10', text: 'text-3xl md:text-5xl font-black' },
   };
 
   const s = $derived(sizes[size]);

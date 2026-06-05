@@ -500,14 +500,14 @@
       <Card.Root>
         <Card.Header color="hister-indigo">
           <div class="flex h-12 w-12 shrink-0 items-center justify-center bg-white/20">
-            <Link2 class="text-background size-6" />
+            <Link2 class="size-6 text-white" />
           </div>
           <div class="flex flex-col gap-1">
             <Card.Title
-              class="font-space text-background text-xl font-extrabold tracking-[1px] uppercase"
+              class="font-space text-xl font-extrabold tracking-[1px] text-white uppercase"
               >Search aliases</Card.Title
             >
-            <Card.Description class="font-inter text-background/70 text-sm"
+            <Card.Description class="font-inter text-sm text-white/80"
               >{Object.keys(rules.aliases).length} aliases configured</Card.Description
             >
           </div>
@@ -542,7 +542,7 @@
             </div>
             <Button
               type="submit"
-              class="bg-hister-indigo font-space border-brutal-border brutal-press text-background h-10 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] uppercase"
+              class="bg-hister-indigo font-space border-brutal-border brutal-press h-10 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] text-white uppercase"
             >
               <Plus class="size-4 shrink-0" />
               Add
@@ -574,7 +574,7 @@
                   'font-space text-text-brand-muted h-auto px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:px-5',
                 )}
                 <Table.Head class="h-auto w-16 px-2 py-3 md:w-20 md:px-5">
-                  {@render filterToggleButton('bg-hister-indigo text-background', () => {
+                  {@render filterToggleButton('bg-hister-indigo text-white', () => {
                     aliasFilterOpen = !aliasFilterOpen;
                     if (!aliasFilterOpen) aliasFilter = '';
                   })}
@@ -657,19 +657,19 @@
       <Card.Root>
         <Card.Header color="hister-coral">
           <div class="flex h-12 w-12 shrink-0 items-center justify-center bg-white/20">
-            <Shield class="text-background size-6" />
+            <Shield class="size-6 text-white" />
           </div>
           <div class="flex flex-col gap-1">
             <Card.Title
-              class="font-space text-background text-xl font-extrabold tracking-[1px] uppercase"
+              class="font-space text-xl font-extrabold tracking-[1px] text-white uppercase"
               >Indexing rules</Card.Title
             >
-            <Card.Description class="font-inter text-background/70 text-sm"
+            <Card.Description class="font-inter text-sm text-white/80"
               >{ruleRows.length} rules configured · patterns use
               <a
                 href="https://pkg.go.dev/regexp/syntax"
                 target="_blank"
-                class="text-page-bg underline opacity-80 hover:opacity-100">Go regexp</a
+                class="text-white underline opacity-80 hover:opacity-100">Go regexp</a
               > syntax</Card.Description
             >
           </div>
@@ -703,7 +703,7 @@
             <Button
               type="button"
               onclick={addRule}
-              class="bg-hister-coral font-space border-brutal-border brutal-press text-background h-10 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] uppercase"
+              class="bg-hister-coral font-space border-brutal-border brutal-press h-10 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] text-white uppercase"
             >
               <Plus class="size-4 shrink-0" />
               Add
@@ -735,7 +735,7 @@
                   'font-space text-text-brand-muted h-auto w-20 px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:w-28 md:px-5',
                 )}
                 <Table.Head class="h-auto w-16 px-2 py-3 md:w-20 md:px-5">
-                  {@render filterToggleButton('bg-hister-coral text-background', () => {
+                  {@render filterToggleButton('bg-hister-coral text-white', () => {
                     ruleFilterOpen = !ruleFilterOpen;
                     if (!ruleFilterOpen) ruleFilter = '';
                   })}
@@ -788,10 +788,10 @@
                         variant="default"
                         class="font-space border-0 px-2 py-1 text-xs font-bold tracking-[0.5px] uppercase md:px-3 {row.type ===
                         'skip'
-                          ? 'bg-hister-rose text-background'
+                          ? 'bg-hister-rose text-white'
                           : row.type === 'priority'
-                            ? 'bg-hister-teal text-background'
-                            : 'text-background bg-violet-500'}"
+                            ? 'bg-hister-teal text-white'
+                            : 'bg-violet-500 text-white'}"
                       >
                         {row.type}
                       </Badge>

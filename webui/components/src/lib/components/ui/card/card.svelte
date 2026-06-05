@@ -28,12 +28,11 @@
   {rel}
   class={cn(
     'bg-card-surface text-card-foreground border-brutal-border flex flex-col gap-0 overflow-hidden rounded-none border-[3px] py-0 shadow-[6px_6px_0_var(--brutal-shadow)]',
+    color && 'card-accented',
     href && 'brutal-press-card block no-underline',
     className,
   )}
-  style={color
-    ? `border-color: var(--${color}); box-shadow: 6px 6px 0 var(--${color});`
-    : undefined}
+  style={color ? `--card-accent-color: var(--${color});` : undefined}
   {...restProps}
 >
   {@render children?.()}

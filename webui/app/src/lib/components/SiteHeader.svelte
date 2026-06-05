@@ -7,19 +7,19 @@
   let { config, onLogout }: { config: AppConfig | null; onLogout: () => void } = $props();
 
   const navItems = [
-    { label: 'History', href: 'history' },
-    { label: 'Rules', href: 'rules' },
-    { label: 'Add', href: 'add' },
+    { label: 'History', href: 'history', color: 'var(--hister-indigo)' },
+    { label: 'Rules', href: 'rules', color: 'var(--hister-teal)' },
+    { label: 'Add', href: 'add', color: 'var(--hister-coral)' },
   ];
 
   const iconBtn =
-    'text-text-brand-muted hover:text-hister-indigo size-8 shrink-0 transition-all hover:scale-110 md:size-10';
+    'text-text-brand-muted hover:text-hister-indigo hover:bg-muted-surface size-8 shrink-0 transition-all md:size-9';
   const navLink =
-    'font-space p-3 text-[11px] font-semibold tracking-[1px] uppercase no-underline hover:underline md:p-6 md:text-[13px] md:tracking-[1.5px]';
+    'primary-link font-space relative p-3 text-[11px] font-semibold tracking-[1px] uppercase no-underline transition-colors hover:no-underline md:p-6 md:text-[13px] md:tracking-[1.5px]';
 </script>
 
 <header
-  class="bg-brutal-bg border-brutal-border sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between gap-2 overflow-hidden border-b-[3px] px-3 md:grid md:h-16 md:grid-cols-[4rem_auto_4rem] md:justify-stretch md:gap-4 md:px-6"
+  class="site-header bg-brutal-bg border-brutal-border sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between gap-2 overflow-hidden border-b-[3px] px-3 md:grid md:h-16 md:grid-cols-[12rem_auto_12rem] md:justify-stretch md:gap-4 md:px-6"
 >
   <h1 class="flex shrink-0 items-center gap-1.5 md:gap-2">
     <img src="static/logo.png" alt="Hister logo" class="h-6 w-6 md:h-8 md:w-8" />
@@ -32,13 +32,15 @@
     </a>
   </h1>
 
-  <nav class="flex items-center justify-self-center">
+  <nav class="flex items-center justify-self-center" aria-label="Primary">
     {#each navItems as item (item.href)}
       {@const active = $page.url.pathname === new URL(item.href, $page.url).pathname}
       <a
         class="{navLink} {active
-          ? 'text-text-brand font-bold'
-          : 'text-text-brand-secondary hover:text-text-brand'}"
+          ? 'is-active text-text-brand font-bold'
+          : 'text-text-brand-muted hover:bg-muted-surface hover:text-text-brand'}"
+        style="--nav-color: {item.color};"
+        aria-current={active ? 'page' : undefined}
         href={item.href}>{item.label}</a
       >
     {/each}
@@ -79,3 +81,31 @@
     {/if}
   </div>
 </header>
+
+<style>
+  .site-header {
+    box-shadow: 0 1px 0 color-mix(in srgb, white 6%, transparent) inset;
+  }
+
+  .primary-link:hover {
+    color: color-mix(in srgb, var(--nav-color) 76%, var(--text-primary-brand));
+  }
+
+  .primary-link.is-active {
+    background: color-mix(in srgb, var(--nav-color) 9%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--nav-color) 10%, transparent) inset;
+  }
+
+  :global(.dark) .site-header {
+    box-shadow: 0 1px 0 color-mix(in srgb, white 8%, transparent) inset;
+  }
+
+  :global(.dark) .primary-link:hover {
+    color: color-mix(in srgb, var(--nav-color) 84%, white);
+  }
+
+  :global(.dark) .primary-link.is-active {
+    background: color-mix(in srgb, var(--nav-color) 13%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--nav-color) 16%, transparent) inset;
+  }
+</style>

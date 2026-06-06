@@ -1929,7 +1929,7 @@
                   {@const state = getResultState(r.url, r.label)}
                   <article
                     data-result
-                    class="result-card flex w-full scroll-my-[6em] gap-3 overflow-hidden transition-all duration-150"
+                    class="result-card flex w-full scroll-my-[6em] gap-3 transition-all duration-150"
                     class:result-card-active={i === highlightIdx}
                     class:mt-2.5={i !== 0}
                     style="--result-color: var(--{color});"
@@ -1971,7 +1971,7 @@
                         <a
                           data-result-link={r.url}
                           href={fileResultUrl(r.url)}
-                          class="result-title font-outfit text-md line-clamp-2 min-w-0 flex-1 font-semibold hover:underline md:text-xl"
+                          class="result-title font-outfit text-md min-w-0 flex-1 font-semibold hover:underline md:text-xl"
                           target={config.openResultsOnNewTab ? '_blank' : undefined}
                           onclick={() => {
                             sendHistoryBeacon(r.url, r.title || '*title*', query);
@@ -1995,86 +1995,95 @@
                           {removeResultsByDomain}
                         />
                       </div>
-                      <div class="result-meta flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        {#if r.domain}
-                          <span class="result-domain font-inter shrink-0 text-xs font-semibold"
-                            >{r.domain}</span
-                          >
-                        {/if}
-                        <span
-                          class="font-fira text-text-brand-muted min-w-0 flex-1 truncate overflow-hidden text-xs text-ellipsis whitespace-nowrap md:text-sm"
-                          title={r.url}>{displayResultPath(r.url, r.domain)}</span
-                        >
-                        <button
-                          class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
-                          title="Copy URL"
-                          onclick={async () => {
-                            await navigator.clipboard.writeText(r.url);
-                            copiedUrl = r.url;
-                            setTimeout(() => {
-                              copiedUrl = null;
-                            }, 1500);
-                          }}
-                        >
-                          {#if copiedUrl === r.url}
-                            <Check class="size-3 text-hister-teal" />
-                          {:else}
-                            <Copy class="size-3" />
-                          {/if}
-                        </button>
-                        {#if r.isPinned}
-                          <Badge
-                            variant="secondary"
-                            class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
-                            >pinned</Badge
-                          >
-                        {:else if r.added}
+                      <div
+                        class="result-meta flex min-w-0 max-w-full items-center gap-x-3 gap-y-1 overflow-hidden"
+                      >
+                        <div class="result-url-line flex min-w-0 max-w-full shrink items-center">
                           <span
-                            class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
-                            title={formatTimestamp(r.added)}>{formatRelativeTime(r.added)}</span
+                            class="result-url-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs md:text-sm"
+                            title={r.url}
                           >
-                        {/if}
-                        {#if state.displayLabel}
-                          <Badge
-                            variant="secondary"
-                            class="bg-hister-teal/20 h-4 max-w-[8rem] shrink-0 truncate border-0 px-1.5 py-0"
-                            title={state.displayLabel}
-                          >
-                            <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
-                          </Badge>
-                        {/if}
-                        {#if !disablePreviews}
-                          <Button
-                            data-readable
-                            variant="link"
-                            size="sm"
-                            class="text-text-brand-muted hover:text-hister-indigo h-auto shrink-0 cursor-pointer gap-0.5 p-0 text-xs font-medium md:text-sm"
-                            onclick={(e) => {
-                              highlightIdx = i;
-                              openReadable(e, r.url, r.title || '*title*');
+                            {#if r.domain}<span class="result-domain font-inter font-semibold"
+                                >{r.domain}</span
+                              >{/if}<span class="result-path font-fira text-text-brand-muted"
+                              >{displayResultPath(r.url, r.domain)}</span
+                            >
+                          </span>
+                        </div>
+                        <div
+                          class="result-secondary-meta flex shrink-0 items-center gap-x-3 gap-y-1"
+                        >
+                          <button
+                            class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
+                            title="Copy URL"
+                            onclick={async () => {
+                              await navigator.clipboard.writeText(r.url);
+                              copiedUrl = r.url;
+                              setTimeout(() => {
+                                copiedUrl = null;
+                              }, 1500);
                             }}
                           >
-                            <Eye class="size-3" /><span>view</span>
-                          </Button>
-                        {/if}
-                        {#if !r.isPinned && r.finalScore && config.semanticEnabled && semanticOn}
-                          <Tooltip.Provider delayDuration={0}>
-                            <Tooltip.Root>
-                              <Tooltip.Trigger>
-                                <Badge
-                                  variant="secondary"
-                                  class="bg-hister-indigo/10 text-hister-indigo shrink-0 border-0 px-1.5 py-0 align-middle font-mono text-[10px]"
-                                  >{r.finalScore?.toFixed(2)}</Badge
-                                >
-                              </Tooltip.Trigger>
-                              <Tooltip.Portal>
-                                <Tooltip.Content>
-                                  Result score: {r.finalScore?.toFixed(2)}
-                                </Tooltip.Content>
-                              </Tooltip.Portal>
-                            </Tooltip.Root>
-                          </Tooltip.Provider>
-                        {/if}
+                            {#if copiedUrl === r.url}
+                              <Check class="size-3 text-hister-teal" />
+                            {:else}
+                              <Copy class="size-3" />
+                            {/if}
+                          </button>
+                          {#if r.isPinned}
+                            <Badge
+                              variant="secondary"
+                              class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
+                              >pinned</Badge
+                            >
+                          {:else if r.added}
+                            <span
+                              class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
+                              title={formatTimestamp(r.added)}>{formatRelativeTime(r.added)}</span
+                            >
+                          {/if}
+                          {#if state.displayLabel}
+                            <Badge
+                              variant="secondary"
+                              class="result-label bg-hister-teal/20 min-h-4 shrink-0 border-0 px-1.5 py-0"
+                              title={state.displayLabel}
+                            >
+                              <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
+                            </Badge>
+                          {/if}
+                          {#if !disablePreviews}
+                            <Button
+                              data-readable
+                              variant="link"
+                              size="sm"
+                              class="text-text-brand-muted hover:text-hister-indigo h-auto shrink-0 cursor-pointer gap-0.5 p-0 text-xs font-medium md:text-sm"
+                              onclick={(e) => {
+                                highlightIdx = i;
+                                openReadable(e, r.url, r.title || '*title*');
+                              }}
+                            >
+                              <Eye class="size-3" /><span>view</span>
+                            </Button>
+                          {/if}
+                          {#if !r.isPinned && r.finalScore && config.semanticEnabled && semanticOn}
+                            <Tooltip.Provider delayDuration={0}>
+                              <Tooltip.Root>
+                                <Tooltip.Trigger>
+                                  <Badge
+                                    variant="secondary"
+                                    class="bg-hister-indigo/10 text-hister-indigo shrink-0 border-0 px-1.5 py-0 align-middle font-mono text-[10px]"
+                                    >{r.finalScore?.toFixed(2)}</Badge
+                                  >
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content>
+                                    Result score: {r.finalScore?.toFixed(2)}
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            </Tooltip.Provider>
+                          {/if}
+                        </div>
                       </div>
                       {#if r.text}
                         <p
@@ -2458,6 +2467,8 @@
 
   .result-title {
     color: color-mix(in srgb, var(--result-color) 82%, var(--text-primary-brand));
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .result-title:hover {
@@ -2465,11 +2476,14 @@
   }
 
   .result-snippet {
-    display: -webkit-box;
-    overflow: hidden;
     overflow-wrap: anywhere;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    word-break: break-word;
+  }
+
+  :global(.result-label) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
   }
 
   .result-url-text,

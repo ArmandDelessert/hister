@@ -676,7 +676,7 @@
                     {@const flatIdx = groupOffset + ii}
                     <article
                       data-result
-                      class="history-row flex items-start gap-3 overflow-hidden px-3 py-3 transition-all duration-150 md:items-center md:px-4"
+                      class="history-row flex items-start gap-3 px-3 py-3 transition-all duration-150 md:items-center md:px-4"
                       class:history-row-active={flatIdx === highlightIdx}
                       style="--history-color: {getColorVar(itemColor)};"
                     >
@@ -684,7 +684,7 @@
                         <a
                           data-result-link={item.url}
                           href={item.url}
-                          class="font-outfit text-hister-cyan block truncate text-base font-bold no-underline hover:underline md:text-lg"
+                          class="history-title font-outfit text-hister-cyan block text-base font-bold no-underline hover:underline md:text-lg"
                           target="_blank"
                           rel="noopener"
                           onclick={() => (highlightIdx = flatIdx)}
@@ -702,7 +702,7 @@
                             >
                           {/if}
                           <span
-                            class="font-fira text-text-brand-muted block truncate text-xs md:text-sm"
+                            class="history-url font-fira text-text-brand-muted block text-xs md:text-sm"
                             title={item.url}>{item.url}</span
                           >
                         </div>
@@ -824,6 +824,12 @@
     border: 2px solid var(--border-muted-brand);
     background-color: var(--card-surface);
     box-shadow: 0 1px 0 color-mix(in srgb, white 6%, transparent) inset;
+  }
+
+  .history-title,
+  .history-url {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .history-row + .history-row {

@@ -2253,7 +2253,7 @@
           {@const chip = chipColors[i % chipColors.length]}
           <Button
             variant="outline"
-            class="border-[2px] {chip.border} {chip.bg} font-inter h-auto rounded-none px-3 py-1.5 text-sm font-semibold {chip.text} hover:translate-x-px hover:translate-y-px hover:shadow-[2px_2px_0_var(--brutal-shadow)]"
+            class="border-[2px] {chip.border} {chip.bg} font-inter h-auto cursor-pointer rounded-none px-3 py-1.5 text-sm font-semibold {chip.text} hover:translate-x-px hover:translate-y-px hover:shadow-[2px_2px_0_var(--brutal-shadow)]"
             onclick={() => clickChip(search)}
             oncontextmenu={(e) => showChipContextMenu(e, search)}
           >
@@ -2263,7 +2263,7 @@
         <Button
           variant="ghost"
           size="sm"
-          class="font-inter text-text-brand-muted hover:text-hister-rose h-auto px-2 py-1 text-xs"
+          class="font-inter text-text-brand-muted hover:text-hister-rose h-auto cursor-pointer px-2 py-1 text-xs"
           onclick={deleteAllRecentSearches}
           title="Clear all recent searches"
         >

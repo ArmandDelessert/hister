@@ -284,7 +284,7 @@ var listFilesCmd = &cobra.Command{
 	},
 }
 
-var importCmd = &cobra.Command{
+var browserImportCmd = &cobra.Command{
 	Use:   "import-browser [BROWSER_TYPE] [DB_PATH]",
 	Short: "Import Chrome, Firefox or auto-detect browsing history",
 	Long: `
@@ -1102,7 +1102,7 @@ Use '-' as OUTPUT_FILE to write to stdout.`,
 	},
 }
 
-var importDataCmd = &cobra.Command{
+var importCmd = &cobra.Command{
 	Use:   "import INPUT_FILE",
 	Short: "Import documents from an export JSON file",
 	Long: `Import documents from a JSON file previously created by the export command.
@@ -1287,9 +1287,9 @@ func init() {
 	rootCmd.AddCommand(listURLsCmd)
 	rootCmd.AddCommand(listFilesCmd)
 	rootCmd.AddCommand(indexCmd)
-	rootCmd.AddCommand(importCmd)
+	rootCmd.AddCommand(browserImportCmd)
 	rootCmd.AddCommand(exportCmd)
-	rootCmd.AddCommand(importDataCmd)
+	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(reindexCmd)
 	rootCmd.AddCommand(cleanupCmd)
@@ -1325,7 +1325,7 @@ func init() {
 
 	showUserCmd.Flags().Bool("token", false, "display the user's access token")
 
-	importDataCmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
+	importCmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
 
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "don't add documents that contain sensitive content matched by config.SensitiveContentPatterns")
 

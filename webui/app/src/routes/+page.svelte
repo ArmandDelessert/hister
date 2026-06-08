@@ -507,6 +507,9 @@
   const activeLanguageFilters = $derived(
     new Set([...query.matchAll(/\blanguage:(\S+)/g)].map((m) => m[1])),
   );
+  const activeTypeFilters = $derived(
+    new Set([...query.matchAll(/\btype:(\S+)/g)].map((m) => m[1])),
+  );
   const activeDateBucket = $derived(
     (() => {
       if (!dateFrom && !dateTo) return null;
@@ -524,7 +527,10 @@
     })(),
   );
   const activeFilterCount = $derived(
-    activeDomainFilters.size + activeLanguageFilters.size + (activeDateBucket ? 1 : 0),
+    activeDomainFilters.size +
+      activeLanguageFilters.size +
+      activeTypeFilters.size +
+      (activeDateBucket ? 1 : 0),
   );
   const showFiltersButton = $derived(hasResults || activeFilterCount > 0);
 
@@ -1683,6 +1689,34 @@
                                     onclick={() => loadMoreFacet('languages')}>Load more</button
                                   >
                                 {/if}
+                              </div>
+                            {/if}
+                            {#if currentFacets?.terms?.['types']?.terms?.length}
+                              {#if currentFacets?.terms?.['domains']?.terms?.length || currentFacets?.terms?.['languages']?.terms?.length}
+                                <Separator class="bg-border-brand-muted" />
+                              {/if}
+                              <div class="space-y-1.5">
+                                <p
+                                  class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                                >
+                                  <Tag class="size-3" />
+                                  Type
+                                </p>
+                                <div class="flex flex-wrap gap-1">
+                                  {#each currentFacets.terms['types'].terms as { term, count } (term)}
+                                    <button
+                                      class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeTypeFilters.has(
+                                        term,
+                                      )
+                                        ? 'border-hister-indigo bg-hister-indigo text-background'
+                                        : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                                      onclick={() => toggleQueryToken('type', term)}
+                                    >
+                                      {term}
+                                      <span class="opacity-60">({count})</span>
+                                    </button>
+                                  {/each}
+                                </div>
                               </div>
                             {/if}
                             {#snippet customDateInputs()}

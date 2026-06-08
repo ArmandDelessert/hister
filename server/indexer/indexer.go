@@ -148,6 +148,11 @@ func addFacets(req *bleve.SearchRequest, sizes map[string]int) {
 	}
 	req.AddFacet("domains", bleve.NewFacetRequest("domain", facetSize("domains")))
 	req.AddFacet("languages", bleve.NewFacetRequest("language", facetSize("languages")))
+	tf := bleve.NewFacetRequest("type", 2)
+	web, local, afterLocal := float64(types.Web), float64(types.Local), float64(types.Local)+1
+	tf.AddNumericRange(types.Web.String(), &web, &local)
+	tf.AddNumericRange(types.Local.String(), &local, &afterLocal)
+	req.AddFacet("types", tf)
 	now := time.Now()
 	dh := bleve.NewFacetRequest("added", len(dateFacetBuckets)+1)
 	var prev *float64
@@ -178,6 +183,13 @@ func extractFacets(facets search.FacetResults) *FacetsResult {
 		if f := facets[name]; f != nil {
 			fr.Terms[name] = extractTermFacet(f)
 		}
+	}
+	if f := facets["types"]; f != nil {
+		terms := make([]TermCount, 0, len(f.NumericRanges))
+		for _, nr := range f.NumericRanges {
+			terms = append(terms, TermCount{Term: nr.Name, Count: nr.Count})
+		}
+		fr.Terms["types"] = TermFacet{Terms: terms}
 	}
 	if f := facets["added"]; f != nil {
 		for _, nr := range f.NumericRanges {

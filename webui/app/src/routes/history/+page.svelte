@@ -43,6 +43,7 @@
   let isDesktop = $state(false);
   let panelUrl = $state('');
   let panelHintTitle = $state('');
+  let panelViewingVersion = $state<number | null>(null);
   let panelOpen = $state(
     typeof localStorage !== 'undefined'
       ? localStorage.getItem('hister-history-panel-open') !== 'false'
@@ -85,10 +86,12 @@
         panelOpen = true;
         localStorage.setItem('hister-history-panel-open', 'true');
       }
+      panelViewingVersion = null;
       panelHintTitle = title;
       panelUrl = url;
       return;
     }
+    panelViewingVersion = null;
     panelUrl = url;
     panelHintTitle = title;
     previewFullscreen = true;
@@ -97,7 +100,7 @@
 
   function enterFullscreen() {
     previewFullscreen = true;
-    withSkipUrl(skipUrl, () => pushPreviewHistory(panelUrl, panelHintTitle));
+    withSkipUrl(skipUrl, () => pushPreviewHistory(panelUrl, panelHintTitle, panelViewingVersion));
   }
 
   function exitFullscreen() {
@@ -113,12 +116,18 @@
   }
 
   function handlePopState(event: PopStateEvent) {
-    const state = event.state as { type?: string; id?: string; title?: string } | null;
+    const state = event.state as {
+      type?: string;
+      id?: string;
+      title?: string;
+      versionId?: number | null;
+    } | null;
     if (state?.type === 'preview') {
       panelUrl = state.id || '';
       panelHintTitle = state.title || '';
       panelOpen = true;
       previewFullscreen = true;
+      panelViewingVersion = state.versionId ?? null;
       return;
     }
     previewFullscreen = false;
@@ -461,10 +470,11 @@
     const item = filteredItems[idx];
     if (!item) return;
     if (untrack(() => panelUrl) === item.url) return;
+    panelViewingVersion = null;
     panelHintTitle = item.title || item.url;
     panelUrl = item.url;
     if (isFullscreen) {
-      withSkipUrl(skipUrl, () => replacePreviewHistory(item.url, item.title || item.url));
+      withSkipUrl(skipUrl, () => replacePreviewHistory(item.url, item.title || item.url, null));
     }
   });
 </script>
@@ -769,6 +779,11 @@
             fullscreen={true}
             onclose={closePanelAndFullscreen}
             onfullscreentoggle={isDesktop ? exitFullscreen : undefined}
+            initialViewingVersionId={panelViewingVersion}
+            onviewingversionchange={(id) => {
+              panelViewingVersion = id;
+              withSkipUrl(skipUrl, () => replacePreviewHistory(panelUrl, panelHintTitle, id));
+            }}
           />
         {:else if panelOpen && isDesktop}
           <!-- Drag handle to resize the split-screen panel -->
@@ -792,6 +807,10 @@
                 localStorage.setItem('hister-history-panel-open', 'false');
               }}
               onfullscreentoggle={enterFullscreen}
+              initialViewingVersionId={panelViewingVersion}
+              onviewingversionchange={(id) => {
+                panelViewingVersion = id;
+              }}
             />
           </div>
         {/if}

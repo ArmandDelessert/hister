@@ -7,19 +7,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gomarkdown/markdown"
-	"github.com/gomarkdown/markdown/html"
-	"github.com/gomarkdown/markdown/parser"
-
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/sanitizer"
 	"github.com/asciimoo/hister/server/types"
 )
 
-// MarkdownExtractor renders previews for locally indexed Markdown files.
-// During indexing, files.go stores the raw Markdown source in doc.HTML so
-// this extractor can convert it to sanitized HTML for the preview panel.
+// MarkdownExtractor serves previews for locally indexed Markdown files.
+// During indexing, indexer.AddMarkdown renders the source to HTML and stores
+// it in doc.HTML, so Preview only needs to sanitize that HTML.
 type MarkdownExtractor struct {
 	cfg *config.Extractor
 }
@@ -54,26 +50,15 @@ func (e *MarkdownExtractor) Match(d *document.Document) bool {
 	return strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown")
 }
 
-// Extract is a no-op: indexing is handled by indexer.AddMarkdown which stores
-// the raw source in doc.Text directly.
+// Extract is a no-op: indexing is handled by indexer.AddMarkdown.
 func (e *MarkdownExtractor) Extract(_ *document.Document) (types.ExtractorState, error) {
 	return types.ExtractorContinue, nil
 }
 
-// Preview renders the Markdown source stored in doc.HTML to sanitized HTML.
+// Preview sanitizes the rendered HTML stored in doc.HTML.
 func (e *MarkdownExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
 	if d.HTML == "" {
 		return types.PreviewResponse{}, types.ExtractorContinue, nil
 	}
-	rendered := renderMarkdown([]byte(d.HTML))
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(rendered)}, types.ExtractorStop, nil
-}
-
-func renderMarkdown(src []byte) string {
-	p := parser.NewWithExtensions(
-		parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock,
-	)
-	opts := html.RendererOptions{Flags: html.CommonFlags | html.HrefTargetBlank}
-	r := html.NewRenderer(opts)
-	return string(markdown.ToHTML(src, p, r))
+	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(d.HTML)}, types.ExtractorStop, nil
 }

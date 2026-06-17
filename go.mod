@@ -6,6 +6,7 @@ require (
 	codeberg.org/readeck/go-readability/v2 v2.1.1
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/asciimoo/lingua-go v0.15.0
+	github.com/asciimoo/pdf v0.1.0
 	github.com/blevesearch/bleve/v2 v2.6.0
 	github.com/bodgit/sevenzip v1.6.4
 	github.com/charmbracelet/bubbles v1.0.0
@@ -18,7 +19,6 @@ require (
 	github.com/gorilla/sessions v1.4.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/mattn/go-sqlite3 v1.14.45
 	github.com/microcosm-cc/bluemonday v1.0.27

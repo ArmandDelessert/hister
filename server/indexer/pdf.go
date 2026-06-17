@@ -11,7 +11,7 @@ import (
 
 	"github.com/asciimoo/hister/server/document"
 
-	"github.com/ledongthuc/pdf"
+	"github.com/asciimoo/pdf"
 )
 
 // AddPDF extracts plain text from pdfData, stores it in d.Text, then indexes

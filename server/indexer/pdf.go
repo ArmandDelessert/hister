@@ -31,8 +31,15 @@ func AddPDF(d *document.Document, pdfData []byte) error {
 }
 
 // extractPDFText reads all pages of a PDF from pdfData and returns the
-// concatenated plain text.
-func extractPDFText(pdfData []byte) (string, error) {
+// concatenated plain text. It recovers from panics in the underlying PDF
+// library and converts them to errors.
+func extractPDFText(pdfData []byte) (text string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("pdf parser panic: %v", r)
+		}
+	}()
+
 	r := bytes.NewReader(pdfData)
 	pr, err := pdf.NewReader(r, int64(len(pdfData)))
 	if err != nil {

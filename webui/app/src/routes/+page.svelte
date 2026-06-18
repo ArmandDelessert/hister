@@ -2518,7 +2518,7 @@
     overflow: hidden;
     border: 0;
     background: transparent;
-    padding: 0.875rem 0;
+    padding: 0.2rem 0;
     box-shadow: none;
   }
 

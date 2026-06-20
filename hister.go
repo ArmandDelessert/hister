@@ -2336,18 +2336,25 @@ func multipleChoiceImport(choices []importHistoryMultipleChoicePrompt) []DBToImp
 	print("==> ")
 
 	s, _ = r.ReadString('\n')
-	blacklists := strings.Split(s, " ")
-	// Handle remove actions
 
+	blacklists := strings.Split(strings.Trim(s, "\n"), " ")
+
+	// Handle blacklisted imports
+	var selected []DBToImport
+	var unselected bool
 	for i, data := range returnDBs {
-		if  {
-
+		for _, blacklist := range blacklists {
+			if strconv.Itoa(i) == blacklist || data.name == blacklist {
+				unselected = true
+				break
+			}
 		}
-		if data.name == "" {
-
+		if unselected == false {
+			selected = append(selected, data)
 		}
+		unselected = false
 	}
-	return returnDBs
+	return selected
 }
 
 func getBrowserType(path string) string {

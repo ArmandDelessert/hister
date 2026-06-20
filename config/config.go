@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -415,9 +416,25 @@ func bindEnvironment(v *viper.Viper) {
 		}
 		key := strings.TrimPrefix(parts[0], "HISTER__")
 		normalizedKey := strings.ToLower(strings.ReplaceAll(key, "__", "."))
-		v.Set(normalizedKey, parts[1])
+		v.Set(normalizedKey, parseEnvValue(parts[1]))
 		log.Debug().Str("env", parts[0]).Str("key", normalizedKey).Msg("Loaded configuration from environment variable")
 	}
+}
+
+func parseEnvValue(s string) any {
+	switch strings.ToLower(s) {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil && strconv.FormatInt(i, 10) == s {
+		return int(i)
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil && strconv.FormatFloat(f, 'f', -1, 64) == s {
+		return f
+	}
+	return s
 }
 
 // Load reads and parses the configuration from the specified file.

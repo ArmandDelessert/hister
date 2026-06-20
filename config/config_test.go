@@ -187,6 +187,80 @@ func TestSensitiveContentPatterns(t *testing.T) {
 	}
 }
 
+func TestParseEnvValue(t *testing.T) {
+	tests := []struct {
+		in   string
+		want any
+	}{
+		{"true", true},
+		{"false", false},
+		{"True", true},
+		{"FALSE", false},
+		{"15", 15},
+		{"0", 0},
+		{"-3", -3},
+		{"1.5", 1.5},
+		// stays string: not a bool keyword
+		{"yes", "yes"},
+		{"1", 1},
+		// stays string: numeric round-trip fails (data-loss guard)
+		{"007", "007"},
+		{"+5", "+5"},
+		{"1e3", "1e3"},
+		{"1.50", "1.50"},
+		// plain strings
+		{"en", "en"},
+		{"https://env.example.com", "https://env.example.com"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got := parseEnvValue(tt.in)
+			if got != tt.want {
+				t.Fatalf("parseEnvValue(%q) = %#v (%T), want %#v (%T)", tt.in, got, got, tt.want, tt.want)
+			}
+		})
+	}
+}
+
+func TestEnvExtractorOptionTypes(t *testing.T) {
+	const (
+		enableKey = "HISTER__EXTRACTORS__ytdlp__ENABLE"
+		subsKey   = "HISTER__EXTRACTORS__ytdlp__OPTIONS__FETCH_SUBTITLES"
+		toKey     = "HISTER__EXTRACTORS__ytdlp__OPTIONS__TIMEOUT"
+		langKey   = "HISTER__EXTRACTORS__ytdlp__OPTIONS__SUB_LANGUAGE"
+	)
+	for _, k := range []string{enableKey, subsKey, toKey, langKey} {
+		old, had := os.LookupEnv(k)
+		t.Cleanup(func() { restoreEnv(k, old, had) })
+	}
+	_ = os.Setenv(enableKey, "true")
+	_ = os.Setenv(subsKey, "true")
+	_ = os.Setenv(toKey, "30")
+	_ = os.Setenv(langKey, "en")
+
+	cfg, err := parseConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex := cfg.Extractors["ytdlp"]
+	if ex == nil {
+		t.Fatalf("ytdlp extractor missing; extractors=%v", cfg.Extractors)
+	}
+	if !ex.Enable {
+		t.Errorf("Enable = false, want true")
+	}
+	if v, ok := ex.Options["fetch_subtitles"].(bool); !ok || !v {
+		t.Errorf("fetch_subtitles = %#v (%T), want bool true", ex.Options["fetch_subtitles"], ex.Options["fetch_subtitles"])
+	}
+	if v, ok := ex.Options["timeout"].(int); !ok || v != 30 {
+		t.Errorf("timeout = %#v (%T), want int 30", ex.Options["timeout"], ex.Options["timeout"])
+	}
+	if v, ok := ex.Options["sub_language"].(string); !ok || v != "en" {
+		t.Errorf("sub_language = %#v (%T), want string \"en\"", ex.Options["sub_language"], ex.Options["sub_language"])
+	}
+}
+
 func TestWebSocketURLHonorsBasePath(t *testing.T) {
 	tests := []struct {
 		name string

@@ -2332,7 +2332,7 @@ func multipleChoiceImport(choices []importHistoryMultipleChoicePrompt) []DBToImp
 			c:           choiceData.c,
 		})
 	}
-	println("==> Histories to exclude: (eg: \"1 2 3\" or browser name)")
+	println("==> Histories to exclude: (eg: \"1 2 3\", browser name or leave empty to to import all)")
 	print("==> ")
 
 	s, _ = r.ReadString('\n')

@@ -2143,6 +2143,7 @@
                               data-readable
                               variant="link"
                               size="sm"
+                              href={buildPreviewUrl(r.url, r.title || '*title*')}
                               class="text-text-brand-muted hover:text-hister-indigo h-auto shrink-0 cursor-pointer gap-0.5 p-0 text-xs font-medium md:text-sm"
                               onclick={(e) => {
                                 highlightIdx = i;

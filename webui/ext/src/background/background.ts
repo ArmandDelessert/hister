@@ -14,6 +14,15 @@ function setErrorBadge(tabId: number) {
   );
 }
 
+function setPreviouslyIndexedBadge(tabId: number) {
+  chrome.action.setBadgeText({ text: '✓', tabId }, () => void chrome.runtime.lastError);
+  chrome.action.setBadgeBackgroundColor(
+    { color: '#44aa44', tabId },
+    () => void chrome.runtime.lastError,
+  );
+  chrome.action.setBadgeTextColor({ color: '#ffffff', tabId }, () => void chrome.runtime.lastError);
+}
+
 function clearBadge(tabId: number) {
   chrome.action.setBadgeText({ text: '', tabId }, () => void chrome.runtime.lastError);
 }
@@ -131,17 +140,7 @@ async function updateTabIcon(tabId: number, url: string): Promise<void> {
     'histerCustomHeaders',
   ]);
 
-  if (data['indexingEnabled'] === false) {
-    await setGreyIcon(tabId);
-    return;
-  }
-
   const serverURL: string = data['histerURL'] || '';
-  if (!serverURL) {
-    await setNormalIcon(tabId);
-    return;
-  }
-
   const customHeaders: { name: string; value: string }[] = Array.isArray(
     data['histerCustomHeaders'],
   )
@@ -151,11 +150,31 @@ async function updateTabIcon(tabId: number, url: string): Promise<void> {
     customHeaders.push({ name: 'X-Access-Token', value: data['histerToken'] });
   }
 
+  if (data['indexingEnabled'] === false) {
+    await setGreyIcon(tabId);
+    if (serverURL) {
+      const indexed = await isUrlPreviouslyIndexed(url, serverURL, customHeaders);
+      if (indexed) setPreviouslyIndexedBadge(tabId);
+    }
+    return;
+  }
+
+  if (!serverURL) {
+    setNormalIcon(tabId);
+    return;
+  }
+
   const patterns = await getSkipPatterns(serverURL, customHeaders);
   if (patterns.some((re) => re.test(url))) {
     await setGreyIcon(tabId);
   } else {
-    await setNormalIcon(tabId);
+    setNormalIcon(tabId);
+    const indexed = await isUrlPreviouslyIndexed(url, serverURL, customHeaders);
+    if (indexed) {
+      setPreviouslyIndexedBadge(tabId);
+    } else {
+      clearBadge(tabId);
+    }
   }
 }
 
@@ -225,8 +244,8 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
 
     const r = await sendPDFData(u + 'api/add_pdf', doc, pdfBase64, customHeaders);
     if (r.status === 201) {
-      clearBadge(tabId);
       setNormalIcon(tabId);
+      setPreviouslyIndexedBadge(tabId);
     } else if (r.status === 406) {
       skipRulesCache = null;
       setGreyIcon(tabId);
@@ -268,6 +287,23 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     if (tab?.id && tab.url) await updateTabIcon(tab.id, tab.url);
   } catch (_) {}
 });
+
+async function isUrlPreviouslyIndexed(
+  url: string,
+  serverURL: string,
+  customHeaders: { name: string; value: string }[],
+): Promise<boolean> {
+  try {
+    const base = serverURL.endsWith('/') ? serverURL : serverURL + '/';
+    const r = await fetchAPI(`${base}api/document?url=${encodeURIComponent(url)}`, {
+      method: 'HEAD',
+      customHeaders,
+    });
+    return r.status === 200;
+  } catch (_) {
+    return false;
+  }
+}
 
 // --- Message handler ---
 
@@ -376,8 +412,8 @@ function cjsMsgHandler(request, sender, sendResponse) {
           sendPageData(u + 'api/add', pageData, customHeaders)
             .then((r) => {
               if (r.status === 201) {
-                clearBadge(sender.tab.id);
                 setNormalIcon(sender.tab.id);
+                setPreviouslyIndexedBadge(sender.tab.id);
               } else if (r.status === 406) {
                 // URL matched a server-side skip rule; invalidate cache and grey out
                 skipRulesCache = null;

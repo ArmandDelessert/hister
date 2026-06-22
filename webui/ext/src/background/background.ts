@@ -27,12 +27,12 @@ function clearBadge(tabId: number) {
   chrome.action.setBadgeText({ text: '', tabId }, () => void chrome.runtime.lastError);
 }
 
-// --- Grey icon helpers ---
+// --- Icon helpers ---
 
 let greyIconCache: Record<number, ImageData> | null = null;
+let normalIconCache: Record<number, ImageData> | null = null;
 
-async function buildGreyIcons(): Promise<Record<number, ImageData>> {
-  if (greyIconCache) return greyIconCache;
+async function buildIcons(grey: boolean): Promise<Record<number, ImageData>> {
   const response = await fetch(chrome.runtime.getURL('assets/icons/icon128.png'));
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
@@ -42,33 +42,37 @@ async function buildGreyIcons(): Promise<Record<number, ImageData>> {
     const ctx = canvas.getContext('2d')!;
     ctx.drawImage(bitmap, 0, 0, size, size);
     const imageData = ctx.getImageData(0, 0, size, size);
-    for (let i = 0; i < imageData.data.length; i += 4) {
-      const grey =
-        imageData.data[i] * 0.299 + imageData.data[i + 1] * 0.587 + imageData.data[i + 2] * 0.114;
-      imageData.data[i] = grey;
-      imageData.data[i + 1] = grey;
-      imageData.data[i + 2] = grey;
-      imageData.data[i + 3] = Math.round(imageData.data[i + 3] * 0.5);
+    if (grey) {
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const lum =
+          imageData.data[i] * 0.299 + imageData.data[i + 1] * 0.587 + imageData.data[i + 2] * 0.114;
+        imageData.data[i] = lum;
+        imageData.data[i + 1] = lum;
+        imageData.data[i + 2] = lum;
+        imageData.data[i + 3] = Math.round(imageData.data[i + 3] * 0.5);
+      }
     }
     result[size] = imageData;
   }
-  greyIconCache = result;
   return result;
 }
 
 async function setGreyIcon(tabId: number): Promise<void> {
   clearBadge(tabId);
   try {
-    const imageData = await buildGreyIcons();
-    chrome.action.setIcon({ imageData, tabId }, () => void chrome.runtime.lastError);
+    if (!greyIconCache) greyIconCache = await buildIcons(true);
+    chrome.action.setIcon({ imageData: greyIconCache, tabId }, () => void chrome.runtime.lastError);
   } catch (_) {}
 }
 
-function setNormalIcon(tabId: number): void {
-  chrome.action.setIcon(
-    { path: { '128': 'assets/icons/icon128.png' }, tabId },
-    () => void chrome.runtime.lastError,
-  );
+async function setNormalIcon(tabId: number): Promise<void> {
+  try {
+    if (!normalIconCache) normalIconCache = await buildIcons(false);
+    chrome.action.setIcon(
+      { imageData: normalIconCache, tabId },
+      () => void chrome.runtime.lastError,
+    );
+  } catch (_) {}
 }
 
 // --- Per-tab sensitive-content rejection state ---
@@ -172,6 +176,10 @@ async function updateTabIcon(tabId: number, url: string): Promise<void> {
   } else {
     setNormalIcon(tabId);
     clearBadge(tabId);
+    if (showIndexedBadge) {
+      const indexed = await isUrlPreviouslyIndexed(url, serverURL, customHeaders);
+      if (indexed) setPreviouslyIndexedBadge(tabId);
+    }
   }
 }
 
@@ -193,12 +201,15 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
     'indexingEnabled',
     'histerCustomHeaders',
     'histerLabel',
+    'showIndexedBadge',
   ]);
 
   if (data['indexingEnabled'] === false) return;
 
   const serverURL: string = data['histerURL'] || '';
   if (!serverURL) return;
+
+  const showIndexedBadge: boolean = data['showIndexedBadge'] === true;
 
   const customHeaders: { name: string; value: string }[] = Array.isArray(
     data['histerCustomHeaders'],
@@ -242,7 +253,11 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
     const r = await sendPDFData(u + 'api/add_pdf', doc, pdfBase64, customHeaders);
     if (r.status === 201) {
       setNormalIcon(tabId);
-      clearBadge(tabId);
+      if (showIndexedBadge) {
+        setPreviouslyIndexedBadge(tabId);
+      } else {
+        clearBadge(tabId);
+      }
     } else if (r.status === 406) {
       skipRulesCache = null;
       setGreyIcon(tabId);
@@ -308,10 +323,11 @@ async function isUrlPreviouslyIndexed(
 // TODO check source
 function cjsMsgHandler(request, sender, sendResponse) {
   chrome.storage.local
-    .get(['histerURL', 'histerToken', 'indexingEnabled', 'histerCustomHeaders'])
+    .get(['histerURL', 'histerToken', 'indexingEnabled', 'histerCustomHeaders', 'showIndexedBadge'])
     .then((data) => {
       let u = data['histerURL'] || '';
       const indexingEnabled = data['indexingEnabled'] !== false;
+      const showIndexedBadge = data['showIndexedBadge'] === true;
       const customHeaders = Array.isArray(data['histerCustomHeaders'])
         ? data['histerCustomHeaders']
         : [];
@@ -411,7 +427,11 @@ function cjsMsgHandler(request, sender, sendResponse) {
             .then((r) => {
               if (r.status === 201) {
                 setNormalIcon(sender.tab.id);
-                clearBadge(sender.tab.id);
+                if (showIndexedBadge) {
+                  setPreviouslyIndexedBadge(sender.tab.id);
+                } else {
+                  clearBadge(sender.tab.id);
+                }
               } else if (r.status === 406) {
                 // URL matched a server-side skip rule; invalidate cache and grey out
                 skipRulesCache = null;

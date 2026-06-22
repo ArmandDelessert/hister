@@ -346,6 +346,20 @@
           </Button>
 
           <div class="flex items-center justify-between">
+            <Label
+              for="show-indexed-badge"
+              class="font-outfit text-text-brand cursor-pointer text-sm font-bold"
+            >
+              Show indicator for indexed pages
+            </Label>
+            <Switch
+              id="show-indexed-badge"
+              bind:checked={showIndexedBadge}
+              onCheckedChange={toggleShowIndexedBadge}
+            />
+          </div>
+
+          <div class="flex items-center justify-between">
             <Label class="font-outfit text-text-brand text-sm font-bold">Theme</Label>
             <button
               onclick={toggleMode}
@@ -373,22 +387,6 @@
           Automatic indexing
         </Label>
         <Switch id="indexing" bind:checked={indexingEnabled} onCheckedChange={toggleIndexing} />
-      </div>
-      <div class="mt-3 flex items-center justify-between" class:opacity-40={indexingEnabled}>
-        <Label
-          for="show-indexed-badge"
-          class="font-outfit text-text-brand text-sm font-bold {indexingEnabled
-            ? 'cursor-not-allowed'
-            : 'cursor-pointer'}"
-        >
-          Show indicator for indexed pages
-        </Label>
-        <Switch
-          id="show-indexed-badge"
-          bind:checked={showIndexedBadge}
-          onCheckedChange={toggleShowIndexedBadge}
-          disabled={indexingEnabled}
-        />
       </div>
     </div>
 

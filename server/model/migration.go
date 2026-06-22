@@ -16,7 +16,8 @@ type migration struct {
 var migrations = []migration{
 	{
 		post: func() error {
-			return DB.Model(&HistoryLink{}).Where("pinned = ?", false).Update("pinned", true).Error
+			// UpdateColumn (not Update) so the backfill does not bump UpdatedAt.
+			return DB.Model(&HistoryLink{}).Where("pinned = ?", false).UpdateColumn("pinned", true).Error
 		},
 	},
 }

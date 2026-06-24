@@ -1372,14 +1372,14 @@ func parseDateRangeFlags(cmd *cobra.Command) (dateRangeFlags, error) {
 	if v, _ := cmd.Flags().GetString("start-date"); v != "" {
 		t, err := time.Parse("2006-01-02", v)
 		if err != nil {
-			return r, fmt.Errorf("Invalid --start-date: %w", err)
+			return r, fmt.Errorf("invalid --start-date: %w", err)
 		}
 		r.From = t.Unix()
 	}
 	if v, _ := cmd.Flags().GetString("end-date"); v != "" {
 		t, err := time.Parse("2006-01-02", v)
 		if err != nil {
-			return r, fmt.Errorf("Invalid --end-date: %w", err)
+			return r, fmt.Errorf("invalid --end-date: %w", err)
 		}
 		r.To = t.AddDate(0, 0, 1).Unix() - 1
 	}

@@ -2,7 +2,7 @@
 
 set -eu
 
-DATASETS="go-stdlib mdn-css mdn-html mdn-js powershell"
+DATASETS="go-stdlib mdn-css mdn-html mdn-js powershell python-docs rust-docs nodejs-api typescript-docs react-docs django-docs postgresql-docs kubernetes-docs owasp-cheatsheets"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
@@ -97,6 +97,147 @@ fetch_powershell() {
   export_dataset "powershell" "$label"
 }
 
+fetch_python_docs() {
+  label=python
+
+  "$HISTER" index --recursive \
+    --allowed-domain=docs.python.org \
+    --allowed-pattern="^https://docs\.python\.org/3/.*" \
+    --exclude-pattern="/archives/" \
+    --exclude-pattern="/download" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://docs.python.org/3/"
+  export_dataset "python-docs" "$label"
+}
+
+fetch_rust_docs() {
+  label=rust
+
+  "$HISTER" index --recursive \
+    --allowed-domain=doc.rust-lang.org \
+    --allowed-pattern="^https://doc\.rust-lang\.org/std/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://doc.rust-lang.org/std/"
+  "$HISTER" index --recursive \
+    --allowed-domain=doc.rust-lang.org \
+    --allowed-pattern="^https://doc\.rust-lang\.org/book/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://doc.rust-lang.org/book/"
+  export_dataset "rust-docs" "$label"
+}
+
+fetch_nodejs_api() {
+  label=nodejs
+
+  "$HISTER" index --recursive \
+    --allowed-domain=nodejs.org \
+    --allowed-pattern="^https://nodejs\.org/api/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://nodejs.org/api/"
+  export_dataset "nodejs-api" "$label"
+}
+
+fetch_typescript_docs() {
+  label=typescript
+
+  "$HISTER" index --recursive \
+    --allowed-domain=www.typescriptlang.org \
+    --allowed-pattern="^https://www\.typescriptlang\.org/docs/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://www.typescriptlang.org/docs/"
+  "$HISTER" index --recursive \
+    --allowed-domain=www.typescriptlang.org \
+    --allowed-pattern="^https://www\.typescriptlang\.org/tsconfig/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://www.typescriptlang.org/tsconfig/"
+  export_dataset "typescript-docs" "$label"
+}
+
+fetch_react_docs() {
+  label=react
+
+  "$HISTER" index --recursive \
+    --allowed-domain=react.dev \
+    --allowed-pattern="^https://react\.dev/learn.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://react.dev/learn"
+  "$HISTER" index --recursive \
+    --allowed-domain=react.dev \
+    --allowed-pattern="^https://react\.dev/reference/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://react.dev/reference/react"
+  export_dataset "react-docs" "$label"
+}
+
+fetch_django_docs() {
+  label=django
+
+  "$HISTER" index --recursive \
+    --allowed-domain=docs.djangoproject.com \
+    --allowed-pattern="^https://docs\.djangoproject\.com/en/stable/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://docs.djangoproject.com/en/stable/"
+  export_dataset "django-docs" "$label"
+}
+
+fetch_postgresql_docs() {
+  label=postgresql
+
+  "$HISTER" index --recursive \
+    --allowed-domain=www.postgresql.org \
+    --allowed-pattern="^https://www\.postgresql\.org/docs/current/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://www.postgresql.org/docs/current/"
+  export_dataset "postgresql-docs" "$label"
+}
+
+fetch_kubernetes_docs() {
+  label=kubernetes
+
+  "$HISTER" index --recursive \
+    --allowed-domain=kubernetes.io \
+    --allowed-pattern="^https://kubernetes\.io/docs/.*" \
+    --exclude-pattern="^https://kubernetes\.io/docs/reference/generated/" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://kubernetes.io/docs/home/"
+  export_dataset "kubernetes-docs" "$label"
+}
+
+fetch_owasp_cheatsheets() {
+  label=owasp
+
+  "$HISTER" index --recursive \
+    --allowed-domain=cheatsheetseries.owasp.org \
+    --allowed-pattern="^https://cheatsheetseries\.owasp\.org/cheatsheets/.*" \
+    --label="$label" \
+    --delay=1 \
+    --allow-sensitive \
+    "https://cheatsheetseries.owasp.org/cheatsheets/"
+  export_dataset "owasp-cheatsheets" "$label"
+}
+
 fetch_dataset() {
   case "$1" in
     go-stdlib)
@@ -113,6 +254,33 @@ fetch_dataset() {
       ;;
     powershell)
       fetch_powershell
+      ;;
+    python-docs)
+      fetch_python_docs
+      ;;
+    rust-docs)
+      fetch_rust_docs
+      ;;
+    nodejs-api)
+      fetch_nodejs_api
+      ;;
+    typescript-docs)
+      fetch_typescript_docs
+      ;;
+    react-docs)
+      fetch_react_docs
+      ;;
+    django-docs)
+      fetch_django_docs
+      ;;
+    postgresql-docs)
+      fetch_postgresql_docs
+      ;;
+    kubernetes-docs)
+      fetch_kubernetes_docs
+      ;;
+    owasp-cheatsheets)
+      fetch_owasp_cheatsheets
       ;;
     all)
       for dataset in $DATASETS; do

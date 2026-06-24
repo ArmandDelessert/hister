@@ -136,6 +136,7 @@ fetch_nodejs_api() {
   "$HISTER" index --recursive \
     --allowed-domain=nodejs.org \
     --allowed-pattern="^https://nodejs\.org/api/.*" \
+    --exclude-pattern=".+\.json$" \
     --label="$label" \
     --delay=1 \
     --allow-sensitive \

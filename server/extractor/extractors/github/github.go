@@ -225,6 +225,17 @@ func extractIssue(d *document.Document, parts []string) (types.ExtractorState, e
 		d.Metadata = make(map[string]any)
 	}
 	d.Metadata["type"] = "Issue"
+	if title := doc.Find(`bdi[data-testid="issue-title"]`).Text(); title != "" {
+		d.Metadata["title"] = title
+	}
+	if dateOpened := doc.Find(`[data-testid="issue-body"] relative-time`).AttrOr("datetime", ""); dateOpened != "" {
+		d.Metadata["dateOpened"] = dateOpened
+	}
+	var commentBodies []string
+	doc.Find(`[data-testid="issue-viewer-comments-container"] [data-testid="markdown-body"]`).Each(func(_ int, s *goquery.Selection) {
+		commentBodies = append(commentBodies, strings.TrimSpace(s.Text()))
+	})
+	d.Metadata["comments"] = strings.Join(commentBodies, ", ")
 
 	return types.ExtractorStop, nil
 }

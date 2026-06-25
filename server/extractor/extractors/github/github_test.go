@@ -193,10 +193,39 @@ func TestExtractRepo(t *testing.T) {
 const issuePage = `<html>
 <head><title>Extractors wanted! · Issue #305 · asciimoo/hister</title></head>
 <body>
+<div>
 <div data-component="TitleArea" data-size-variant="medium">
-<h1 data-component="PH_Title" data-hidden="false">
-<bdi data-testid="issue-title">Extractors wanted!</bdi>
-</h1></div>
+  <h1 data-component="PH_Title" data-hidden="false">
+  <bdi data-testid="issue-title">Extractors wanted!</bdi>
+  </h1>
+</div>
+<div>
+  <div data-testid="issue-viewer-issue-container">
+	<div data-testid="issue-body">
+	  <div>
+		<h2>Description</h2>
+		<a data-component="Link" href="https://github.com/asciimoo/hister/issues/305#issue-4230456940" data-testid="issue-body-header-link">
+		<relative-time class="IssueBodyHeader-module__RelativeTime__xv0lw" datetime="2026-04-09T07:47:32.000Z" title="Apr 9, 2026, 09:47 GMT+2">on Apr 9, 2026</relative-time>
+		</a>
+	  </div>
+	  <div data-testid="markdown-body">
+		<h1 dir="auto">This is a meta issue raising awareness to contribute to existing extractors or add new ones</h1>
+		<p dir="auto">[...]</p>
+	  </div>
+	</div>
+  </div>
+  <div data-testid="issue-viewer-comments-container">
+	<div data-testid="markdown-body">
+      <p dir="auto">hey bruhh i like to work on reddit post extractor...</p>
+	</div>
+	<div data-testid="markdown-body">
+	  <p dir="auto">Thanks bro, is there any deadline for this ???</p>
+	</div>
+	<div data-testid="markdown-body"
+	  <p dir="auto"><a class="user-mention notranslate" data-hovercard-type="user" data-hovercard-url="/users/dinzz005/hovercard" data-octo-click="hovercard-link-click" data-octo-dimensions="link_type:self" href="https://github.com/dinzz005" aria-keyshortcuts="Alt+ArrowUp">@dinzz005</a> No deadlines</p>
+	</div>
+  </div>
+</div>
 </body>
 </html>`
 
@@ -220,5 +249,14 @@ func TestExtractIssuePage(t *testing.T) {
 	// Metadata checks.
 	if d.Metadata["type"] != "Issue" {
 		t.Errorf("Metadata[issue] = %v, want Issue", d.Metadata["issue"])
+	}
+	if d.Metadata["title"] != "Extractors wanted!" {
+		t.Errorf("Metadata[title] = %v, want Extractors wanted!", d.Metadata["title"])
+	}
+	if d.Metadata["dateOpened"] != "2026-04-09T07:47:32.000Z" {
+		t.Errorf("Metadata[title] = %v, want 2026-04-09T07:47:32.000Z", d.Metadata["dateOpened"])
+	}
+	if d.Metadata["comments"] != "hey bruhh i like to work on reddit post extractor..., Thanks bro, is there any deadline for this ???, @dinzz005 No deadlines" {
+		t.Errorf("Metadata[comments] = %s, want hey bruhh i like to work on reddit post extractor..., Thanks bro, is there any deadline for this ???, @dinzz005 No deadlines", d.Metadata["comments"])
 	}
 }

@@ -155,6 +155,21 @@ func applyCrawlerBackendFlags(cmd *cobra.Command) {
 	}
 }
 
+func targetUserIDClientOptions(cmd *cobra.Command, global bool) []client.Option {
+	targetUserID, _ := cmd.Flags().GetUint("user-id")
+	userIDChanged := cmd.Flags().Changed("user-id")
+	if global && userIDChanged {
+		exit(1, "--global and --user-id are mutually exclusive")
+	}
+	if global || (!userIDChanged && cfg.App.Public) {
+		return []client.Option{client.WithTargetUserID(0)}
+	}
+	if userIDChanged {
+		return []client.Option{client.WithTargetUserID(targetUserID)}
+	}
+	return nil
+}
+
 var rootCmd = &cobra.Command{
 	Use:     "hister",
 	Short:   "Your own search engine",
@@ -505,18 +520,7 @@ var indexCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		global, _ := cmd.Flags().GetBool("global")
-		targetUserID, _ := cmd.Flags().GetUint("user-id")
-		userIDChanged := cmd.Flags().Changed("user-id")
-		if global && userIDChanged {
-			exit(1, "--global and --user-id are mutually exclusive")
-		}
-
-		var clientOpts []client.Option
-		if global {
-			clientOpts = append(clientOpts, client.WithTargetUserID(0))
-		} else if userIDChanged {
-			clientOpts = append(clientOpts, client.WithTargetUserID(targetUserID))
-		}
+		clientOpts := targetUserIDClientOptions(cmd, global)
 		if allowSensitive, _ := cmd.Flags().GetBool("allow-sensitive"); allowSensitive {
 			clientOpts = append(clientOpts, client.WithAllowSensitive())
 		}
@@ -1142,17 +1146,14 @@ documents whose "added" timestamp falls within the given date range.`,
 	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		skip, _ := cmd.Flags().GetBool("skip-existing")
-		targetUserID, _ := cmd.Flags().GetUint("user-id")
+		global, _ := cmd.Flags().GetBool("global")
 
 		dateRange, err := parseDateRangeFlags(cmd)
 		if err != nil {
 			exit(1, err.Error())
 		}
 
-		clientOpts := []client.Option{client.WithTimeout(0)}
-		if cmd.Flags().Changed("user-id") {
-			clientOpts = append(clientOpts, client.WithTargetUserID(targetUserID))
-		}
+		clientOpts := append([]client.Option{client.WithTimeout(0)}, targetUserIDClientOptions(cmd, global)...)
 		c := newClient(clientOpts...)
 		imported := 0
 		skipped := 0
@@ -1447,6 +1448,7 @@ func init() {
 	importCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 	importCmd.Flags().String("start-date", "", "only import documents added on or after this date (YYYY-MM-DD)")
 	importCmd.Flags().String("end-date", "", "only import documents added on or before this date (YYYY-MM-DD)")
+	importCmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
 	importCmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
 
 	exportCmd.Flags().String("start-date", "", "only export documents added on or after this date (YYYY-MM-DD)")

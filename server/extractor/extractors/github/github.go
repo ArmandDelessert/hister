@@ -82,56 +82,50 @@ func (e *GitHubExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-type githubPattern struct {
-	nParts int
-	seg    string
+var (
+	ownerPattern = `[a-zA-Z0-9-]+`
+	repoPattern  = `[a-zA-Z0-9-._]+`
+
+	fullRepoPattern = fmt.Sprintf(`%s%s/%s`, githubURLPrefix, ownerPattern, repoPattern)
+
+	repoRe  = regexp.MustCompile(fmt.Sprintf(`^%s$`, fullRepoPattern))
+	issueRe = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)$`, fullRepoPattern))
+)
+
+type githubPattern = struct {
+	re      *regexp.Regexp
+	handler func(*document.Document, []string) (types.ExtractorState, error)
 }
 
 var githubPatterns = []githubPattern{
-	{nParts: 2},                // /owner/repo
-	{nParts: 4, seg: "issues"}, // /owner/repo/issues/:id
+	{repoRe, extractRepo},
+	{issueRe, extractIssue},
 }
 
-// converts a github url into a matched pattern with parts
-func (e *GitHubExtractor) matchPattern(url string) (*githubPattern, []string) {
-	if !strings.HasPrefix(url, githubURLPrefix) {
-		return nil, nil
+// Match returns true for known github URLs, defined in githubPatterns
+func (e *GitHubExtractor) Match(d *document.Document) bool {
+	var parts = urlParts(d.URL)
+
+	if githubSystemPaths[strings.ToLower(parts[0])] {
+		return false
 	}
+
+	for _, p := range githubPatterns {
+		if p.re.MatchString(d.URL) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func urlParts(url string) []string {
 	path := strings.TrimPrefix(url, githubURLPrefix)
 	if i := strings.IndexAny(path, "?#"); i >= 0 {
 		path = path[:i]
 	}
 	path = strings.TrimSuffix(path, "/")
-	parts := strings.SplitN(path, "/", 5)
-
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-		return nil, nil
-	}
-	if githubSystemPaths[strings.ToLower(parts[0])] {
-		return nil, nil
-	}
-
-	for i, p := range githubPatterns {
-		if len(parts) != p.nParts {
-			continue
-		}
-		if p.seg != "" && parts[2] != p.seg {
-			// segment didn't match
-			continue
-		}
-		if p.nParts == 4 && parts[3] == "" {
-			// we need a fourth element, none given
-			continue
-		}
-		return &githubPatterns[i], parts
-	}
-	return nil, nil
-}
-
-// Match returns true for known github URLs, defined in githubPatterns
-func (e *GitHubExtractor) Match(d *document.Document) bool {
-	p, _ := e.matchPattern(d.URL)
-	return p != nil
+	return strings.Split(path, "/")
 }
 
 // repoInfo holds the extracted fields from a GitHub repository page.
@@ -146,19 +140,14 @@ type repoInfo struct {
 // Extract populates d.Title and d.Text with repository metadata and README
 // plain text, making the content fully searchable.
 func (e *GitHubExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
-	p, parts := e.matchPattern(d.URL)
-	if p == nil {
-		return types.ExtractorContinue, fmt.Errorf("no extractor matched for %s", d.URL)
+	var parts = urlParts(d.URL)
+	for _, p := range githubPatterns {
+		if p.re.MatchString(d.URL) {
+			return p.handler(d, parts)
+		}
 	}
 
-	switch *p {
-	case githubPatterns[0]:
-		return extractRepo(d, parts)
-	case githubPatterns[1]:
-		return extractIssue(d, parts)
-	default:
-		return types.ExtractorContinue, fmt.Errorf("unhandled pattern for %s", d.URL)
-	}
+	return types.ExtractorContinue, fmt.Errorf("no extractor matched for %s", d.URL)
 }
 
 func extractRepo(d *document.Document, parts []string) (types.ExtractorState, error) {

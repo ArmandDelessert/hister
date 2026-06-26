@@ -20,6 +20,7 @@ func TestMatchGitHubURLs(t *testing.T) {
 		{"https://github.com/asciimoo/hister/issues/305", true},
 		{"https://github.com/asciimoo/hister/pulls", false},
 		{"https://github.com/asciimoo/hister/settings", false},
+		{"https://github.com/topics/react-native", false},
 		{"https://de.wikipedia.org/wiki/Berlin", false},
 		{"https://stackoverflow.com/questions/1234", false},
 		{"https://example.com/wiki/Foo", false},

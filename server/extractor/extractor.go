@@ -25,6 +25,7 @@ import (
 	"github.com/asciimoo/hister/server/extractor/extractors/markdown"
 	"github.com/asciimoo/hister/server/extractor/extractors/mastodon"
 	"github.com/asciimoo/hister/server/extractor/extractors/notion"
+	"github.com/asciimoo/hister/server/extractor/extractors/org"
 	"github.com/asciimoo/hister/server/extractor/extractors/stackexchange"
 	"github.com/asciimoo/hister/server/extractor/extractors/wikipedia"
 	"github.com/asciimoo/hister/server/extractor/extractors/ytdlp"
@@ -135,6 +136,7 @@ func List() []ExtractorInfo {
 
 var extractors = []Extractor{
 	&markdown.MarkdownExtractor{},
+	&org.OrgModeExtractor{},
 	&embeddedvideo.EmbeddedVideoExtractor{},
 	&jsonld.JSONLDExtractor{},
 	&stackexchange.StackExchangeExtractor{},

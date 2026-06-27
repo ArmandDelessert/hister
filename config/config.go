@@ -48,6 +48,8 @@ type Config struct {
 
 type App struct {
 	Directory              string `yaml:"directory" mapstructure:"directory"`
+	Title                  string `yaml:"title" mapstructure:"title"`
+	Subtitle               string `yaml:"subtitle" mapstructure:"subtitle"`
 	SearchURL              string `yaml:"search_url" mapstructure:"search_url"`
 	AccessToken            string `yaml:"access_token" mapstructure:"access_token"`
 	UserHandling           bool   `yaml:"user_handling" mapstructure:"user_handling"`
@@ -474,6 +476,8 @@ func CreateDefaultConfig() *Config {
 		App: App{
 			SearchURL:              "https://google.com/search?q={query}",
 			Directory:              getDefaultDataDir(),
+			Title:                  "Hister",
+			Subtitle:               "Your own search engine",
 			LogLevel:               "info",
 			OpenResultsOnNewTab:    false,
 			RedirectOnNoResults:    true,

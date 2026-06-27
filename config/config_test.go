@@ -34,6 +34,27 @@ func TestServerDefaults(t *testing.T) {
 	}
 }
 
+func TestAppTitleDefaultsAndOverrides(t *testing.T) {
+	cfg := CreateDefaultConfig()
+	if cfg.App.Title != "Hister" {
+		t.Fatalf("default app title=%q, want %q", cfg.App.Title, "Hister")
+	}
+	if cfg.App.Subtitle != "Your own search engine" {
+		t.Fatalf("default app subtitle=%q, want %q", cfg.App.Subtitle, "Your own search engine")
+	}
+
+	cfg, err := parseConfig([]byte("app:\n  title: Team Archive\n  subtitle: Internal search\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.App.Title != "Team Archive" {
+		t.Fatalf("app title=%q, want %q", cfg.App.Title, "Team Archive")
+	}
+	if cfg.App.Subtitle != "Internal search" {
+		t.Fatalf("app subtitle=%q, want %q", cfg.App.Subtitle, "Internal search")
+	}
+}
+
 func TestConfigFileOverridesServerDefaults(t *testing.T) {
 	oldAddress := DefaultServerAddress
 	oldBaseURL := DefaultServerBaseURL

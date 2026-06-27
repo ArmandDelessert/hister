@@ -51,13 +51,21 @@ func TestPublicModeConfigResponse(t *testing.T) {
 		t.Fatalf("GET /api/config status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	var body struct {
-		Public         bool `json:"public"`
-		Authenticated  bool `json:"authenticated"`
-		CanWrite       bool `json:"canWrite"`
-		HistoryEnabled bool `json:"historyEnabled"`
+		Title          string `json:"title"`
+		Subtitle       string `json:"subtitle"`
+		Public         bool   `json:"public"`
+		Authenticated  bool   `json:"authenticated"`
+		CanWrite       bool   `json:"canWrite"`
+		HistoryEnabled bool   `json:"historyEnabled"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
+	}
+	if body.Title != "Hister" {
+		t.Fatalf("title = %q, want %q", body.Title, "Hister")
+	}
+	if body.Subtitle != "Your own search engine" {
+		t.Fatalf("subtitle = %q, want %q", body.Subtitle, "Your own search engine")
 	}
 	if !body.Public {
 		t.Fatal("public = false, want true")

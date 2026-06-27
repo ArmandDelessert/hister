@@ -2,6 +2,8 @@ import { base } from '$app/paths';
 
 export interface AppConfig {
   wsUrl: string;
+  title: string;
+  subtitle: string;
   searchUrl: string;
   openResultsOnNewTab: boolean;
   hotkeys: Record<string, string>;

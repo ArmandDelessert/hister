@@ -66,6 +66,8 @@ hister listen --config /path/to/my/config.yml
 ```yaml
 app:
   directory: '~/.config/hister'
+  title: 'Hister'
+  subtitle: 'Your own search engine'
   search_url: 'https://google.com/search?q={query}'
   public: false
   log_level: 'info'
@@ -128,6 +130,8 @@ sensitive_content_patterns:
 | Key                       | Type   | Default                               | Description                                                                                                                                               |
 | ------------------------- | ------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `directory`               | string | platform default                      | Directory where Hister stores its data (index, rules, secret key).                                                                                        |
+| `title`                   | string | `Hister`                              | Main title shown on the web UI home page.                                                                                                                 |
+| `subtitle`                | string | `Your own search engine`              | Secondary title shown below the main title on the web UI home page. Set to an empty string to hide it.                                                    |
 | `search_url`              | string | `https://google.com/search?q={query}` | Fallback web search URL. Use `{query}` as the placeholder for the search term.                                                                            |
 | `access_token`            | string | (none)                                | Optional access token for securing the API. See [Access Token](#access-token).                                                                            |
 | `user_handling`           | bool   | `false`                               | Enable multi-user mode. See [User Handling](/docs/user-handling) for details.                                                                             |

@@ -683,6 +683,8 @@ func serveConfig(c *webContext) {
 		BaseURL             string            `json:"baseUrl"`
 		BasePath            string            `json:"basePath"`
 		WsURL               string            `json:"wsUrl"`
+		Title               string            `json:"title"`
+		Subtitle            string            `json:"subtitle"`
 		SearchURL           string            `json:"searchUrl"`
 		OpenResultsOnNewTab bool              `json:"openResultsOnNewTab"`
 		Hotkeys             map[string]string `json:"hotkeys"`
@@ -721,6 +723,8 @@ func serveConfig(c *webContext) {
 		BaseURL:             c.Config.BaseURL(""),
 		BasePath:            c.Config.BasePathPrefix(),
 		WsURL:               c.Config.WebSocketURL(),
+		Title:               c.Config.App.Title,
+		Subtitle:            c.Config.App.Subtitle,
 		SearchURL:           c.Config.App.SearchURL,
 		OpenResultsOnNewTab: c.Config.App.OpenResultsOnNewTab,
 		Hotkeys:             hotkeys,

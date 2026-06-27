@@ -27,6 +27,7 @@
   const showLogout = $derived(
     !!config && config.authenticated && (config.authMode === 'user' || config.authMode === 'token'),
   );
+  const appTitle = $derived(config?.title ?? 'Hister');
 </script>
 
 <header
@@ -38,11 +39,11 @@
       href="./"
       class="group flex items-center gap-1.5 no-underline md:gap-2"
     >
-      <img src="static/logo.png" alt="Hister logo" class="h-6 w-6 md:h-8 md:w-8" />
+      <img src="static/logo.png" alt={`${appTitle} logo`} class="h-6 w-6 md:h-8 md:w-8" />
       <span
         class="font-space text-text-brand text-lg font-extrabold tracking-[1px] uppercase group-hover:underline md:text-[28px] md:tracking-[2px]"
       >
-        Hister
+        {appTitle}
       </span>
     </a>
   </h1>

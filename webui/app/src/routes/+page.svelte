@@ -75,6 +75,8 @@
 
   interface Config {
     wsUrl: string;
+    title: string;
+    subtitle: string;
     searchUrl: string;
     openResultsOnNewTab: boolean;
     hotkeys: Record<string, string>;
@@ -104,6 +106,8 @@
 
   let config: Config = $state({
     wsUrl: '',
+    title: 'Hister',
+    subtitle: 'Your own search engine',
     searchUrl: '',
     openResultsOnNewTab: false,
     hotkeys: {},
@@ -1335,6 +1339,8 @@
       const wsUrl = new URL(appConfig.wsUrl);
       config = {
         wsUrl: `${wsProto}//${location.host}${wsUrl.pathname}`,
+        title: appConfig.title ?? 'Hister',
+        subtitle: appConfig.subtitle ?? 'Your own search engine',
         searchUrl: appConfig.searchUrl,
         openResultsOnNewTab: appConfig.openResultsOnNewTab,
         hotkeys: appConfig.hotkeys,
@@ -1383,7 +1389,7 @@
 </script>
 
 <svelte:head>
-  <title>{query ? `${query} - Hister search` : 'Hister'}</title>
+  <title>{query ? `${query} - ${config.title} search` : config.title}</title>
 </svelte:head>
 
 <svelte:window onkeydown={handleKeydown} onpopstate={handlePopState} />
@@ -2314,10 +2320,12 @@
       class="font-outfit bg-clip-text text-5xl leading-none font-black tracking-[8px] text-transparent uppercase select-none md:text-9xl"
       style="background-image: linear-gradient(90deg, var(--hister-indigo), var(--hister-coral), var(--hister-teal), var(--hister-indigo)); background-size: 300% 100%; background-position: 0% 50%;"
     >
-      Hister
+      {config.title}
     </h1>
 
-    <p class="font-inter text-text-brand-secondary text-sm md:text-lg">Your own search engine</p>
+    {#if config.subtitle}
+      <p class="font-inter text-text-brand-secondary text-sm md:text-lg">{config.subtitle}</p>
+    {/if}
     <div
       bind:this={underlineEl}
       class="h-[3px] w-48"

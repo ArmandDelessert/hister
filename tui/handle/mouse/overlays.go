@@ -7,9 +7,9 @@ package mouse
 import (
 	"strings"
 
-	"github.com/asciimoo/hister/ui/model"
-	"github.com/asciimoo/hister/ui/render"
-	"github.com/asciimoo/hister/ui/theme"
+	"github.com/asciimoo/hister/tui/model"
+	"github.com/asciimoo/hister/tui/render"
+	"github.com/asciimoo/hister/tui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

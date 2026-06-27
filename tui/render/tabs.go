@@ -7,7 +7,7 @@ package render
 import (
 	"strings"
 
-	"github.com/asciimoo/hister/ui/model"
+	"github.com/asciimoo/hister/tui/model"
 
 	"github.com/charmbracelet/lipgloss"
 )

@@ -6,8 +6,8 @@ package handle
 
 import (
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/ui/model"
-	"github.com/asciimoo/hister/ui/render"
+	"github.com/asciimoo/hister/tui/model"
+	"github.com/asciimoo/hister/tui/render"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

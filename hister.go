@@ -31,7 +31,7 @@ import (
 	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
-	"github.com/asciimoo/hister/ui"
+	"github.com/asciimoo/hister/tui"
 
 	"github.com/bodgit/sevenzip"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -382,7 +382,7 @@ var searchCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			if err := ui.SearchTUI(cfg); err != nil {
+			if err := tui.SearchTUI(cfg); err != nil {
 				exit(1, err.Error())
 			}
 			return

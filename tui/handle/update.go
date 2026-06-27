@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/ui/handle/mouse"
-	"github.com/asciimoo/hister/ui/model"
-	"github.com/asciimoo/hister/ui/network"
-	"github.com/asciimoo/hister/ui/render"
+	"github.com/asciimoo/hister/tui/handle/mouse"
+	"github.com/asciimoo/hister/tui/model"
+	"github.com/asciimoo/hister/tui/network"
+	"github.com/asciimoo/hister/tui/render"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"

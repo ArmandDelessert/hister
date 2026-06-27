@@ -2,14 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package ui
+package tui
 
 import (
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/ui/handle"
-	"github.com/asciimoo/hister/ui/model"
-	"github.com/asciimoo/hister/ui/network"
-	"github.com/asciimoo/hister/ui/render"
+	"github.com/asciimoo/hister/tui/handle"
+	"github.com/asciimoo/hister/tui/model"
+	"github.com/asciimoo/hister/tui/network"
+	"github.com/asciimoo/hister/tui/render"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

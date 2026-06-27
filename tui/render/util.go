@@ -16,7 +16,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/ui/theme"
+	"github.com/asciimoo/hister/tui/theme"
 )
 
 // pads s with spaces on the right to reach exactly width display columns

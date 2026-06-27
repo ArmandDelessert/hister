@@ -16,7 +16,7 @@ import (
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/indexer"
-	"github.com/asciimoo/hister/ui/theme"
+	"github.com/asciimoo/hister/tui/theme"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"

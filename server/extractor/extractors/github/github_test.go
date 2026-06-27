@@ -1,6 +1,7 @@
 package github
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/asciimoo/hister/server/document"
@@ -158,6 +159,8 @@ mcp-server
 </span>
 </li>
 </ul>
+<react-app app-name="code-view" initial-path="/asciimoo/hister">
+  <script type="application/json" data-target="react-app.embeddedData">{"payload":{"codeViewRepoRoute":{"path":"/","refInfo":{"name":"master","listCacheKey":"v0:1782301410.0","canEdit":true,"refType":"branch","currentOid":"6a2fdecb5b7d20f1b214fdfa8bc9bf1dcebab86e"},"tree":{"items":[{"name":".forgejo/workflows","path":".forgejo/workflows","contentType":"directory","hasSimplifiedPath":true}],"totalCount":37,"templateDirectorySuggestionUrl":null,"readme":null,"showBranchInfobar":false},"overview":{"overviewFiles":[{"displayName":"README.md","repoName":"hister","refName":"master","path":"README.md","preferredFileType":"readme","tabName":"README","richText":"<article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 tabindex=\"-1\" class=\"heading-element\" dir=\"auto\">Hister</h1><a id=\"user-content-hister\" class=\"anchor\" aria-label=\"Permalink: Hister\" href=\"#hister\"><svg data-component=\"Octicon\" class=\"octicon octicon-link\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z\"></path></svg></a></div>\n<p dir=\"auto\"><strong>Your own search engine</strong></p>\n<p dir=\"auto\">Hister is a general purpose web search engine providing automatic full-text indexing for visited websites.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 tabindex=\"-1\" class=\"heading-element\" dir=\"auto\">Features</h2><a id=\"user-content-features\" class=\"anchor\" aria-label=\"Permalink: Features\" href=\"#features\"><svg data-component=\"Octicon\" class=\"octicon octicon-link\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z\"></path></svg></a></div>\n<ul dir=\"auto\">\n<li><strong>Privacy-focused</strong>: Keep your browsing history indexed locally - don't use remote search engines if it isn't necessary</li>\n<li><strong>Full-text indexing</strong>: Search through the actual content of web pages you've visited</li>\n<li><strong>Advanced search capabilities</strong>: Utilize a powerful <a href=\"https://hister.org/docs/query-language\" rel=\"nofollow\">query language</a> for precise results</li>\n<li><strong>Local file indexing</strong>: Index your local knowledge base</li>\n<li><strong>Crawler</strong>: Use a (headless) browser or a traditional crawler to extend your index fast</li>\n<li><strong>Multi-user support</li></ul></article>"}]}}}}</script>
 </body>`
 
 func TestExtractRepo(t *testing.T) {
@@ -176,6 +179,23 @@ func TestExtractRepo(t *testing.T) {
 	if d.Title != "asciimoo/hister: Your own search engine" {
 		t.Errorf("Title = %q, want %q", d.Title, "asciimoo/hister: Your own search engine")
 	}
+	// Text checks.
+	if !strings.Contains(d.Text, "description: Your own search engine") {
+		t.Error("Text should contain description")
+	}
+	if !strings.Contains(d.Text, "topics: search, go, golang") {
+		t.Error("Text should contain topics")
+	}
+	if !strings.Contains(d.Text, "languages: Go, Svelte, TypeScript") {
+		t.Error("Text should contain languages")
+	}
+	if !strings.Contains(d.Text, "Multi-user support") {
+		t.Error("Text should contain README")
+	}
+	if !strings.Contains(d.Text, "stars: 1255") {
+		t.Error("Text should contain stars")
+	}
+
 	// Metadata checks.
 	if d.Metadata["description"] != "Your own search engine" {
 		t.Errorf("Metadata[description] = %v, want Your own search engine", d.Metadata["description"])
@@ -185,9 +205,6 @@ func TestExtractRepo(t *testing.T) {
 	}
 	if d.Metadata["languages"] != "Go, Svelte, TypeScript, Shell, CSS, Nix" {
 		t.Errorf("Metadata[languages] = %q", d.Metadata["languages"])
-	}
-	if d.Metadata["stars"] != "1255" {
-		t.Errorf("Metadata[stars] = %q", d.Metadata["stars"])
 	}
 }
 
@@ -247,6 +264,12 @@ func TestExtractIssuePage(t *testing.T) {
 	if d.Title != "Extractors wanted! · Issue #305 · asciimoo/hister" {
 		t.Errorf("Title = %q, want %q", d.Title, "Extractors wanted! · Issue #305 · asciimoo/hister")
 	}
+
+	// Text checks.
+	if !strings.Contains(d.Text, "comments: hey bruhh i like to work on reddit post extractor..., Thanks bro, is there any deadline for this ???") {
+		t.Error("Text should contain comments")
+	}
+
 	// Metadata checks.
 	if d.Metadata["type"] != "Issue" {
 		t.Errorf("Metadata[issue] = %v, want Issue", d.Metadata["issue"])
@@ -254,10 +277,7 @@ func TestExtractIssuePage(t *testing.T) {
 	if d.Metadata["title"] != "Extractors wanted!" {
 		t.Errorf("Metadata[title] = %v, want Extractors wanted!", d.Metadata["title"])
 	}
-	if d.Metadata["dateOpened"] != "2026-04-09T07:47:32.000Z" {
+	if d.Metadata["date"] != "2026-04-09T07:47:32.000Z" {
 		t.Errorf("Metadata[title] = %v, want 2026-04-09T07:47:32.000Z", d.Metadata["dateOpened"])
-	}
-	if d.Metadata["comments"] != "hey bruhh i like to work on reddit post extractor..., Thanks bro, is there any deadline for this ???, @dinzz005 No deadlines" {
-		t.Errorf("Metadata[comments] = %s, want hey bruhh i like to work on reddit post extractor..., Thanks bro, is there any deadline for this ???, @dinzz005 No deadlines", d.Metadata["comments"])
 	}
 }

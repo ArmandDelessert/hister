@@ -173,24 +173,33 @@ func extractRepo(d *document.Document, parts []string) (types.ExtractorState, er
 	d.Metadata["type"] = "Repository"
 
 	if info.description != "" {
+		b.WriteString("description: ")
+		b.WriteString(info.description)
+		b.WriteString("\n\n")
 		d.Metadata["description"] = info.description
 	}
 	if len(info.topics) > 0 {
+		b.WriteString("topics: ")
+		b.WriteString(strings.Join(info.topics, ", "))
+		b.WriteString("\n")
 		d.Metadata["topics"] = strings.Join(info.topics, ", ")
 	}
 	if len(info.languages) > 0 {
+		b.WriteString("languages: ")
+		b.WriteString(strings.Join(info.languages, ", "))
+		b.WriteString("\n")
 		d.Metadata["languages"] = strings.Join(info.languages, ", ")
 	}
 	if info.stars != "" {
-		d.Metadata["stars"] = info.stars
+		b.WriteString("stars: ")
+		b.WriteString(info.stars)
+		b.WriteString("\n")
 	}
 	if info.readmeHTML != "" {
 		readmeDoc, err := goquery.NewDocumentFromReader(strings.NewReader(info.readmeHTML))
 		if err == nil {
-			var doc = strings.TrimSpace(readmeDoc.Text())
-			d.Metadata["readme"] = doc
 			b.WriteString("\n")
-			b.WriteString(doc)
+			b.WriteString(strings.TrimSpace(readmeDoc.Text()))
 		}
 	}
 
@@ -210,22 +219,32 @@ func extractIssue(d *document.Document, parts []string) (types.ExtractorState, e
 
 	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
 
+	var b strings.Builder
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
 	d.Metadata["type"] = "Issue"
+
 	if title := doc.Find(`bdi[data-testid="issue-title"]`).Text(); title != "" {
 		d.Metadata["title"] = title
+		fmt.Fprintf(&b, "title: %s\n\n", title)
 	}
 	if dateOpened := doc.Find(`[data-testid="issue-body"] relative-time`).AttrOr("datetime", ""); dateOpened != "" {
-		d.Metadata["dateOpened"] = dateOpened
+		d.Metadata["date"] = dateOpened
 	}
+
 	var commentBodies []string
 	doc.Find(`[data-testid="issue-viewer-comments-container"] [data-testid="markdown-body"]`).Each(func(_ int, s *goquery.Selection) {
 		commentBodies = append(commentBodies, strings.TrimSpace(s.Text()))
 	})
-	d.Metadata["comments"] = strings.Join(commentBodies, ", ")
+	if len(commentBodies) > 0 {
+		fmt.Fprintf(&b, "comments: %s", strings.Join(commentBodies, ", "))
+	}
 
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
 	return types.ExtractorStop, nil
 }
 

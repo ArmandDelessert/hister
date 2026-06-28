@@ -2324,7 +2324,7 @@
     </h1>
 
     {#if config.subtitle}
-      <p class="font-inter text-text-brand-secondary text-sm md:text-lg">{config.subtitle}</p>
+      <p class="font-inter text-text-brand-secondary text-sm md:text-lg">{@html config.subtitle}</p>
     {/if}
     <div
       bind:this={underlineEl}

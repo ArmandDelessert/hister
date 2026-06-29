@@ -29,6 +29,20 @@ Automatic indexing can be paused at any time using the toggle in the popup.
 
 The **Reindex Page** button in the popup forces an immediate re-submission of the current page, regardless of whether it has changed. This is useful after clearing your server's index or when a page failed to index automatically (indicated by a `!` badge on the extension icon).
 
+### Keyboard Shortcuts
+
+The extension defines browser level shortcuts for common indexing actions.
+
+| Action                              | Windows and Linux | macOS       | Notes                                                                 |
+| ----------------------------------- | ----------------- | ----------- | --------------------------------------------------------------------- |
+| Index current page                  | `Ctrl+I`          | `Command+I` | Runs even when automatic indexing is disabled.                        |
+| Disable indexing for current page   | `Ctrl+B`          | `Command+B` | Adds a skip rule for the exact current URL.                           |
+| Disable indexing for current domain | `Ctrl+Y`          | `Command+Y` | Adds a skip rule for the current origin, including scheme and domain. |
+
+Successful shortcut actions show a `✓` badge on the extension icon for a few seconds. Failed actions show a `!` badge.
+
+Browser shortcuts can be changed in the browser extension shortcut settings. In Chrome, Chromium, and Edge, open `chrome://extensions/shortcuts`. In Firefox, open `about:addons`, choose the extension shortcut settings, then edit the Hister shortcuts.
+
 ### Search Engine Result Tracking
 
 The extension detects when you click on a search result in **Google** or **DuckDuckGo** and records the query alongside the result's title and URL to provide that result for the same query in the future.

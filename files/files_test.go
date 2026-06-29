@@ -5,31 +5,13 @@ import (
 	"testing"
 
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/model"
+	"github.com/asciimoo/hister/server/testutil"
 )
 
-func setupTestDB(t *testing.T) *config.Config {
-	t.Helper()
-	cfg := &config.Config{
-		Server: config.Server{
-			Database: "file::memory:",
-		},
-	}
-	err := model.Init(cfg)
-	if err != nil {
-		t.Fatalf("failed to init test DB: %v", err)
-	}
-	return cfg
-}
-
 func TestFindDirUser(t *testing.T) {
-	setupTestDB(t)
+	testutil.InitModel(t)
 
-	// Create test users
-	u1, err := model.CreateUser("alice", "password123", false)
-	if err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
+	u1 := testutil.CreateUser(t, "alice")
 
 	dirs := []*config.Directory{
 		{Path: "/home/alice/docs", User: "alice"},
@@ -103,18 +85,14 @@ func TestFindDirUser(t *testing.T) {
 }
 
 func TestFindDirUserWithHomeExpansion(t *testing.T) {
-	setupTestDB(t)
+	testutil.InitModel(t)
 
 	home := ExpandHome("~/")
 	if home == "~/ " {
 		t.Skip("could not expand home directory")
 	}
 
-	// Create a test user
-	_, err := model.CreateUser("homeuser", "password123", false)
-	if err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
+	testutil.CreateUser(t, "homeuser")
 
 	dirs := []*config.Directory{
 		{Path: "~/project", User: "homeuser"},

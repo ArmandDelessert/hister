@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/model"
+	"github.com/asciimoo/hister/server/testutil"
 
 	"github.com/gorilla/sessions"
 )
@@ -21,8 +20,7 @@ func newPublicTokenTestServer(t *testing.T) (*config.Config, http.Handler) {
 
 func newTokenTestServer(t *testing.T, public bool) (*config.Config, http.Handler) {
 	t.Helper()
-	cfg := config.CreateDefaultConfig()
-	cfg.App.Directory = t.TempDir()
+	cfg := testutil.Config(t)
 	cfg.App.AccessToken = "secret"
 	cfg.App.Public = public
 	cfg.Server.Address = "127.0.0.1:4433"
@@ -43,10 +41,7 @@ func newTokenTestServer(t *testing.T, public bool) (*config.Config, http.Handler
 
 func TestPublicModeConfigResponse(t *testing.T) {
 	_, handler := newPublicTokenTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
+	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/config", nil, nil)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/config status = %d, want %d", rec.Code, http.StatusOK)
@@ -85,10 +80,7 @@ func TestPublicModeConfigResponse(t *testing.T) {
 func TestPublicModeAllowsDocumentedPublicRoutes(t *testing.T) {
 	cfg, handler := newPublicTokenTestServer(t)
 	dir := t.TempDir()
-	filePath := filepath.Join(dir, "note.txt")
-	if err := os.WriteFile(filePath, []byte("public file"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	filePath := testutil.WriteFile(t, dir, "note.txt", []byte("public file"))
 	cfg.Indexer.Directories = []*config.Directory{{Path: dir}}
 
 	tests := []struct {
@@ -105,10 +97,7 @@ func TestPublicModeAllowsDocumentedPublicRoutes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.target, strings.NewReader(tt.body))
-			rec := httptest.NewRecorder()
-
-			handler.ServeHTTP(rec, req)
+			rec := testutil.ServeHTTP(t, handler, tt.method, tt.target, strings.NewReader(tt.body), nil)
 
 			if rec.Code != tt.want {
 				t.Fatalf("%s %s status = %d, want %d; body=%s", tt.method, tt.target, rec.Code, tt.want, rec.Body.String())
@@ -131,10 +120,7 @@ func TestPublicModeProtectsWriteRoutes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.target, strings.NewReader(tt.body))
-			rec := httptest.NewRecorder()
-
-			handler.ServeHTTP(rec, req)
+			rec := testutil.ServeHTTP(t, handler, tt.method, tt.target, strings.NewReader(tt.body), nil)
 
 			if rec.Code != http.StatusForbidden {
 				t.Fatalf("%s %s status = %d, want %d", tt.method, tt.target, rec.Code, http.StatusForbidden)
@@ -145,12 +131,10 @@ func TestPublicModeProtectsWriteRoutes(t *testing.T) {
 
 func TestPublicModeAllowsAuthenticatedProtectedRoutes(t *testing.T) {
 	_, handler := newPublicTokenTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/add", nil)
-	req.Header.Set("Origin", "hister://")
-	req.Header.Set("X-Access-Token", "secret")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
+	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/add", nil, map[string]string{
+		"Origin":         "hister://",
+		"X-Access-Token": "secret",
+	})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/add status = %d, want %d", rec.Code, http.StatusOK)
@@ -200,32 +184,26 @@ func TestTokenLoginSetsHttpOnlySessionCookieAndAuthenticates(t *testing.T) {
 
 func TestPublicModeDisablesHistoryForAuthenticatedCallers(t *testing.T) {
 	_, handler := newPublicTokenTestServer(t)
-	anonymousReq := httptest.NewRequest(http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com"}`))
-	anonymousReq.Header.Set("Origin", "hister://")
-	anonymousRec := httptest.NewRecorder()
-
-	handler.ServeHTTP(anonymousRec, anonymousReq)
+	anonymousRec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com"}`), map[string]string{
+		"Origin": "hister://",
+	})
 
 	if anonymousRec.Code != http.StatusForbidden {
 		t.Fatalf("anonymous POST /api/history status = %d, want %d", anonymousRec.Code, http.StatusForbidden)
 	}
 
-	readReq := httptest.NewRequest(http.MethodGet, "/api/history", nil)
-	readReq.Header.Set("X-Access-Token", "secret")
-	readRec := httptest.NewRecorder()
-
-	handler.ServeHTTP(readRec, readReq)
+	readRec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/history", nil, map[string]string{
+		"X-Access-Token": "secret",
+	})
 
 	if readRec.Code != http.StatusNotFound {
 		t.Fatalf("authenticated GET /api/history status = %d, want %d", readRec.Code, http.StatusNotFound)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com"}`))
-	req.Header.Set("Origin", "hister://")
-	req.Header.Set("X-Access-Token", "secret")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
+	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com"}`), map[string]string{
+		"Origin":         "hister://",
+		"X-Access-Token": "secret",
+	})
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("POST /api/history status = %d, want %d", rec.Code, http.StatusNoContent)
@@ -234,14 +212,8 @@ func TestPublicModeDisablesHistoryForAuthenticatedCallers(t *testing.T) {
 
 func TestMCPGetHistoryOpenedMode(t *testing.T) {
 	cfg, handler := newTokenTestServer(t, false)
-	if err := model.Init(cfg); err != nil {
-		t.Fatal(err)
-	}
-	if db, err := model.DB.DB(); err == nil {
-		t.Cleanup(func() {
-			_ = db.Close()
-		})
-	}
+	cfg.Server.Database = "file::memory:"
+	testutil.InitModelWithConfig(t, cfg)
 	if err := model.UpdateHistory(0, "hister mcp", "https://example.com/mcp", "MCP result"); err != nil {
 		t.Fatal(err)
 	}
@@ -249,11 +221,9 @@ func TestMCPGetHistoryOpenedMode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_history","arguments":{"mode":"opened","limit":10}}}`))
-	req.Header.Set("X-Access-Token", "secret")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
+	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_history","arguments":{"mode":"opened","limit":10}}}`), map[string]string{
+		"X-Access-Token": "secret",
+	})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST /mcp get_history status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -289,11 +259,9 @@ func TestMCPGetHistoryOpenedMode(t *testing.T) {
 
 func TestMCPGetHistoryDefaultsToIndexedMode(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)
-	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_history","arguments":{"limit":10}}}`))
-	req.Header.Set("X-Access-Token", "secret")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
+	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_history","arguments":{"limit":10}}}`), map[string]string{
+		"X-Access-Token": "secret",
+	})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST /mcp get_history status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -320,10 +288,7 @@ func TestMCPGetHistoryDefaultsToIndexedMode(t *testing.T) {
 
 func TestTokenAuthStillProtectsPublicRoutesWhenPublicModeDisabled(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)
-	req := httptest.NewRequest(http.MethodGet, "/search?format=json", nil)
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
+	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/search?format=json", nil, nil)
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("GET /search status = %d, want %d", rec.Code, http.StatusForbidden)

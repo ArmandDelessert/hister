@@ -3,16 +3,13 @@ package indexer
 import (
 	"testing"
 
-	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/testutil"
 )
 
 func TestSearchSortsByMostVisited(t *testing.T) {
-	dataDir := t.TempDir()
-	idxCfg := config.CreateDefaultConfig()
-	idxCfg.App.Directory = dataDir
-	err := Init(idxCfg)
-	if err != nil {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
 		t.Fatalf("failed to init indexer: %v", err)
 	}
 	defer i.Close()
@@ -26,12 +23,11 @@ func TestSearchSortsByMostVisited(t *testing.T) {
 		mostVisitedURL,
 	}
 	for _, url := range docs {
-		err = Add(&document.Document{
+		if err := Add(&document.Document{
 			URL:   url,
 			Title: "Visited sort",
 			Text:  "Visited sort document text",
-		})
-		if err != nil {
+		}); err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
 	}

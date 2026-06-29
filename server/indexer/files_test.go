@@ -1,43 +1,22 @@
 package indexer
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/model"
+	"github.com/asciimoo/hister/server/testutil"
 
 	"github.com/blevesearch/bleve/v2"
 )
 
-func setupTestDB(t *testing.T) *config.Config {
-	t.Helper()
-	cfg := &config.Config{
-		Server: config.Server{
-			Database: "file::memory:",
-		},
-	}
-	err := model.Init(cfg)
-	if err != nil {
-		t.Fatalf("failed to init test DB: %v", err)
-	}
-	return cfg
-}
-
 func TestDirectoryUserResolution(t *testing.T) {
-	setupTestDB(t)
+	testutil.InitModel(t)
 
-	// Create test users
-	u1, err := model.CreateUser("alice", "password123", false)
-	if err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
-	u2, err := model.CreateUser("bob", "password123", false)
-	if err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
+	u1 := testutil.CreateUser(t, "alice")
+	u2 := testutil.CreateUser(t, "bob")
 
 	tests := []struct {
 		name     string
@@ -127,72 +106,44 @@ func TestFileIndexQueueKeepsLatestPendingOperation(t *testing.T) {
 }
 
 func TestIndexFileWithUserID(t *testing.T) {
-	setupTestDB(t)
+	testutil.InitModel(t)
 
-	// Create a test user
-	u, err := model.CreateUser("testuser", "password123", false)
-	if err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
+	u := testutil.CreateUser(t, "testuser")
 
-	// Create temp dirs for data and test files
-	dataDir := t.TempDir()
 	testDir := t.TempDir()
 
-	// Create test files (avoid patterns that match sensitive content regex)
-	testFile := filepath.Join(testDir, "test.txt")
-	err = os.WriteFile(testFile, []byte("sample document content about indexing files for testing purposes"), 0o644)
-	if err != nil {
-		t.Fatalf("failed to create test file: %v", err)
-	}
+	testFile := testutil.WriteFile(t, testDir, "test.txt", []byte("sample document content about indexing files for testing purposes"))
+	testFile2 := testutil.WriteFile(t, testDir, "test2.txt", []byte("sample global document content for indexing test purposes"))
 
-	testFile2 := filepath.Join(testDir, "test2.txt")
-	err = os.WriteFile(testFile2, []byte("sample global document content for indexing test purposes"), 0o644)
-	if err != nil {
-		t.Fatalf("failed to create test file 2: %v", err)
-	}
-
-	// Initialize the indexer with proper data and index dirs
-	idxCfg := config.CreateDefaultConfig()
-	idxCfg.App.Directory = dataDir
-	// Override the index dir
-	err = Init(idxCfg)
-	if err != nil {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
 		t.Fatalf("failed to init indexer: %v", err)
 	}
 	defer i.Close()
 
-	// Index the file with the test user's ID
-	err = IndexFile(testFile, u.ID)
-	if err != nil {
+	if err := IndexFile(testFile, u.ID); err != nil {
 		t.Fatalf("IndexFile with user ID failed: %v", err)
 	}
 
-	// Index the file without user ID (global)
-	err = IndexFile(testFile2, 0)
-	if err != nil {
+	if err := IndexFile(testFile2, 0); err != nil {
 		t.Fatalf("IndexFile without user ID failed: %v", err)
 	}
 }
 
 func TestAddDocumentIncrementsAddCount(t *testing.T) {
-	dataDir := t.TempDir()
-	idxCfg := config.CreateDefaultConfig()
-	idxCfg.App.Directory = dataDir
-	err := Init(idxCfg)
-	if err != nil {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
 		t.Fatalf("failed to init indexer: %v", err)
 	}
 	defer i.Close()
 
 	url := "https://example.com/count"
 	for range 2 {
-		err = Add(&document.Document{
+		if err := Add(&document.Document{
 			URL:   url,
 			Title: "Counted",
 			Text:  "Counted document text",
-		})
-		if err != nil {
+		}); err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
 	}
@@ -218,11 +169,8 @@ func TestAddDocumentIncrementsAddCount(t *testing.T) {
 }
 
 func TestAddDocumentDoesNotIncrementAddCountForExtraDocuments(t *testing.T) {
-	dataDir := t.TempDir()
-	idxCfg := config.CreateDefaultConfig()
-	idxCfg.App.Directory = dataDir
-	err := Init(idxCfg)
-	if err != nil {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
 		t.Fatalf("failed to init indexer: %v", err)
 	}
 	defer i.Close()
@@ -230,7 +178,7 @@ func TestAddDocumentDoesNotIncrementAddCountForExtraDocuments(t *testing.T) {
 	parentURL := "https://example.com/parent"
 	extraURL := "https://example.com/extra"
 	for range 2 {
-		err = Add(&document.Document{
+		if err := Add(&document.Document{
 			URL:   parentURL,
 			Title: "Parent",
 			Text:  "Parent document text",
@@ -241,8 +189,7 @@ func TestAddDocumentDoesNotIncrementAddCountForExtraDocuments(t *testing.T) {
 					Text:  "Extra document text",
 				},
 			},
-		})
-		if err != nil {
+		}); err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
 	}
@@ -265,17 +212,14 @@ func TestAddDocumentDoesNotIncrementAddCountForExtraDocuments(t *testing.T) {
 }
 
 func TestAddDocumentTreatsMissingAddCountAsOne(t *testing.T) {
-	dataDir := t.TempDir()
-	idxCfg := config.CreateDefaultConfig()
-	idxCfg.App.Directory = dataDir
-	err := Init(idxCfg)
-	if err != nil {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
 		t.Fatalf("failed to init indexer: %v", err)
 	}
 	defer i.Close()
 
 	url := "https://example.com/legacy-count"
-	err = i.save(&document.Document{
+	err := i.save(&document.Document{
 		URL:   url,
 		Title: "Legacy counted",
 		Text:  "Legacy counted document text",
@@ -311,17 +255,14 @@ func TestAddDocumentTreatsMissingAddCountAsOne(t *testing.T) {
 }
 
 func TestSaveRemovesStaleLanguageCopy(t *testing.T) {
-	dataDir := t.TempDir()
-	idxCfg := config.CreateDefaultConfig()
-	idxCfg.App.Directory = dataDir
-	err := Init(idxCfg)
-	if err != nil {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
 		t.Fatalf("failed to init indexer: %v", err)
 	}
 	defer i.Close()
 
 	url := "https://example.com/language-copy"
-	err = i.save(&document.Document{
+	err := i.save(&document.Document{
 		URL:      url,
 		Title:    "Language copy",
 		Text:     "Language copy text",

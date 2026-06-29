@@ -202,7 +202,9 @@ var listenCmd = &cobra.Command{
 			log.Warn().Msg("Using authentication token without https. Token is sent plain-text in network requests.")
 		}
 		if len(cfg.Indexer.Directories) > 0 {
-			go indexer.IndexAll(cfg.Indexer.Directories)
+			fileQueue := indexer.NewFileIndexQueue()
+			go fileQueue.Run(context.Background())
+			go fileQueue.EnqueueAll(cfg.Indexer.Directories)
 			go func() {
 				if err := files.WatchDirectories(context.Background(), cfg.Indexer.Directories, func(path string) {
 					userID, err := files.FindDirUser(cfg.Indexer.Directories, path)
@@ -213,13 +215,9 @@ var listenCmd = &cobra.Command{
 						log.Error().Str("path", path).Msg("user field set but user_handling is not enabled")
 						return
 					}
-					if err := indexer.IndexFile(path, userID); err != nil {
-						log.Debug().Err(err).Str("path", path).Msg("Failed to index file")
-					}
+					fileQueue.EnqueueIndex(path, userID)
 				}, func(path string) {
-					if err := indexer.DeleteFile(path); err != nil {
-						log.Debug().Err(err).Str("path", path).Msg("Failed to delete file from index")
-					}
+					fileQueue.EnqueueDelete(path)
 				}); err != nil {
 					log.Error().Err(err).Msg("File watcher failed")
 				}

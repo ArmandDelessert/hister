@@ -100,6 +100,32 @@ func TestDirectoryUserResolution(t *testing.T) {
 	}
 }
 
+func TestFileIndexQueueKeepsLatestPendingOperation(t *testing.T) {
+	queue := NewFileIndexQueue()
+	path := filepath.Join(t.TempDir(), "note.md")
+
+	queue.EnqueueIndex(path, 42)
+	queue.EnqueueDelete(path)
+
+	item, ok := queue.pop()
+	if !ok {
+		t.Fatal("expected queued item")
+	}
+	if item.op != fileIndexDelete {
+		t.Fatalf("queued operation = %v, want delete", item.op)
+	}
+	if item.path != path {
+		t.Fatalf("queued path = %q, want %q", item.path, path)
+	}
+	if item.userID != 0 {
+		t.Fatalf("queued user ID = %d, want 0", item.userID)
+	}
+
+	if _, ok := queue.pop(); ok {
+		t.Fatal("expected queue to coalesce operations for the same path")
+	}
+}
+
 func TestIndexFileWithUserID(t *testing.T) {
 	setupTestDB(t)
 

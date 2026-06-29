@@ -202,7 +202,7 @@ var listenCmd = &cobra.Command{
 			log.Warn().Msg("Using authentication token without https. Token is sent plain-text in network requests.")
 		}
 		if len(cfg.Indexer.Directories) > 0 {
-			indexer.IndexAll(cfg.Indexer.Directories)
+			go indexer.IndexAll(cfg.Indexer.Directories)
 			go func() {
 				if err := files.WatchDirectories(context.Background(), cfg.Indexer.Directories, func(path string) {
 					userID, err := files.FindDirUser(cfg.Indexer.Directories, path)

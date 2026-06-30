@@ -233,6 +233,10 @@ func extractIssue(d *document.Document, parts []string) (types.ExtractorState, e
 		d.Metadata["date"] = dateOpened
 	}
 
+	if body := doc.Find(`#issue-body-viewer`).Text(); body != "" {
+		fmt.Fprintf(&b, "body: %s\n\n", body)
+	}
+
 	var commentBodies []string
 	doc.Find(`[data-testid="issue-viewer-comments-container"] [data-testid="markdown-body"]`).Each(func(_ int, s *goquery.Selection) {
 		commentBodies = append(commentBodies, strings.TrimSpace(s.Text()))

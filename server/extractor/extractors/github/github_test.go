@@ -226,10 +226,12 @@ const issuePage = `<html>
 		<relative-time class="IssueBodyHeader-module__RelativeTime__xv0lw" datetime="2026-04-09T07:47:32.000Z" title="Apr 9, 2026, 09:47 GMT+2">on Apr 9, 2026</relative-time>
 		</a>
 	  </div>
-	  <div data-testid="markdown-body">
-		<h1 dir="auto">This is a meta issue raising awareness to contribute to existing extractors or add new ones</h1>
-		<p dir="auto">[...]</p>
-	  </div>
+      <div id="issue-body-viewer">
+		<div data-testid="markdown-body">
+		  <h1 dir="auto">This is a meta issue raising awareness to contribute to existing extractors or add new ones</h1>
+		  <p dir="auto">Extractors are modules that provide custom, content-specific document parsing or rendering functions to enhance the data quality of Hister. [...]</p>
+		</div>
+      </div>
 	</div>
   </div>
   <div data-testid="issue-viewer-comments-container">
@@ -268,6 +270,9 @@ func TestExtractIssuePage(t *testing.T) {
 	// Text checks.
 	if !strings.Contains(d.Text, "comments: hey bruhh i like to work on reddit post extractor..., Thanks bro, is there any deadline for this ???") {
 		t.Error("Text should contain comments")
+	}
+	if !strings.Contains(d.Text, "This is a meta issue raising awareness to contribute to existing extractors or add new ones") || !strings.Contains(d.Text, "Extractors are modules that provide custom") {
+		t.Error("Text should contain the issue body")
 	}
 
 	// Metadata checks.

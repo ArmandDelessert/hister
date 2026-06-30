@@ -91,7 +91,7 @@ var (
 
 type githubPattern = struct {
 	re      *regexp.Regexp
-	handler func(*document.Document, []string) (types.ExtractorState, error)
+	handler func(*document.Document) (types.ExtractorState, error)
 }
 
 var githubPatterns = []githubPattern{
@@ -130,10 +130,9 @@ func urlParts(url string) []string {
 // Extract populates d.Title and d.Text with repository metadata and README
 // plain text, making the content fully searchable.
 func (e *GitHubExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
-	var parts = urlParts(d.URL)
 	for _, p := range githubPatterns {
 		if p.re.MatchString(d.URL) {
-			return p.handler(d, parts)
+			return p.handler(d)
 		}
 	}
 
@@ -202,7 +201,7 @@ func getRepo(url string) (string, error) {
 	return m[1] + "/" + m[2], nil
 }
 
-func extractRepo(d *document.Document, parts []string) (types.ExtractorState, error) {
+func extractRepo(d *document.Document) (types.ExtractorState, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
 		return types.ExtractorContinue, err
@@ -402,7 +401,7 @@ func richTextFromFiles(v any) string {
 }
 
 // --- Issues --------------------------------------------------------------
-func extractIssue(d *document.Document, parts []string) (types.ExtractorState, error) {
+func extractIssue(d *document.Document) (types.ExtractorState, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
 		return types.ExtractorContinue, err
@@ -447,7 +446,7 @@ func extractIssue(d *document.Document, parts []string) (types.ExtractorState, e
 	return types.ExtractorStop, nil
 }
 
-func extractIssues(d *document.Document, parts []string) (types.ExtractorState, error) {
+func extractIssues(d *document.Document) (types.ExtractorState, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
 		return types.ExtractorContinue, err
@@ -489,7 +488,7 @@ func extractIssues(d *document.Document, parts []string) (types.ExtractorState, 
 }
 
 // --- Pull Requests -------------------------------------------------------
-func extractPull(d *document.Document, parts []string) (types.ExtractorState, error) {
+func extractPull(d *document.Document) (types.ExtractorState, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
 		return types.ExtractorContinue, err

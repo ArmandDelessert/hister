@@ -86,6 +86,7 @@ var (
 	fullRepoRe = regexp.MustCompile(fmt.Sprintf(`^%s$`, urlPattern))              // /owner/repo
 	issueRe    = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)$`, urlPattern)) // /owner/repo/issue/:id
 	issuesRe   = regexp.MustCompile(fmt.Sprintf(`^%s/issues$`, urlPattern))       // /owner/repo/issues
+	prRe       = regexp.MustCompile(fmt.Sprintf(`^%s/pull/(\d+)$`, urlPattern))   // /owner/repo/pull/:id
 )
 
 type githubPattern = struct {
@@ -97,6 +98,7 @@ var githubPatterns = []githubPattern{
 	{fullRepoRe, extractRepo},
 	{issueRe, extractIssue},
 	{issuesRe, extractIssues},
+	{prRe, extractPull},
 }
 
 // Match returns true for known github URLs, defined in githubPatterns
@@ -483,5 +485,53 @@ func extractIssues(d *document.Document, parts []string) (types.ExtractorState, 
 	if d.Text == "" && d.Title == "" {
 		return types.ExtractorContinue, fmt.Errorf("no content found")
 	}
+	return types.ExtractorStop, nil
+}
+
+// --- Pull Requests -------------------------------------------------------
+func extractPull(d *document.Document, parts []string) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	var b strings.Builder
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "PullRequest"
+
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
+
+	if title := strings.TrimSpace(doc.Find(`h1[data-component="PH_Title"] .markdown-title`).Text()); title != "" {
+		d.Metadata["title"] = title
+		fmt.Fprintf(&b, "title: %s\n\n", title)
+	}
+	if dateOpened := doc.Find(`.js-command-palette-pull-body relative-time`).AttrOr("datetime", ""); dateOpened != "" {
+		d.Metadata["date"] = dateOpened
+	}
+
+	// the PR "body" is just a comment
+	var comments []string
+	doc.Find(`.js-comment-container`).Each(func(i int, s *goquery.Selection) {
+		comments = append(comments, strings.TrimSpace(s.Text()))
+	})
+	if len(comments) > 0 {
+		fmt.Fprintf(&b, "comments: %s\n", strings.Join(comments, ", "))
+	}
+
+	if state := strings.TrimSpace(doc.Find(`[data-status]`).First().Text()); state != "" {
+		d.Metadata["state"] = state
+	}
+
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
+
 	return types.ExtractorStop, nil
 }

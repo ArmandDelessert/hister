@@ -20,6 +20,7 @@ func TestMatchGitHubURLs(t *testing.T) {
 		{"https://github.com/asciimoo/hister/issues", true},
 		{"https://github.com/asciimoo/hister/issues/305", true},
 		{"https://github.com/asciimoo/hister/pulls", false},
+		{"https://github.com/asciimoo/hister/pull/495", true},
 		{"https://github.com/asciimoo/hister/settings", false},
 		{"https://github.com/topics/react-native", false},
 		{"https://de.wikipedia.org/wiki/Berlin", false},
@@ -295,7 +296,6 @@ func TestExtractIssuePage(t *testing.T) {
 	}
 }
 
-// --- Issues --------------------------------------------------------------
 const issuesPage = `<html>
 <head><title>Issues · asciimoo/hister</title></head>
 <body>
@@ -367,5 +367,176 @@ func TestExtractIssuesPage(t *testing.T) {
 	}
 	if d.Metadata["repo"] != "asciimoo/hister" {
 		t.Errorf("Metadata[repo] = %v, want asciimoo/hister", d.Metadata["repo"])
+	}
+}
+
+// --- Pull Requests -------------------------------------------------------
+const prPage = `<html>
+<head><title>Improve GitHub extractor by RensOliemans · Pull Request #495 · asciimoo/hister · GitHub</title></head>
+<body>
+<div id="repo-content-pjax-container">
+<react-app app-name="pull-requests">
+<div data-target="react-app.reactRoot">
+
+<header>
+  <div data-component="TitleArea">
+    <h1 data-component="PH_Title" data-hidden="false">
+      <span class="markdown-title">Improve GitHub extractor</span>
+      <span><span>#495</span></span>
+    </h1>
+  </div>
+  <div data-component="PageHeader.Description">
+    <span data-size="medium" data-status="pullOpened"><svg aria-label="Pull request"></svg>Open</span>
+    <div>
+      <a data-component="Link" data-muted="true" data-inline="true" href="/RensOliemans">RensOliemans</a> wants to merge 9 commits into
+      <div>
+        <a href="/asciimoo/hister/tree/master" data-component="BranchName">asciimoo:master</a>
+        <span>from </span>
+        <a href="/RensOliemans/hister/tree/github-extractor" data-component="BranchName">RensOliemans:github-extractor</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div>
+  <rails-partial data-partial-name="pullRequestsConversationsRoute.Body">
+    <div class="TimelineItem TimelineItem--condensed pt-0 js-comment-container js-command-palette-pull-body" data-gid="PR_kwDOQzaUZ87qtsb6">
+      <div id="pullrequest-3937847034">
+        <div>
+          <h3>
+            <strong><a href="/RensOliemans">RensOliemans</a></strong>
+            commented
+            <a href="#issue-4746857605" id="issue-4746857605-permalink"><relative-time datetime="2026-06-25T19:35:45Z">Jun 25, 2026</relative-time></a>
+          </h3>
+        </div>
+        <div>
+          <task-lists disabled sortable>
+            <div class="comment-body markdown-body js-comment-body">
+              <p dir="auto">From <a href="https://github.com/asciimoo/hister/issues/305">#305</a> , I started with a stab at improving the GitHub extractor. The PR is still very much WIP, and I thought I'd create it now because I wanted to ask this question: do you want me to split <code>github.go</code> into separate files? Like <code>issue.go</code> for parsing the <code>/owner/repo/issues/:id</code> url, etc.</p>
+              <p dir="auto">I actually have two other questions about the existing code (I'm quite new to Go):</p>
+              <ol dir="auto">
+                <li>What is the purpose of <code>Preview</code>? Should this be unique for each type of URL as well?</li>
+                <li>What was the purpose of the <code>b string.Builder</code>? Should I keep it, or use only metadata?</li>
+              </ol>
+            </div>
+          </task-lists>
+        </div>
+      </div>
+    </div>
+  </rails-partial>
+
+  <rails-partial data-partial-name="pullRequestsConversationsRoute.Timeline">
+    <div class="TimelineItem js-comment-container" data-gid="IC_kwDOQzaUZ88AAAABHlW0fQ">
+      <div class="timeline-comment-group" id="issuecomment-4803900541">
+        <div class="timeline-comment-header">
+          <h3><strong><a href="/asciimoo">asciimoo</a></strong> commented
+            <a href="#issuecomment-4803900541" id="issuecomment-4803900541-permalink"><relative-time datetime="2026-06-25T20:32:09Z">Jun 25, 2026</relative-time></a>
+          </h3>
+          <div><span>Owner</span></div>
+        </div>
+        <div><task-lists disabled sortable>
+          <table><tbody><tr>
+            <td class="d-block comment-body markdown-body  js-comment-body">
+              <p dir="auto">Nice!</p>
+              <blockquote><p dir="auto">do you want me to split github.go into separate files?</p></blockquote>
+              <p dir="auto">It's up to you. Having long files is idiomatic in Go if there is no real logical separation that would make sense (e.g. our <code>server.go</code>). Perhaps in this case it makes sense to put different handlers to different files, but it isn't necessary.</p>
+            </td>
+          </tr></tbody></table>
+        </task-lists></div>
+      </div>
+    </div>
+
+    <div class="TimelineItem js-comment-container" data-gid="IC_kwDOQzaUZ88AAAABHpbNCg">
+      <div class="timeline-comment-group" id="issuecomment-4808166666">
+        <div class="timeline-comment-header">
+          <h3><strong><a href="/asciimoo">asciimoo</a></strong> commented
+            <a href="#issuecomment-4808166666" id="issuecomment-4808166666-permalink"><relative-time datetime="2026-06-26T09:12:01Z">Jun 26, 2026</relative-time></a>
+          </h3>
+          <div><span>Owner</span></div>
+        </div>
+        <div><task-lists disabled sortable>
+          <table><tbody><tr>
+            <td class="d-block comment-body markdown-body  js-comment-body">
+              <p dir="auto">Let me know if I can start the review.</p>
+            </td>
+          </tr></tbody></table>
+        </task-lists></div>
+      </div>
+    </div>
+
+    <div class="TimelineItem js-comment-container" data-gid="IC_kwDOQzaUZ88AAAABHqy1Aw">
+      <div class="timeline-comment-group" id="issuecomment-4809602307">
+        <div class="timeline-comment-header">
+          <h3><strong><a href="/RensOliemans">RensOliemans</a></strong> commented
+            <a href="#issuecomment-4809602307" id="issuecomment-4809602307-permalink"><relative-time datetime="2026-06-26T12:33:28Z">Jun 26, 2026</relative-time></a>
+          </h3>
+          <div><span>Author</span></div>
+        </div>
+        <div><task-lists disabled sortable>
+          <table><tbody><tr>
+            <td class="d-block comment-body markdown-body  js-comment-body">
+              <p dir="auto">Thanks for the info. I'll let you know when I'm happy with it!</p>
+            </td>
+          </tr></tbody></table>
+        </task-lists></div>
+      </div>
+    </div>
+  </rails-partial>
+</div>
+
+</div>
+</react-app>
+</div>
+</body>
+</html>`
+
+func TestExtractPullRequestPage(t *testing.T) {
+	d := &document.Document{
+		URL:  "https://github.com/asciimoo/hister/pull/495",
+		HTML: prPage,
+	}
+	e := &GitHubExtractor{}
+	state, err := e.Extract(d)
+	if err != nil {
+		t.Fatalf("Extract error: %v", err)
+	}
+
+	if state != types.ExtractorStop {
+		t.Fatalf("state = %v, want Stop", state)
+	}
+	wantTitle := "Improve GitHub extractor by RensOliemans · Pull Request #495 · asciimoo/hister · GitHub"
+	if d.Title != wantTitle {
+		t.Errorf("Title = %q, want %q", d.Title, wantTitle)
+	}
+
+	// Text checks.
+	if !strings.Contains(d.Text, "From #305") || !strings.Contains(d.Text, "do you want me to split") {
+		t.Error("Text should contain the PR body")
+	}
+	for _, c := range []string{
+		"Nice!",
+		"Let me know if I can start the review.",
+		"Thanks for the info. I'll let you know when I'm happy with it!",
+	} {
+		if !strings.Contains(d.Text, c) {
+			t.Errorf("Text should contain comment %q", c)
+		}
+	}
+
+	// Metadata checks.
+	if d.Metadata["type"] != "PullRequest" {
+		t.Errorf("Metadata[type] = %v, want PullRequest", d.Metadata["type"])
+	}
+	if d.Metadata["repo"] != "asciimoo/hister" {
+		t.Errorf("Metadata[repo] = %v, want asciimoo/hister", d.Metadata["repo"])
+	}
+	if d.Metadata["title"] != "Improve GitHub extractor" {
+		t.Errorf("Metadata[title] = %v, want Improve GitHub extractor", d.Metadata["title"])
+	}
+	if d.Metadata["state"] != "Open" {
+		t.Errorf("Metadata[state] = %v, want Open", d.Metadata["state"])
+	}
+	if d.Metadata["date"] != "2026-06-25T19:35:45Z" {
+		t.Errorf("Metadata[date] = %v, want 2026-06-25T19:35:45Z", d.Metadata["date"])
 	}
 }

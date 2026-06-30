@@ -82,23 +82,56 @@ func (e *GitHubExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-// Match returns true for github.com/{owner}/{repo} URLs, excluding known
-// GitHub system path prefixes.
-func (e *GitHubExtractor) Match(d *document.Document) bool {
-	if !strings.HasPrefix(d.URL, githubURLPrefix) {
-		return false
+type githubPattern struct {
+	nParts int
+	seg    string
+}
+
+var githubPatterns = []githubPattern{
+	{nParts: 2},                // /owner/repo
+	{nParts: 4, seg: "issues"}, // /owner/repo/issues/:id
+}
+
+// converts a github url into a matched pattern with parts
+func (e *GitHubExtractor) matchPattern(url string) (*githubPattern, []string) {
+	if !strings.HasPrefix(url, githubURLPrefix) {
+		return nil, nil
 	}
-	path := strings.TrimPrefix(d.URL, githubURLPrefix)
-	// Strip query string and fragment.
+	path := strings.TrimPrefix(url, githubURLPrefix)
 	if i := strings.IndexAny(path, "?#"); i >= 0 {
 		path = path[:i]
 	}
 	path = strings.TrimSuffix(path, "/")
-	parts := strings.SplitN(path, "/", 3)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return false
+	parts := strings.SplitN(path, "/", 5)
+
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return nil, nil
 	}
-	return !githubSystemPaths[strings.ToLower(parts[0])]
+	if githubSystemPaths[strings.ToLower(parts[0])] {
+		return nil, nil
+	}
+
+	for i, p := range githubPatterns {
+		if len(parts) != p.nParts {
+			continue
+		}
+		if p.seg != "" && parts[2] != p.seg {
+			// segment didn't match
+			continue
+		}
+		if p.nParts == 4 && parts[3] == "" {
+			// we need a fourth element, none given
+			continue
+		}
+		return &githubPatterns[i], parts
+	}
+	return nil, nil
+}
+
+// Match returns true for known github URLs, defined in githubPatterns
+func (e *GitHubExtractor) Match(d *document.Document) bool {
+	p, _ := e.matchPattern(d.URL)
+	return p != nil
 }
 
 // repoInfo holds the extracted fields from a GitHub repository page.
@@ -113,6 +146,24 @@ type repoInfo struct {
 // Extract populates d.Title and d.Text with repository metadata and README
 // plain text, making the content fully searchable.
 func (e *GitHubExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+	p, parts := e.matchPattern(d.URL)
+	if p == nil {
+		return types.ExtractorContinue, fmt.Errorf("no extractor matched for %s", d.URL)
+	}
+
+	switch *p {
+	case githubPatterns[0]:
+		return extractRepo(d, parts)
+	case githubPatterns[1]:
+		return extractIssue(d, parts)
+	default:
+		return types.ExtractorContinue, fmt.Errorf("unhandled pattern for %s", d.URL)
+	}
+}
+
+func extractRepo(d *document.Document, parts []string) (types.ExtractorState, error) {
+	fmt.Printf("url: %s\n", d.URL)
+
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
 		return types.ExtractorContinue, err
@@ -158,6 +209,23 @@ func (e *GitHubExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	if d.Text == "" && d.Title == "" {
 		return types.ExtractorContinue, fmt.Errorf("no content found")
 	}
+	return types.ExtractorStop, nil
+
+}
+
+func extractIssue(d *document.Document, parts []string) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "Issue"
+
 	return types.ExtractorStop, nil
 }
 

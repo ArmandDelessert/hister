@@ -17,7 +17,7 @@ func TestMatchGitHubURLs(t *testing.T) {
 		{"https://github.com/asciimoo", false},
 		{"https://github.com/asciimoo/hister", true},
 		{"https://github.com/asciimoo/hister/issues", false},
-		{"https://github.com/asciimoo/hister/issues/305", false},
+		{"https://github.com/asciimoo/hister/issues/305", true},
 		{"https://github.com/asciimoo/hister/pulls", false},
 		{"https://github.com/asciimoo/hister/settings", false},
 		{"https://de.wikipedia.org/wiki/Berlin", false},
@@ -187,5 +187,38 @@ func TestExtractRepo(t *testing.T) {
 	}
 	if d.Metadata["stars"] != "1255" {
 		t.Errorf("Metadata[stars] = %q", d.Metadata["stars"])
+	}
+}
+
+const issuePage = `<html>
+<head><title>Extractors wanted! · Issue #305 · asciimoo/hister</title></head>
+<body>
+<div data-component="TitleArea" data-size-variant="medium">
+<h1 data-component="PH_Title" data-hidden="false">
+<bdi data-testid="issue-title">Extractors wanted!</bdi>
+</h1></div>
+</body>
+</html>`
+
+func TestExtractIssuePage(t *testing.T) {
+	d := &document.Document{
+		URL:  "https://github.com/asciimoo/hister/issues/305",
+		HTML: issuePage,
+	}
+	e := &GitHubExtractor{}
+	state, err := e.Extract(d)
+	if err != nil {
+		t.Fatalf("Extract error: %v", err)
+	}
+
+	if state != types.ExtractorStop {
+		t.Fatalf("state = %v, want Stop", state)
+	}
+	if d.Title != "Extractors wanted! · Issue #305 · asciimoo/hister" {
+		t.Errorf("Title = %q, want %q", d.Title, "Extractors wanted! · Issue #305 · asciimoo/hister")
+	}
+	// Metadata checks.
+	if d.Metadata["type"] != "Issue" {
+		t.Errorf("Metadata[issue] = %v, want Issue", d.Metadata["issue"])
 	}
 }

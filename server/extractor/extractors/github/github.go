@@ -23,10 +23,6 @@ const (
 	githubURLPrefix = githubBase + "/"
 )
 
-// relativeURLRe matches src="/" or href="/" attributes with root-relative paths
-// (but not protocol-relative URLs starting with "//").
-var relativeURLRe = regexp.MustCompile(`(?i)((?:src|href)=")(\/[^/"])`)
-
 // githubSystemPaths are top-level GitHub path segments that are never
 // repository owner namespaces.
 var githubSystemPaths = map[string]bool{
@@ -53,8 +49,6 @@ var githubSystemPaths = map[string]bool{
 	"enterprise":     true,
 	"apps":           true,
 }
-
-var starsRe = regexp.MustCompile(`^([\d,]+)\s+users?\s+starred\s+this\s+repository$`)
 
 // GitHubExtractor extracts project details and README content from GitHub repository pages.
 type GitHubExtractor struct {
@@ -128,15 +122,6 @@ func urlParts(url string) []string {
 	return strings.Split(path, "/")
 }
 
-// repoInfo holds the extracted fields from a GitHub repository page.
-type repoInfo struct {
-	description string
-	stars       string
-	topics      []string
-	languages   []string
-	readmeHTML  string
-}
-
 // Extract populates d.Title and d.Text with repository metadata and README
 // plain text, making the content fully searchable.
 func (e *GitHubExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
@@ -150,6 +135,60 @@ func (e *GitHubExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	return types.ExtractorContinue, fmt.Errorf("no extractor matched for %s", d.URL)
 }
 
+// Preview renders a summary card (description, stars, topics, languages) and
+// the sanitized README HTML suitable for the preview panel.
+func (e *GitHubExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.PreviewResponse{}, types.ExtractorContinue, err
+	}
+
+	info := parseRepoPage(doc, d.HTML)
+	if info == nil {
+		return types.PreviewResponse{}, types.ExtractorContinue, nil
+	}
+
+	var b strings.Builder
+
+	// Metadata card.
+	b.WriteString(`<div class="gh-meta">`)
+
+	if info.description != "" {
+		fmt.Fprintf(&b, `<p class="gh-description">%s</p>`, stdhtml.EscapeString(info.description))
+	}
+
+	if info.stars != "" || len(info.languages) > 0 {
+		b.WriteString(`<p class="gh-stats">`)
+		parts := make([]string, 0, 2)
+		if info.stars != "" {
+			parts = append(parts, fmt.Sprintf("&#9733; %s stars", stdhtml.EscapeString(info.stars)))
+		}
+		if len(info.languages) > 0 {
+			parts = append(parts, stdhtml.EscapeString(strings.Join(info.languages, " / ")))
+		}
+		b.WriteString(strings.Join(parts, " &nbsp;&middot;&nbsp; "))
+		b.WriteString("</p>")
+	}
+
+	if len(info.topics) > 0 {
+		b.WriteString(`<p class="gh-topics">`)
+		for _, t := range info.topics {
+			fmt.Fprintf(&b, `<code>%s</code> `, stdhtml.EscapeString(t))
+		}
+		b.WriteString("</p>")
+	}
+
+	b.WriteString("</div>")
+
+	if info.readmeHTML != "" {
+		b.WriteString("<hr>")
+		b.WriteString(sanitizer.SanitizeHTML(info.readmeHTML))
+	}
+
+	return types.PreviewResponse{Content: b.String()}, types.ExtractorStop, nil
+}
+
+// --- Repositories --------------------------------------------------------
 func extractRepo(d *document.Document, parts []string) (types.ExtractorState, error) {
 	fmt.Printf("url: %s\n", d.URL)
 
@@ -211,98 +250,13 @@ func extractRepo(d *document.Document, parts []string) (types.ExtractorState, er
 
 }
 
-func extractIssue(d *document.Document, parts []string) (types.ExtractorState, error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
-	if err != nil {
-		return types.ExtractorContinue, err
-	}
-
-	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
-
-	var b strings.Builder
-	if d.Metadata == nil {
-		d.Metadata = make(map[string]any)
-	}
-	d.Metadata["type"] = "Issue"
-
-	if title := doc.Find(`bdi[data-testid="issue-title"]`).Text(); title != "" {
-		d.Metadata["title"] = title
-		fmt.Fprintf(&b, "title: %s\n\n", title)
-	}
-	if dateOpened := doc.Find(`[data-testid="issue-body"] relative-time`).AttrOr("datetime", ""); dateOpened != "" {
-		d.Metadata["date"] = dateOpened
-	}
-
-	if body := doc.Find(`#issue-body-viewer`).Text(); body != "" {
-		fmt.Fprintf(&b, "body: %s\n\n", body)
-	}
-
-	var commentBodies []string
-	doc.Find(`[data-testid="issue-viewer-comments-container"] [data-testid="markdown-body"]`).Each(func(_ int, s *goquery.Selection) {
-		commentBodies = append(commentBodies, strings.TrimSpace(s.Text()))
-	})
-	if len(commentBodies) > 0 {
-		fmt.Fprintf(&b, "comments: %s", strings.Join(commentBodies, ", "))
-	}
-
-	d.Text = strings.TrimSpace(b.String())
-	if d.Text == "" && d.Title == "" {
-		return types.ExtractorContinue, fmt.Errorf("no content found")
-	}
-	return types.ExtractorStop, nil
-}
-
-// Preview renders a summary card (description, stars, topics, languages) and
-// the sanitized README HTML suitable for the preview panel.
-func (e *GitHubExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
-	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
-	}
-
-	info := parseRepoPage(doc, d.HTML)
-	if info == nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, nil
-	}
-
-	var b strings.Builder
-
-	// Metadata card.
-	b.WriteString(`<div class="gh-meta">`)
-
-	if info.description != "" {
-		fmt.Fprintf(&b, `<p class="gh-description">%s</p>`, stdhtml.EscapeString(info.description))
-	}
-
-	if info.stars != "" || len(info.languages) > 0 {
-		b.WriteString(`<p class="gh-stats">`)
-		parts := make([]string, 0, 2)
-		if info.stars != "" {
-			parts = append(parts, fmt.Sprintf("&#9733; %s stars", stdhtml.EscapeString(info.stars)))
-		}
-		if len(info.languages) > 0 {
-			parts = append(parts, stdhtml.EscapeString(strings.Join(info.languages, " / ")))
-		}
-		b.WriteString(strings.Join(parts, " &nbsp;&middot;&nbsp; "))
-		b.WriteString("</p>")
-	}
-
-	if len(info.topics) > 0 {
-		b.WriteString(`<p class="gh-topics">`)
-		for _, t := range info.topics {
-			fmt.Fprintf(&b, `<code>%s</code> `, stdhtml.EscapeString(t))
-		}
-		b.WriteString("</p>")
-	}
-
-	b.WriteString("</div>")
-
-	if info.readmeHTML != "" {
-		b.WriteString("<hr>")
-		b.WriteString(sanitizer.SanitizeHTML(info.readmeHTML))
-	}
-
-	return types.PreviewResponse{Content: b.String()}, types.ExtractorStop, nil
+// repoInfo holds the extracted fields from a GitHub repository page.
+type repoInfo struct {
+	description string
+	stars       string
+	topics      []string
+	languages   []string
+	readmeHTML  string
 }
 
 // parseRepoPage extracts repository metadata from the parsed goquery document.
@@ -318,6 +272,7 @@ func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
 	info.description = desc
 
 	// Star count from the star button aria-label.
+	var starsRe = regexp.MustCompile(`^([\d,]+)\s+users?\s+starred\s+this\s+repository$`)
 	doc.Find("[aria-label]").Each(func(_ int, s *goquery.Selection) {
 		label, _ := s.Attr("aria-label")
 		if m := starsRe.FindStringSubmatch(strings.TrimSpace(label)); m != nil {
@@ -359,6 +314,9 @@ func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
 // to absolute github.com URLs (e.g. "/owner/repo/raw/..." → "https://github.com/owner/repo/raw/...").
 // Protocol-relative URLs ("//...") are left untouched.
 func resolveRelativeURLs(html string) string {
+	// relativeURLRe matches src="/" or href="/" attributes with root-relative paths
+	// (but not protocol-relative URLs starting with "//").
+	var relativeURLRe = regexp.MustCompile(`(?i)((?:src|href)=")(\/[^/"])`)
 	return relativeURLRe.ReplaceAllString(html, "${1}"+githubBase+"${2}")
 }
 
@@ -427,4 +385,46 @@ func richTextFromFiles(v any) string {
 		}
 	}
 	return ""
+}
+
+// --- Issues --------------------------------------------------------------
+func extractIssue(d *document.Document, parts []string) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	var b strings.Builder
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "Issue"
+
+	if title := doc.Find(`bdi[data-testid="issue-title"]`).Text(); title != "" {
+		d.Metadata["title"] = title
+		fmt.Fprintf(&b, "title: %s\n\n", title)
+	}
+	if dateOpened := doc.Find(`[data-testid="issue-body"] relative-time`).AttrOr("datetime", ""); dateOpened != "" {
+		d.Metadata["date"] = dateOpened
+	}
+
+	if body := doc.Find(`#issue-body-viewer`).Text(); body != "" {
+		fmt.Fprintf(&b, "body: %s\n\n", body)
+	}
+
+	var commentBodies []string
+	doc.Find(`[data-testid="issue-viewer-comments-container"] [data-testid="markdown-body"]`).Each(func(_ int, s *goquery.Selection) {
+		commentBodies = append(commentBodies, strings.TrimSpace(s.Text()))
+	})
+	if len(commentBodies) > 0 {
+		fmt.Fprintf(&b, "comments: %s", strings.Join(commentBodies, ", "))
+	}
+
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
+	return types.ExtractorStop, nil
 }

@@ -17,7 +17,7 @@ func TestMatchGitHubURLs(t *testing.T) {
 		// only top-level is supported
 		{"https://github.com/asciimoo", false},
 		{"https://github.com/asciimoo/hister", true},
-		{"https://github.com/asciimoo/hister/issues", false},
+		{"https://github.com/asciimoo/hister/issues", true},
 		{"https://github.com/asciimoo/hister/issues/305", true},
 		{"https://github.com/asciimoo/hister/pulls", false},
 		{"https://github.com/asciimoo/hister/settings", false},
@@ -34,6 +34,7 @@ func TestMatchGitHubURLs(t *testing.T) {
 	}
 }
 
+// --- Repositories --------------------------------------------------------
 const minimalRepoPage = `<html>
 <head><title>asciimoo/hister: Your own search engine</title></head>
 <body>
@@ -211,6 +212,7 @@ func TestExtractRepo(t *testing.T) {
 	}
 }
 
+// --- Issue ---------------------------------------------------------------
 const issuePage = `<html>
 <head><title>Extractors wanted! · Issue #305 · asciimoo/hister</title></head>
 <body>
@@ -280,7 +282,7 @@ func TestExtractIssuePage(t *testing.T) {
 
 	// Metadata checks.
 	if d.Metadata["type"] != "Issue" {
-		t.Errorf("Metadata[issue] = %v, want Issue", d.Metadata["issue"])
+		t.Errorf("Metadata[type] = %v, want Issue", d.Metadata["type"])
 	}
 	if d.Metadata["repo"] != "asciimoo/hister" {
 		t.Errorf("Metadata[repo] = %v, want asciimoo/hister", d.Metadata["repo"])
@@ -289,6 +291,81 @@ func TestExtractIssuePage(t *testing.T) {
 		t.Errorf("Metadata[title] = %v, want Extractors wanted!", d.Metadata["title"])
 	}
 	if d.Metadata["date"] != "2026-04-09T07:47:32.000Z" {
-		t.Errorf("Metadata[title] = %v, want 2026-04-09T07:47:32.000Z", d.Metadata["dateOpened"])
+		t.Errorf("Metadata[date] = %v, want 2026-04-09T07:47:32.000Z", d.Metadata["date"])
+	}
+}
+
+// --- Issues --------------------------------------------------------------
+const issuesPage = `<html>
+<head><title>Issues · asciimoo/hister</title></head>
+<body>
+<div>
+  <div>
+	<ul aria-label="Drag and drop pinned issues list.">
+	  <li><div>
+        <div><a href="https://github.com/asciimoo/hister/issues/305"><span>Extractors wanted!</span></a></div>
+        <div><span>#305 · <a href="https://github.com/asciimoo">asciimoo</a><span>opened</span><relative-time data-component="RelativeTime" datetime="2026-04-09T07:47:32.000Z" title="Apr 9, 2026, 9:47 AM GMT+2">on Apr 9, 2026</relative-time></span></div>
+      </div></li>
+	  <li><div>
+        <div><a href="https://github.com/asciimoo/hister/issues/416"><span>Project logo, mascot design</span></a></div>
+        <div><span>#416 · <a href="https://github.com/asciimoo">asciimoo</a><span>opened</span><relative-time data-component="RelativeTime" datetime="2026-05-18T10:01:27.000Z" title="May 18, 2026, 12:01 PM GMT+2">on May 18, 2026</relative-time></span></div>
+      </div></li>
+	</ul>
+  </div>
+  <div>
+	<h2 data-component="Heading" id="_r_d_-list-view-container-title">Search results</h2>
+    <ul aria-labelledby="_r_d_-list-view-container-title" data-listview-component="items-list">
+	  <li>
+		<div><h3><a href="/asciimoo/hister/issues/500"><span>Feature: Import bookmarks from Linkding, Linkwarden, and Archive.org</span></a></h3></div>
+		<div><div><span><span>#500</span> <span class="sr-only">In asciimoo/hister;</span></span><div><span>· </span><span></span><a href="/asciimoo/hister/issues?q=is%3Aissue%20state%3Aopen%20author%3Aavinashkanaujiya">avinashkanaujiya</a> <span> opened </span><relative-time data-component="RelativeTime" datetime="2026-06-29T00:48:52.000Z" title="Jun 29, 2026, 2:48 AM GMT+2">on Jun 29, 2026</relative-time></div></div></div>
+      </li>
+	  <li>
+		<div><h3><a href="/asciimoo/hister/issues/493"><span>Limit parallel jobs</span></a></h3></div>
+		<div><div><span><span>#493</span> <span class="sr-only">In asciimoo/hister;</span></span><div><span>· </span><span></span><a href="/asciimoo/hister/issues?q=is%3Aissue%20state%3Aopen%20author%3Anadir-ishiguro">nadir-ishiguro</a> <span> opened </span><relative-time data-component="RelativeTime" datetime="2026-06-25T11:13:35.000Z" title="Jun 25, 2026, 1:13 PM GMT+2">on Jun 25, 2026</relative-time></div></div></div>
+      </li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>`
+
+func TestExtractIssuesPage(t *testing.T) {
+	d := &document.Document{
+		URL:  "https://github.com/asciimoo/hister/issues",
+		HTML: issuesPage,
+	}
+	e := &GitHubExtractor{}
+	state, err := e.Extract(d)
+	if err != nil {
+		t.Fatalf("Extract error: %v", err)
+	}
+
+	if state != types.ExtractorStop {
+		t.Fatalf("state = %v, want Stop", state)
+	}
+	if d.Title != "Issues · asciimoo/hister" {
+		t.Errorf("Title = %q, want %q", d.Title, "Extractors wanted! · Issues · asciimoo/hister")
+	}
+
+	// Text checks.
+	if !strings.Contains(d.Text, "Extractors wanted") || !strings.Contains(d.Text, "Project logo, mascot design") {
+		t.Error("Text should contain pinned issues")
+	}
+	if !strings.Contains(d.Text, "#305") || !strings.Contains(d.Text, "asciimoo") {
+		t.Error("Text should contain the issue description of pinned issues")
+	}
+	if !strings.Contains(d.Text, "Feature: Import bookmarks from Linkding, Linkwarden, and Archive.org") || !strings.Contains(d.Text, "Limit parallel jobs") {
+		t.Error("Text should contain the list of issues")
+	}
+	if !strings.Contains(d.Text, "#500") || !strings.Contains(d.Text, "avinashkanaujiya") {
+		t.Error("Text should contain the issue description of listed issues")
+	}
+
+	// Metadata checks.
+	if d.Metadata["type"] != "Issues" {
+		t.Errorf("Metadata[type] = %v, want Issues", d.Metadata["type"])
+	}
+	if d.Metadata["repo"] != "asciimoo/hister" {
+		t.Errorf("Metadata[repo] = %v, want asciimoo/hister", d.Metadata["repo"])
 	}
 }

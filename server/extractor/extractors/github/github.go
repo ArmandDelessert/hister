@@ -85,6 +85,7 @@ var (
 	repoRe     = regexp.MustCompile(fmt.Sprintf(`^%s`, urlPattern))               // /owner/repo/...
 	fullRepoRe = regexp.MustCompile(fmt.Sprintf(`^%s$`, urlPattern))              // /owner/repo
 	issueRe    = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)$`, urlPattern)) // /owner/repo/issue/:id
+	issuesRe   = regexp.MustCompile(fmt.Sprintf(`^%s/issues$`, urlPattern))       // /owner/repo/issues
 )
 
 type githubPattern = struct {
@@ -95,6 +96,7 @@ type githubPattern = struct {
 var githubPatterns = []githubPattern{
 	{fullRepoRe, extractRepo},
 	{issueRe, extractIssue},
+	{issuesRe, extractIssues},
 }
 
 // Match returns true for known github URLs, defined in githubPatterns
@@ -433,7 +435,48 @@ func extractIssue(d *document.Document, parts []string) (types.ExtractorState, e
 		commentBodies = append(commentBodies, strings.TrimSpace(s.Text()))
 	})
 	if len(commentBodies) > 0 {
-		fmt.Fprintf(&b, "comments: %s", strings.Join(commentBodies, ", "))
+		fmt.Fprintf(&b, "comments: %s\n", strings.Join(commentBodies, ", "))
+	}
+
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
+	return types.ExtractorStop, nil
+}
+
+func extractIssues(d *document.Document, parts []string) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	var b strings.Builder
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "Issues"
+
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
+
+	var pinnedIssues []string
+	doc.Find(`ul[aria-label="Drag and drop pinned issues list."] li`).Each(func(_ int, s *goquery.Selection) {
+		pinnedIssues = append(pinnedIssues, strings.TrimSpace(s.Text()))
+	})
+	if len(pinnedIssues) > 0 {
+		fmt.Fprintf(&b, "pinned issues: %s\n", strings.Join(pinnedIssues, ", "))
+	}
+
+	var issues []string
+	doc.Find(`ul[data-listview-component="items-list"] li`).Each(func(_ int, s *goquery.Selection) {
+		issues = append(issues, strings.TrimSpace(s.Text()))
+	})
+	if len(issues) > 0 {
+		fmt.Fprintf(&b, "regular issues: %s\n", strings.Join(issues, ", "))
 	}
 
 	d.Text = strings.TrimSpace(b.String())

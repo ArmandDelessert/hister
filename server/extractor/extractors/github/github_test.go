@@ -197,6 +197,9 @@ func TestExtractRepo(t *testing.T) {
 	}
 
 	// Metadata checks.
+	if d.Metadata["repo"] != "asciimoo/hister" {
+		t.Errorf("Metadata[repo] = %v, want asciimoo/hister", d.Metadata["repo"])
+	}
 	if d.Metadata["description"] != "Your own search engine" {
 		t.Errorf("Metadata[description] = %v, want Your own search engine", d.Metadata["description"])
 	}
@@ -278,6 +281,9 @@ func TestExtractIssuePage(t *testing.T) {
 	// Metadata checks.
 	if d.Metadata["type"] != "Issue" {
 		t.Errorf("Metadata[issue] = %v, want Issue", d.Metadata["issue"])
+	}
+	if d.Metadata["repo"] != "asciimoo/hister" {
+		t.Errorf("Metadata[repo] = %v, want asciimoo/hister", d.Metadata["repo"])
 	}
 	if d.Metadata["title"] != "Extractors wanted!" {
 		t.Errorf("Metadata[title] = %v, want Extractors wanted!", d.Metadata["title"])

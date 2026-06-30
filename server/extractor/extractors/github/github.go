@@ -80,10 +80,11 @@ var (
 	ownerPattern = `[a-zA-Z0-9-]+`
 	repoPattern  = `[a-zA-Z0-9-._]+`
 
-	fullRepoPattern = fmt.Sprintf(`%s%s/%s`, githubURLPrefix, ownerPattern, repoPattern)
+	urlPattern = fmt.Sprintf(`%s(%s)/(%s)`, githubURLPrefix, ownerPattern, repoPattern)
 
-	repoRe  = regexp.MustCompile(fmt.Sprintf(`^%s$`, fullRepoPattern))
-	issueRe = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)$`, fullRepoPattern))
+	repoRe     = regexp.MustCompile(fmt.Sprintf(`^%s`, urlPattern))               // /owner/repo/...
+	fullRepoRe = regexp.MustCompile(fmt.Sprintf(`^%s$`, urlPattern))              // /owner/repo
+	issueRe    = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)$`, urlPattern)) // /owner/repo/issue/:id
 )
 
 type githubPattern = struct {
@@ -92,7 +93,7 @@ type githubPattern = struct {
 }
 
 var githubPatterns = []githubPattern{
-	{repoRe, extractRepo},
+	{fullRepoRe, extractRepo},
 	{issueRe, extractIssue},
 }
 
@@ -189,9 +190,15 @@ func (e *GitHubExtractor) Preview(d *document.Document) (types.PreviewResponse, 
 }
 
 // --- Repositories --------------------------------------------------------
-func extractRepo(d *document.Document, parts []string) (types.ExtractorState, error) {
-	fmt.Printf("url: %s\n", d.URL)
+func getRepo(url string) (string, error) {
+	var m = repoRe.FindStringSubmatch(url)
+	if m == nil || len(m) < 2 {
+		return "", fmt.Errorf("%s is not a valid github url", url)
+	}
+	return m[1] + "/" + m[2], nil
+}
 
+func extractRepo(d *document.Document, parts []string) (types.ExtractorState, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
 		return types.ExtractorContinue, err
@@ -210,6 +217,9 @@ func extractRepo(d *document.Document, parts []string) (types.ExtractorState, er
 		d.Metadata = make(map[string]any)
 	}
 	d.Metadata["type"] = "Repository"
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
 
 	if info.description != "" {
 		b.WriteString("description: ")
@@ -401,6 +411,10 @@ func extractIssue(d *document.Document, parts []string) (types.ExtractorState, e
 		d.Metadata = make(map[string]any)
 	}
 	d.Metadata["type"] = "Issue"
+
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
 
 	if title := doc.Find(`bdi[data-testid="issue-title"]`).Text(); title != "" {
 		d.Metadata["title"] = title

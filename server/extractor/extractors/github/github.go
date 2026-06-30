@@ -272,6 +272,9 @@ type repoInfo struct {
 	readmeHTML  string
 }
 
+// Star count from the star button aria-label.
+var starsRe = regexp.MustCompile(`^([\d,]+)\s+users?\s+starred\s+this\s+repository$`)
+
 // parseRepoPage extracts repository metadata from the parsed goquery document.
 // Returns nil if the page does not appear to be a repository overview page.
 func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
@@ -284,8 +287,6 @@ func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
 	}
 	info.description = desc
 
-	// Star count from the star button aria-label.
-	var starsRe = regexp.MustCompile(`^([\d,]+)\s+users?\s+starred\s+this\s+repository$`)
 	doc.Find("[aria-label]").Each(func(_ int, s *goquery.Selection) {
 		label, _ := s.Attr("aria-label")
 		if m := starsRe.FindStringSubmatch(strings.TrimSpace(label)); m != nil {
@@ -323,13 +324,14 @@ func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
 	return info
 }
 
+// relativeURLRe matches src="/" or href="/" attributes with root-relative paths
+// (but not protocol-relative URLs starting with "//").
+var relativeURLRe = regexp.MustCompile(`(?i)((?:src|href)=")(\/[^/"])`)
+
 // resolveRelativeURLs rewrites root-relative src/href attributes in README HTML
 // to absolute github.com URLs (e.g. "/owner/repo/raw/..." → "https://github.com/owner/repo/raw/...").
 // Protocol-relative URLs ("//...") are left untouched.
 func resolveRelativeURLs(html string) string {
-	// relativeURLRe matches src="/" or href="/" attributes with root-relative paths
-	// (but not protocol-relative URLs starting with "//").
-	var relativeURLRe = regexp.MustCompile(`(?i)((?:src|href)=")(\/[^/"])`)
 	return relativeURLRe.ReplaceAllString(html, "${1}"+githubBase+"${2}")
 }
 

@@ -49,3 +49,90 @@ func TestSearchSortsByMostVisited(t *testing.T) {
 		t.Fatalf("second result URL = %q, want %q", res.Documents[1].URL, lessVisitedURL)
 	}
 }
+
+func TestSearchFiltersByVisitCount(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	lessVisitedURL := "https://example.com/visit-filter-less"
+	mostVisitedURL := "https://example.com/visit-filter-most"
+	docs := []string{
+		lessVisitedURL,
+		mostVisitedURL,
+		mostVisitedURL,
+		mostVisitedURL,
+	}
+	for _, url := range docs {
+		if err := Add(&document.Document{
+			URL:   url,
+			Title: "Visited filter",
+			Text:  "Visited filter document text",
+		}); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	res, err := Search(idxCfg, &Query{Text: "Visited filter visits:2..4"})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(res.Documents) != 1 {
+		t.Fatalf("Search returned %d documents, want 1", len(res.Documents))
+	}
+	if res.Documents[0].URL != mostVisitedURL {
+		t.Fatalf("result URL = %q, want %q", res.Documents[0].URL, mostVisitedURL)
+	}
+}
+
+func TestSearchVisitCountFacets(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	lessVisitedURL := "https://example.com/visit-facet-less"
+	mostVisitedURL := "https://example.com/visit-facet-most"
+	docs := []string{
+		lessVisitedURL,
+		mostVisitedURL,
+		mostVisitedURL,
+		mostVisitedURL,
+	}
+	for _, url := range docs {
+		if err := Add(&document.Document{
+			URL:   url,
+			Title: "Visited facet",
+			Text:  "Visited facet document text",
+		}); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	res, err := Search(idxCfg, &Query{Text: "Visited facet", Facets: true, FacetsOnly: true})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if res.Facets == nil {
+		t.Fatal("Facets is nil")
+	}
+	visits := res.Facets.Terms["visits"].Terms
+	counts := make(map[string]int, len(visits))
+	labels := make(map[string]string, len(visits))
+	for _, bucket := range visits {
+		counts[bucket.Term] = bucket.Count
+		labels[bucket.Term] = bucket.Label
+	}
+	if counts["1"] != 1 {
+		t.Fatalf("visit bucket 1 = %d, want 1", counts["1"])
+	}
+	if counts["2..4"] != 1 {
+		t.Fatalf("visit bucket 2..4 = %d, want 1", counts["2..4"])
+	}
+	if labels["2..4"] != "2 to 4" {
+		t.Fatalf("visit bucket label 2..4 = %q, want %q", labels["2..4"], "2 to 4")
+	}
+}

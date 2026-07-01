@@ -102,6 +102,7 @@ const defaultFacetTermSize = 10
 type TermCount struct {
 	Term  string `json:"term"`
 	Count int    `json:"count"`
+	Label string `json:"label,omitempty"`
 }
 
 type RangeCount struct {
@@ -139,6 +140,22 @@ var dateFacetBuckets = []struct {
 	{"last_year", 365 * 24 * time.Hour},
 }
 
+var visitCountFacetBuckets = []struct {
+	name  string
+	label string
+	min   *float64
+	max   *float64
+}{
+	{"1", "1 visit", floatPtr(1), floatPtr(2)},
+	{"2..4", "2 to 4", floatPtr(2), floatPtr(5)},
+	{"5..9", "5 to 9", floatPtr(5), floatPtr(10)},
+	{"10..", "10 or more", floatPtr(10), nil},
+}
+
+func floatPtr(v float64) *float64 {
+	return &v
+}
+
 func addFacets(req *bleve.SearchRequest, sizes map[string]int) {
 	facetSize := func(name string) int {
 		if n := sizes[name]; n > 0 {
@@ -153,6 +170,11 @@ func addFacets(req *bleve.SearchRequest, sizes map[string]int) {
 	tf.AddNumericRange(types.Web.String(), &web, &local)
 	tf.AddNumericRange(types.Local.String(), &local, &afterLocal)
 	req.AddFacet("types", tf)
+	vf := bleve.NewFacetRequest("add_count", len(visitCountFacetBuckets))
+	for _, b := range visitCountFacetBuckets {
+		vf.AddNumericRange(b.name, b.min, b.max)
+	}
+	req.AddFacet("visits", vf)
 	now := time.Now()
 	dh := bleve.NewFacetRequest("added", len(dateFacetBuckets)+1)
 	var prev *float64
@@ -177,6 +199,15 @@ func extractTermFacet(f *search.FacetResult) TermFacet {
 	return TermFacet{Terms: out, Other: f.Other}
 }
 
+func visitCountFacetLabel(name string) string {
+	for _, b := range visitCountFacetBuckets {
+		if b.name == name {
+			return b.label
+		}
+	}
+	return ""
+}
+
 func extractFacets(facets search.FacetResults) *FacetsResult {
 	fr := &FacetsResult{Terms: make(map[string]TermFacet)}
 	for _, name := range []string{"domains", "languages"} {
@@ -190,6 +221,17 @@ func extractFacets(facets search.FacetResults) *FacetsResult {
 			terms = append(terms, TermCount{Term: nr.Name, Count: nr.Count})
 		}
 		fr.Terms["types"] = TermFacet{Terms: terms}
+	}
+	if f := facets["visits"]; f != nil {
+		terms := make([]TermCount, 0, len(f.NumericRanges))
+		for _, nr := range f.NumericRanges {
+			terms = append(terms, TermCount{
+				Term:  nr.Name,
+				Count: nr.Count,
+				Label: visitCountFacetLabel(nr.Name),
+			})
+		}
+		fr.Terms["visits"] = TermFacet{Terms: terms}
 	}
 	if f := facets["added"]; f != nil {
 		for _, nr := range f.NumericRanges {

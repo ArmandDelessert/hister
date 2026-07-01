@@ -354,6 +354,42 @@ func Test_build_user_id(t *testing.T) {
 	}
 }
 
+func Test_build_visit_count_range(t *testing.T) {
+	bq := buildBoolQ(t, "visits:2..4")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	nq := asNumericRange(t, clauses[0])
+	if nq.FieldVal != "add_count" {
+		t.Fatalf("expected field %q, got %q", "add_count", nq.FieldVal)
+	}
+	if nq.Min == nil || *nq.Min != 2 {
+		t.Fatalf("expected Min=2, got %v", nq.Min)
+	}
+	if nq.Max == nil || *nq.Max != 4 {
+		t.Fatalf("expected Max=4, got %v", nq.Max)
+	}
+}
+
+func Test_build_visit_count_open_range(t *testing.T) {
+	bq := buildBoolQ(t, "visits:10..")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	nq := asNumericRange(t, clauses[0])
+	if nq.FieldVal != "add_count" {
+		t.Fatalf("expected field %q, got %q", "add_count", nq.FieldVal)
+	}
+	if nq.Min == nil || *nq.Min != 10 {
+		t.Fatalf("expected Min=10, got %v", nq.Min)
+	}
+	if nq.Max != nil {
+		t.Fatalf("expected nil Max, got %v", nq.Max)
+	}
+}
+
 func Test_build_wildcard_word(t *testing.T) {
 	bq := buildBoolQ(t, "go*")
 	clauses := mustClauses(t, bq)

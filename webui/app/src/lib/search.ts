@@ -43,6 +43,7 @@ export interface SemanticHit {
 export interface TermCount {
   term: string;
   count: number;
+  label?: string;
 }
 
 export interface RangeCount {

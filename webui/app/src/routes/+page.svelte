@@ -441,7 +441,6 @@
     last_year: 'Last year',
     older: 'Older',
   };
-
   // facetsCache maps a query+date key to the fetched FacetsResult
   let facetsCache = $state(new Map<string, FacetsResult>());
   let facetsLoading = $state(false);
@@ -537,6 +536,9 @@
   const activeTypeFilters = $derived(
     new Set([...query.matchAll(/\btype:(\S+)/g)].map((m) => m[1])),
   );
+  const activeVisitFilters = $derived(
+    new Set([...query.matchAll(/\bvisits:(\S+)/g)].map((m) => m[1])),
+  );
   const activeDateBucket = $derived(
     (() => {
       if (!dateFrom && !dateTo) return null;
@@ -557,6 +559,7 @@
     activeDomainFilters.size +
       activeLanguageFilters.size +
       activeTypeFilters.size +
+      activeVisitFilters.size +
       (activeDateBucket ? 1 : 0),
   );
 
@@ -566,6 +569,7 @@
   const showDomainsFacet = $derived(showFacetCategory('domains', activeDomainFilters));
   const showLanguagesFacet = $derived(showFacetCategory('languages', activeLanguageFilters));
   const showTypesFacet = $derived(showFacetCategory('types', activeTypeFilters));
+  const showVisitsFacet = $derived(showFacetCategory('visits', activeVisitFilters));
   const showFiltersButton = $derived(hasResults || activeFilterCount > 0);
 
   function toggleQueryToken(prefix: string, value: string) {
@@ -1711,7 +1715,7 @@
                                 {label}
                               </p>
                               <div class="flex flex-wrap gap-1">
-                                {#each currentFacets?.terms?.[facetName]?.terms ?? [] as { term, count } (term)}
+                                {#each currentFacets?.terms?.[facetName]?.terms ?? [] as { term, count, label } (term)}
                                   <button
                                     class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeFilters.has(
                                       term,
@@ -1720,7 +1724,7 @@
                                       : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
                                     onclick={() => toggleQueryToken(prefix, term)}
                                   >
-                                    {term}
+                                    {label ?? term}
                                     <span class="opacity-60">({count})</span>
                                   </button>
                                 {/each}
@@ -1766,6 +1770,16 @@
                                 showDomainsFacet || showLanguagesFacet,
                               )}
                             {/if}
+                            {#if showVisitsFacet}
+                              {@render facetSection(
+                                'visits',
+                                'Visits',
+                                Eye,
+                                'visits',
+                                activeVisitFilters,
+                                showDomainsFacet || showLanguagesFacet || showTypesFacet,
+                              )}
+                            {/if}
                             {#snippet customDateInputs()}
                               <details class="group/custom w-full">
                                 <summary
@@ -1795,7 +1809,7 @@
                               </details>
                             {/snippet}
                             {#if currentFacets?.date_histogram?.some((b) => b.count > 0)}
-                              {#if showDomainsFacet || showLanguagesFacet || showTypesFacet}
+                              {#if showDomainsFacet || showLanguagesFacet || showTypesFacet || showVisitsFacet}
                                 <Separator class="bg-border-brand-muted" />
                               {/if}
                               <div class="space-y-1.5">
@@ -1834,7 +1848,7 @@
                                 {@render customDateInputs()}
                               </div>
                             {/if}
-                            {#if !currentFacets?.terms?.['domains']?.terms?.length && !currentFacets?.terms?.['languages']?.terms?.length && !currentFacets?.date_histogram?.some((b) => b.count > 0)}
+                            {#if !currentFacets?.terms?.['domains']?.terms?.length && !currentFacets?.terms?.['languages']?.terms?.length && !currentFacets?.terms?.['types']?.terms?.length && !currentFacets?.terms?.['visits']?.terms?.length && !currentFacets?.date_histogram?.some((b) => b.count > 0)}
                               <p class="font-inter text-text-brand-muted text-xs">
                                 No filters available for this query.
                               </p>

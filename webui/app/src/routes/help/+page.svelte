@@ -38,6 +38,10 @@
     <p>Use <Kbd>*</Kbd> for wildcard matches.</p>
     <p>Prefix words or phrases with <Kbd>-</Kbd> to exclude matching documents.</p>
     <p>Use <code>url:</code> prefix to search only in the URL field.</p>
+    <p>
+      Use <code>visits:</code> to filter by visit count, such as <code>visits:1</code>,
+      <code>visits:2..4</code>, or <code>visits:10..</code>.
+    </p>
 
     <h3>Examples</h3>
     <p>
@@ -47,6 +51,10 @@
     <p>
       <code>golang template -url:*stackoverflow*</code>: Search sites containing both "golang" and
       "template" but the website's URL should not contain "stackoverflow".
+    </p>
+    <p>
+      <code>project docs visits:5..9</code>: Search matching pages that have been visited between 5
+      and 9 times.
     </p>
 
     <h2>Search Aliases</h2>

@@ -46,6 +46,7 @@ You can search within specific fields using the `field:value` syntax:
 - **domain:** - Search in domain names only
 - **language:** - Filter by detected language (e.g., `en`, `de`, `fr`. Use `unknown` for languages Hister doesn't support)
 - **type:** - Filter by document type (`web` for websites, `file` or `local` for local files)
+- **visits:** - Filter by visit count, with exact values (`visits:1`), bounded ranges (`visits:2..4`), or open ranges (`visits:10..`)
 - **user_id:** - Filter by user ID (admin use; e.g., `user_id:3`)
 
 **Examples:**
@@ -93,6 +94,12 @@ type:web
 Finds web pages (indexed from URLs).
 
 ```textplain
+visits:10..
+```
+
+Finds pages visited 10 or more times.
+
+```textplain
 user_id:3
 ```
 
@@ -112,6 +119,7 @@ title:"security audit" text:vulnerability
 url:*/privacy-policy
 domain:privacyguides.org text:encryption
 language:en type:web
+visits:2..4 domain:example.com
 user_id:3 domain:example.com
 ```
 

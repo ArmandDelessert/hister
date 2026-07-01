@@ -84,6 +84,9 @@ func isFieldSpecific(t Token) bool {
 		if _, ok := strings.CutPrefix(v, "type:"); ok {
 			return true
 		}
+		if _, ok := visitCountFilterValue(v); ok {
+			return true
+		}
 		if _, ok := strings.CutPrefix(v, "user_id:"); ok {
 			return true
 		}
@@ -152,6 +155,55 @@ func buildFieldQuery(field, v string) query.Query {
 	return q
 }
 
+func visitCountFilterValue(v string) (string, bool) {
+	if value, ok := strings.CutPrefix(v, "visits:"); ok {
+		return value, true
+	}
+	if value, ok := strings.CutPrefix(v, "add_count:"); ok {
+		return value, true
+	}
+	return "", false
+}
+
+func buildVisitCountQuery(v string) (query.Query, bool) {
+	parseBound := func(s string) (*float64, bool) {
+		if s == "" {
+			return nil, true
+		}
+		n, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return nil, false
+		}
+		return &n, true
+	}
+
+	var min, max *float64
+	if before, after, ok := strings.Cut(v, ".."); ok {
+		var valid bool
+		min, valid = parseBound(before)
+		if !valid {
+			return nil, false
+		}
+		max, valid = parseBound(after)
+		if !valid {
+			return nil, false
+		}
+	} else {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return nil, false
+		}
+		min = &n
+		max = &n
+	}
+	if min == nil && max == nil {
+		return nil, false
+	}
+	q := bleve.NewNumericRangeInclusiveQuery(min, max, new(true), new(true))
+	q.SetField("add_count")
+	return q, true
+}
+
 // Matches exact phrases without stopwords
 func createMatchPhraseQuery(s string, boost float64) query.Query {
 	tiq := bleve.NewMatchPhraseQuery(s)
@@ -202,6 +254,11 @@ func getTokenQuery(t Token) (query.Query, bool) {
 				to := float64(t + 1)
 				q := bleve.NewNumericRangeQuery(&from, &to)
 				q.SetField("type")
+				return q, negated
+			}
+		}
+		if v, ok := visitCountFilterValue(t.Value); ok {
+			if q, ok := buildVisitCountQuery(v); ok {
 				return q, negated
 			}
 		}

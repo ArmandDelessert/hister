@@ -1,5 +1,133 @@
 # Changelog
 
+## v0.16.0
+
+### New Features
+
+#### Public Search Mode
+
+Hister can now run in public mode, allowing unauthenticated read-only access to
+global search results and previews while keeping write operations protected.
+This makes it possible to publish a shared or community search instance without
+exposing private user data. Public mode is documented across configuration,
+server setup, user handling, and the new public search blog post.
+
+#### Documentation Datasets
+
+Hister now ships dataset metadata and tooling for importing common reference
+documentation. New datasets cover Go standard library, PowerShell, Python, Rust,
+Node.js, and refreshed MDN datasets. Compressed dataset imports are supported, so
+pre-built documentation archives can be imported directly.
+
+#### StackExchange Extractor
+
+The StackOverflow extractor has been replaced by a generic StackExchange
+extractor. It supports StackExchange-style question pages more broadly and
+indexes answers with useful metadata.
+
+#### Markdown and Org Mode Extractors
+
+Local Markdown and Org files now render as HTML previews. Markdown titles are
+extracted automatically, Markdown syntax is stripped from indexed text, and Org
+files are rendered through go-org for cleaner previews.
+
+#### MCP History and Capability Reporting
+
+The MCP endpoint now exposes a `get_history` tool for recently indexed pages and
+opened search result history. MCP search supports date filters, and MCP clients
+can discover whether semantic search is enabled on the current Hister instance.
+The MCP documentation and examples have been expanded accordingly.
+
+#### Browser Extension Hotkeys and Indexing Indicators
+
+The browser extension now includes configurable commands to manually index the
+current page, disable indexing for the current page, and disable indexing for
+the current domain. Badge feedback indicates success or failure. The extension
+can also show whether the current page has already been indexed, with a popup
+setting to control the indicator.
+
+#### Import and Export Improvements
+
+Imports now support HTML files, multiple input files in a single command,
+compressed JSON archives, directory imports for supported local file types, and
+optional user IDs. Import and export commands can be limited by date range.
+Browser history import gained a redesigned interactive flow and a `--backend`
+flag for selecting the scraping backend.
+
+#### Search JSON Output
+
+The `/search` endpoint now supports `format=json`, making it easier to integrate
+Hister search results with scripts and external tools.
+
+#### Search Sorting
+
+Search results can now be sorted by newest date, domain, and most visited pages.
+Documents track an `add_count` field that records how many times a URL has been
+indexed, and the web UI exposes this as the "Most visited" sort mode.
+
+#### History RSS Feed
+
+The history endpoint and history UI now expose an RSS feed for recently indexed
+documents.
+
+### Enhancements
+
+- **File indexing startup**: initial file indexing now runs in the background so
+  server startup is not blocked by watched directory indexing (closes #499)
+- **Directory indexing queue**: watched directory indexing uses a proper queue,
+  logs queue errors, and avoids duplicating file indexing logic
+- **Sensitive content override**: CLI indexing can explicitly allow sensitive
+  content when requested
+- **Semantic search**: embedding generation has a concurrency limit, semantic
+  result counts are more accurate, and shared plus user-specific vector results
+  are merged
+- **History view**: the history timeline has been redesigned, supports loading
+  more items, shows when a day has unloaded items, and displays indexed version
+  counts
+- **Search UI**: the results layout, home layout, dark theme, add entry form,
+  search input, and shared chrome have been refined
+- **Facets**: type facets were added, inactive facet categories are hidden when
+  they only have one candidate, and facet rendering was refactored
+- **Preview and history integration**: history supports diff previews for
+  versioned documents, preview links are proper anchors, and previously opened
+  results stay visible after unpinning
+- **Configurable branding**: the web UI title and subtitle can now be configured
+- **Logging**: log output format and log file path are configurable, and panic
+  stack traces are available in debug logs
+- **Environment variables**: environment variable overrides now preserve typed
+  values instead of treating everything as a string
+- **Terminal UI**: the TUI package now lives under `cmd/tui`, includes updated
+  command documentation, and supports result sorting
+- **CLI structure**: the command line implementation was split into a dedicated
+  `cmd` package for easier maintenance
+- **Docker image**: `yt-dlp` is now installed in the Docker image
+- **Dependencies**: Go, npm, GitHub Actions, Nix, GORM, SQLite, and PDF related
+  dependencies were updated
+
+### Bug Fixes
+
+- Lobsters extraction works with the updated Lobsters HTML structure
+- Document labels are added and preserved correctly
+- Opened history filtering and history list layout no longer squeeze content
+- Result text wraps correctly in the web UI
+- Description lines no longer force table scrolling
+- Base URL handling is more consistent for app URLs, CSRF checks, and invalid
+  base URL values
+- The preview panel is cleared when a search returns no results
+- Reindexing no longer stops when an extractor aborts one document
+- Lazy loading works when the previous page returned fewer than the configured
+  page size
+- Database migrations no longer unintentionally update `UpdatedAt`
+- PDF parsing panics are recovered, and PDF dependency updates address memory
+  issues
+- Versioned document diffs use the newly stored document when calculating
+  changes
+- Batch operations handle user IDs correctly
+- Extra documents no longer increment the parent document add count
+- Subtitle rendering is centered correctly
+- Python dataset generation fetches only standard library documentation
+- Nix paths and hashes were updated after Go and npm dependency changes
+
 ## v0.15.0
 
 ### New Features

@@ -39,7 +39,9 @@ function setPreviouslyIndexedBadge(tabId: number) {
     { color: '#44aa44', tabId },
     () => void chrome.runtime.lastError,
   );
-  chrome.action.setBadgeTextColor({ color: '#ffffff', tabId }, () => void chrome.runtime.lastError);
+  try {
+    void chrome.action.setBadgeTextColor?.({ color: '#ffffff', tabId })?.catch(() => {});
+  } catch (_) {}
 }
 
 function clearBadge(tabId: number) {

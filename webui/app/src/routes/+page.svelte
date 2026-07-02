@@ -97,6 +97,7 @@
     text?: string;
     favicon?: string;
     added?: number;
+    add_count?: number;
     label?: string;
     semanticScore?: number;
     finalScore?: number;
@@ -347,6 +348,7 @@
     text?: string;
     favicon?: string;
     added?: number;
+    add_count?: number;
     label?: string;
     semanticScore?: number;
     finalScore: number;
@@ -406,6 +408,7 @@
           domain: hit.document.domain ?? '',
           favicon: hit.document.favicon,
           added: hit.document.added,
+          add_count: hit.document.add_count,
           text: hit.document.text,
           semanticScore: hit.similarity,
           finalScore: alpha * hit.similarity,
@@ -2149,7 +2152,17 @@
                       <div
                         class="result-meta flex min-w-0 max-w-full items-center gap-x-3 gap-y-1 overflow-hidden"
                       >
-                        <div class="result-url-line flex min-w-0 max-w-full shrink items-center">
+                        <div
+                          class="result-url-line flex min-w-0 max-w-full shrink items-center gap-1.5"
+                        >
+                          {#if r.add_count && r.add_count > 1}
+                            <span
+                              class="border-border-brand-muted text-text-brand-muted inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-none border-[2px] px-1.5 text-[11px] leading-none font-semibold"
+                              title="index count"
+                            >
+                              {r.add_count}
+                            </span>
+                          {/if}
                           <span
                             class="result-url-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs md:text-sm"
                             title={r.url}

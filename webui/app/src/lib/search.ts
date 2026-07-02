@@ -29,6 +29,7 @@ export interface SearchResult {
   text?: string;
   favicon?: string;
   added?: number;
+  add_count?: number;
   label?: string;
   pinned?: boolean;
 }

@@ -105,6 +105,14 @@
     isPinned: boolean;
   }
 
+  const sortOptions = [
+    { value: '', label: 'Relevance' },
+    { value: 'visits', label: 'Most visited' },
+    { value: 'date', label: 'Date (newest first)' },
+    { value: 'domain', label: 'Domain' },
+  ] as const;
+  const sortValues = new Set<string>(sortOptions.map((option) => option.value));
+
   let config: Config = $state({
     wsUrl: '',
     title: 'Hister',
@@ -642,23 +650,31 @@
 
   // --- URL builders ---
 
+  function parseSortParam(value: string | null): string {
+    return value && sortValues.has(value) ? value : '';
+  }
+
   function buildSearchUrl(): string {
-    return query
-      ? `${base}/?q=${encodeURIComponent(query)}${dateFrom ? '&date_from=' + encodeURIComponent(dateFrom) : ''}${dateTo ? '&date_to=' + encodeURIComponent(dateTo) : ''}`
-      : base + '/';
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    if (currentSort) params.set('sort', currentSort);
+    const search = params.toString();
+    return `${base}/${search ? `?${search}` : ''}`;
   }
 
   // --- History state helpers ---
 
   function pushSearchHistory() {
     const url = buildSearchUrl();
-    history.pushState({ type: 'search', query, dateFrom, dateTo }, '', url);
+    history.pushState({ type: 'search', query, dateFrom, dateTo, sort: currentSort }, '', url);
     lastPushedEmpty = !query;
   }
 
   function replaceSearchHistory() {
     const url = buildSearchUrl();
-    history.replaceState({ type: 'search', query, dateFrom, dateTo }, '', url);
+    history.replaceState({ type: 'search', query, dateFrom, dateTo, sort: currentSort }, '', url);
     lastPushedEmpty = !query;
   }
 
@@ -694,6 +710,7 @@
     query = params.get('q') || '';
     dateFrom = params.get('date_from') || '';
     dateTo = params.get('date_to') || '';
+    currentSort = parseSortParam(params.get('sort'));
     lastPushedEmpty = !query;
     if (query && connected) sendQuery(query);
     if (!query) {
@@ -1318,9 +1335,11 @@
     const q = urlParams.get('q');
     const df = urlParams.get('date_from');
     const dt = urlParams.get('date_to');
+    const sort = urlParams.get('sort');
     if (q) query = q;
     if (df) dateFrom = df;
     if (dt) dateTo = dt;
+    currentSort = parseSortParam(sort);
     lastPushedEmpty = !q;
   });
 
@@ -2031,7 +2050,7 @@
                           Sort by
                         </p>
                         <div class="flex flex-col gap-1">
-                          {#each [['', 'Relevance'], ['visits', 'Most visited'], ['date', 'Date (newest first)'], ['domain', 'Domain']] as [value, label] (value)}
+                          {#each sortOptions as { value, label } (value)}
                             <button
                               class="font-inter flex cursor-pointer items-center gap-2 rounded-none border-[2px] px-2 py-1 text-xs transition-colors {currentSort ===
                               value

@@ -41,6 +41,7 @@
   interface RuleRow {
     pattern: string;
     type: 'skip' | 'priority' | 'versioning';
+    addedOrder: number;
   }
 
   let rules: RulesData = $state({ skip: [], priority: [], versioning: [], aliases: {} });
@@ -91,9 +92,12 @@
 
   const ruleRows = $derived.by(() => {
     const rows: RuleRow[] = [];
-    for (const p of rules.skip) rows.push({ pattern: p, type: 'skip' });
-    for (const p of rules.priority) rows.push({ pattern: p, type: 'priority' });
-    for (const p of rules.versioning) rows.push({ pattern: p, type: 'versioning' });
+    let addedOrder = 0;
+    for (const p of rules.skip) rows.push({ pattern: p, type: 'skip', addedOrder: addedOrder++ });
+    for (const p of rules.priority)
+      rows.push({ pattern: p, type: 'priority', addedOrder: addedOrder++ });
+    for (const p of rules.versioning)
+      rows.push({ pattern: p, type: 'versioning', addedOrder: addedOrder++ });
     return rows;
   });
 
@@ -124,7 +128,7 @@
 
   const sortedRuleRows = $derived.by(() => {
     const arr = [...filteredRuleRows];
-    if (!ruleSort.col) return arr;
+    if (!ruleSort.col) return arr.sort((a, b) => b.row.addedOrder - a.row.addedOrder);
     const { col, dir } = ruleSort;
     return arr.sort((a, b) => {
       const va = col === 'pattern' ? a.row.pattern : a.row.type;

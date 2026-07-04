@@ -156,6 +156,14 @@ function getCustomHeaders(data): CustomHeader[] {
   return customHeaders;
 }
 
+function getDocumentSubmissionHeaders(data): CustomHeader[] {
+  const customHeaders = getCustomHeaders(data);
+  if (data['submitPublicDocuments'] === true) {
+    customHeaders.push({ name: 'X-Hister-Public', value: '1' });
+  }
+  return customHeaders;
+}
+
 async function saveSkipRule(
   baseURL: string,
   customHeaders: CustomHeader[],
@@ -269,6 +277,7 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
     'histerCustomHeaders',
     'histerLabel',
     'showIndexedBadge',
+    'submitPublicDocuments',
   ]);
 
   if (data['indexingEnabled'] === false) return;
@@ -278,14 +287,7 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
 
   const showIndexedBadge: boolean = data['showIndexedBadge'] === true;
 
-  const customHeaders: { name: string; value: string }[] = Array.isArray(
-    data['histerCustomHeaders'],
-  )
-    ? data['histerCustomHeaders']
-    : [];
-  if (data['histerToken']) {
-    customHeaders.push({ name: 'X-Access-Token', value: data['histerToken'] });
-  }
+  const customHeaders = getDocumentSubmissionHeaders(data);
 
   const patterns = await getSkipPatterns(serverURL, customHeaders);
   if (patterns.some((re) => re.test(tab.url!))) {
@@ -442,19 +444,19 @@ chrome.commands?.onCommand?.addListener((command) => {
 // TODO check source
 function cjsMsgHandler(request, sender, sendResponse) {
   chrome.storage.local
-    .get(['histerURL', 'histerToken', 'indexingEnabled', 'histerCustomHeaders', 'showIndexedBadge'])
+    .get([
+      'histerURL',
+      'histerToken',
+      'indexingEnabled',
+      'histerCustomHeaders',
+      'showIndexedBadge',
+      'submitPublicDocuments',
+    ])
     .then((data) => {
       let u = data['histerURL'] || '';
       const indexingEnabled = data['indexingEnabled'] !== false;
       const showIndexedBadge = data['showIndexedBadge'] === true;
-      const customHeaders = Array.isArray(data['histerCustomHeaders'])
-        ? data['histerCustomHeaders']
-        : [];
-
-      // token is not required, this is just for backward compatibility
-      if (data['histerToken']) {
-        customHeaders.push({ name: 'X-Access-Token', value: data['histerToken'] });
-      }
+      const customHeaders = getCustomHeaders(data);
 
       if (request.action === 'getTabState') {
         const stored = tabSensitiveState.get(request.tabId as number);
@@ -512,7 +514,7 @@ function cjsMsgHandler(request, sender, sendResponse) {
           if (labelData['histerLabel']) {
             pageData.label = labelData['histerLabel'];
           }
-          sendPageData(u + 'api/add', pageData, customHeaders)
+          sendPageData(u + 'api/add', pageData, getDocumentSubmissionHeaders(data))
             .then((r) => {
               if (r.status === 201) {
                 setNormalIcon(sender.tab.id);

@@ -17,6 +17,8 @@
   let customHeaders: { name: string; value: string }[] = $state([]);
   let indexingEnabled = $state(true);
   let showIndexedBadge = $state(false);
+  let submitPublicDocuments = $state(false);
+  let profileUserID = $state(0);
   let message = $state('');
   let messageType: 'success' | 'error' | 'info' = $state('success');
   let showSettings = $state(false);
@@ -43,7 +45,20 @@
     setMessage('success', msg);
   }
 
-  let isAuthenticated = $state<boolean | null>(null);
+  let authCheckPassed = $state<boolean | null>(null);
+
+  function isAuthenticated(userID: number): boolean {
+    return userID > 0;
+  }
+
+  function setProfileUserID(userID: number) {
+    profileUserID = userID;
+    chrome.storage.local.set({ histerProfileUserID: userID });
+    if (!isAuthenticated(userID) && submitPublicDocuments) {
+      submitPublicDocuments = false;
+      chrome.storage.local.set({ submitPublicDocuments: false });
+    }
+  }
 
   function checkAuth(serverURL: string, cookieStr?: string): Promise<boolean> {
     let authURL = serverURL;
@@ -56,15 +71,28 @@
         headers['Cookie'] = cookies;
       }
       return fetch(authURL + 'api/profile', { headers, credentials: 'include' })
-        .then((r) => {
+        .then(async (r) => {
           if (r.status === 403) {
-            isAuthenticated = false;
+            authCheckPassed = false;
+            setProfileUserID(0);
             return false;
           }
-          isAuthenticated = true;
-          return isAuthenticated;
+          if (!r.ok) {
+            authCheckPassed = false;
+            setProfileUserID(0);
+            return false;
+          }
+          try {
+            const profile = await r.json();
+            setProfileUserID(Number(profile?.user_id ?? 0));
+          } catch (_) {
+            setProfileUserID(0);
+          }
+          authCheckPassed = true;
+          return authCheckPassed;
         })
         .catch(() => {
+          setProfileUserID(0);
           return false;
         });
     };
@@ -86,6 +114,8 @@
       'histerCookies',
       'histerLabel',
       'showIndexedBadge',
+      'submitPublicDocuments',
+      'histerProfileUserID',
     ],
     (data) => {
       if (!data['histerURL']) {
@@ -95,6 +125,8 @@
       customHeaders = Array.isArray(data['histerCustomHeaders']) ? data['histerCustomHeaders'] : [];
       indexingEnabled = data['indexingEnabled'] !== false;
       showIndexedBadge = data['showIndexedBadge'] === true;
+      submitPublicDocuments = data['submitPublicDocuments'] === true;
+      profileUserID = Number(data['histerProfileUserID'] ?? 0);
       pageLabel = data['histerLabel'] || '';
 
       checkAuth(url, data['histerCookies'] || '');
@@ -185,6 +217,7 @@
               .set({
                 histerURL: url,
                 histerCustomHeaders: $state.snapshot(customHeaders),
+                submitPublicDocuments: isAuthenticated(profileUserID) && submitPublicDocuments,
               })
               .then(() => {
                 setSuccessMessage('Settings saved');
@@ -212,6 +245,12 @@
 
   function toggleShowIndexedBadge() {
     chrome.storage.local.set({ showIndexedBadge: showIndexedBadge });
+  }
+
+  function toggleSubmitPublicDocuments() {
+    chrome.storage.local.set({
+      submitPublicDocuments: isAuthenticated(profileUserID) && submitPublicDocuments,
+    });
   }
 
   function authenticate() {
@@ -359,6 +398,22 @@
             />
           </div>
 
+          {#if isAuthenticated(profileUserID)}
+            <div class="flex items-center justify-between">
+              <Label
+                for="submit-public-documents"
+                class="font-outfit text-text-brand cursor-pointer text-sm font-bold"
+              >
+                Submit as public documents
+              </Label>
+              <Switch
+                id="submit-public-documents"
+                bind:checked={submitPublicDocuments}
+                onCheckedChange={toggleSubmitPublicDocuments}
+              />
+            </div>
+          {/if}
+
           <div class="flex items-center justify-between">
             <Label class="font-outfit text-text-brand text-sm font-bold">Theme</Label>
             <button
@@ -485,7 +540,7 @@
     {/if}
 
     <!-- Authenticate section -->
-    {#if isAuthenticated === false}
+    {#if authCheckPassed === false}
       <div class="border-brutal-border border-b-[3px] px-5 py-4">
         <Button
           variant="outline"

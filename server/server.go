@@ -424,6 +424,24 @@ func targetUserID(c *webContext) uint {
 	return uid
 }
 
+func publicDocumentRequested(c *webContext) bool {
+	if c.UserID == 0 {
+		return false
+	}
+	h := strings.TrimSpace(c.Request.Header.Get("X-Hister-Public"))
+	if h == "" || h == "0" || strings.EqualFold(h, "false") || strings.EqualFold(h, "no") {
+		return false
+	}
+	return true
+}
+
+func submittedDocumentUserID(c *webContext) uint {
+	if publicDocumentRequested(c) {
+		return 0
+	}
+	return targetUserID(c)
+}
+
 func withCSRF(handler endpointHandler) endpointHandler {
 	return func(c *webContext) {
 		// Allow requests coming from the command line
@@ -1052,7 +1070,7 @@ func serveAdd(c *webContext) {
 		d.Text = f.Get("text")
 	}
 	if !c.effectiveRules().IsSkip(d.URL) && !c.Config.IsSameHost(d.URL) {
-		d.UserID = targetUserID(c)
+		d.UserID = submittedDocumentUserID(c)
 		rules := c.effectiveRules()
 		var existingDoc *document.Document
 		if rules.IsVersioning(d.URL) {
@@ -1126,7 +1144,7 @@ func serveAddPDF(c *webContext) {
 		return
 	}
 
-	d.UserID = targetUserID(c)
+	d.UserID = submittedDocumentUserID(c)
 
 	if err := indexer.AddPDF(d, pdfData); err != nil {
 		if errors.Is(err, document.ErrSensitiveContent) {

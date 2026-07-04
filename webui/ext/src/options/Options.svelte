@@ -2,6 +2,7 @@
   import { Button } from '@hister/components/ui/button';
   import { Input } from '@hister/components/ui/input';
   import { Label } from '@hister/components/ui/label';
+  import { Switch } from '@hister/components/ui/switch';
   import * as Card from '@hister/components/ui/card';
   import SettingsInput from './SettingsInput.svelte';
   import { Plus, Trash2, Sun, Moon } from '@lucide/svelte';
@@ -11,16 +12,84 @@
 
   let url = $state(defaultURL);
   let customHeaders: { name: string; value: string }[] = $state([]);
+  let submitPublicDocuments = $state(false);
+  let profileUserID = $state(0);
   let message = $state('');
   let messageType: 'success' | 'error' = $state('success');
 
-  chrome.storage.local.get(['histerURL', 'histerCustomHeaders'], (data) => {
-    if (!data['histerURL']) {
-      chrome.storage.local.set({ histerURL: defaultURL });
+  function isAuthenticated(userID: number): boolean {
+    return userID > 0;
+  }
+
+  chrome.storage.local.get(
+    [
+      'histerURL',
+      'histerCustomHeaders',
+      'histerCookies',
+      'submitPublicDocuments',
+      'histerProfileUserID',
+    ],
+    (data) => {
+      if (!data['histerURL']) {
+        chrome.storage.local.set({ histerURL: defaultURL });
+      }
+      url = data['histerURL'] || defaultURL;
+      customHeaders = Array.isArray(data['histerCustomHeaders']) ? data['histerCustomHeaders'] : [];
+      submitPublicDocuments = data['submitPublicDocuments'] === true;
+      profileUserID = Number(data['histerProfileUserID'] ?? 0);
+      refreshProfileUserID(url, data['histerCookies'] || '', customHeaders);
+    },
+  );
+
+  function headersFromCustomHeaders(headersList = customHeaders): HeadersInit {
+    const headers: HeadersInit = {};
+    for (const h of headersList) {
+      if (h.name) {
+        headers[h.name] = h.value || '';
+      }
     }
-    url = data['histerURL'] || defaultURL;
-    customHeaders = Array.isArray(data['histerCustomHeaders']) ? data['histerCustomHeaders'] : [];
-  });
+    return headers;
+  }
+
+  function setProfileUserID(userID: number) {
+    profileUserID = userID;
+    chrome.storage.local.set({ histerProfileUserID: userID });
+    if (!isAuthenticated(userID) && submitPublicDocuments) {
+      submitPublicDocuments = false;
+      chrome.storage.local.set({ submitPublicDocuments: false });
+    }
+  }
+
+  function refreshProfileUserID(serverURL: string, cookieStr = '', headersList = customHeaders) {
+    let profileURL = serverURL;
+    if (!profileURL.endsWith('/')) {
+      profileURL += '/';
+    }
+    const headers = headersFromCustomHeaders(headersList);
+    if (cookieStr) {
+      headers['Cookie'] = cookieStr;
+    }
+    fetch(profileURL + 'api/profile', { headers, credentials: 'include' })
+      .then(async (response) => {
+        if (response.status === 403) {
+          setProfileUserID(0);
+          return;
+        }
+        if (!response.ok) {
+          setProfileUserID(0);
+          return;
+        }
+        try {
+          const profile = await response.json();
+          setProfileUserID(Number(profile?.user_id ?? 0));
+        } catch (_) {
+          setProfileUserID(0);
+        }
+      })
+      .catch(() => {
+        setProfileUserID(0);
+      });
+  }
 
   function addHeader() {
     customHeaders.push({ name: '', value: '' });
@@ -37,12 +106,22 @@
       .set({
         histerURL: url,
         histerCustomHeaders: $state.snapshot(headersToSave),
+        submitPublicDocuments: isAuthenticated(profileUserID) && submitPublicDocuments,
       })
       .then(() => {
         customHeaders = headersToSave;
         message = 'Settings saved';
         messageType = 'success';
+        chrome.storage.local.get(['histerCookies'], (data) => {
+          refreshProfileUserID(url, data['histerCookies'] || '', headersToSave);
+        });
       });
+  }
+
+  function toggleSubmitPublicDocuments() {
+    chrome.storage.local.set({
+      submitPublicDocuments: isAuthenticated(profileUserID) && submitPublicDocuments,
+    });
   }
 
   function authenticate() {
@@ -59,6 +138,7 @@
       }
       const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
       chrome.storage.local.set({ histerCookies: cookieStr }).then(() => {
+        refreshProfileUserID(url, cookieStr);
         message = 'Authentication successful';
         messageType = 'success';
       });
@@ -163,6 +243,27 @@
               Add Header
             </Button>
           </div>
+
+          {#if isAuthenticated(profileUserID)}
+            <div class="flex items-center justify-between">
+              <div>
+                <Label
+                  for="submit-public-documents"
+                  class="font-outfit text-text-brand cursor-pointer text-sm font-bold"
+                >
+                  Submit as public documents
+                </Label>
+                <p class="text-text-brand-muted font-inter mt-1 text-xs">
+                  Store newly indexed documents as public results with user id 0.
+                </p>
+              </div>
+              <Switch
+                id="submit-public-documents"
+                bind:checked={submitPublicDocuments}
+                onCheckedChange={toggleSubmitPublicDocuments}
+              />
+            </div>
+          {/if}
 
           <Button
             type="submit"

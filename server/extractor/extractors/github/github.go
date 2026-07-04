@@ -83,15 +83,15 @@ var (
 	urlPattern = fmt.Sprintf(`%s(%s)/(%s)`, githubURLPrefix, ownerPattern, repoPattern)
 
 	// /owner/repo/...
-	repoRe     = regexp.MustCompile(fmt.Sprintf(`^%s`, urlPattern))
+	repoRe = regexp.MustCompile(fmt.Sprintf(`^%s`, urlPattern))
 	// /owner/repo/? OR /owner/repo?... OR /owner/repo#...
 	fullRepoRe = regexp.MustCompile(fmt.Sprintf(`^%s(?:#[^/]*|\?[^/]*)?/?$`, urlPattern))
 	// /owner/repo/:id/? OR /owner/repo/:id#...
-	issueRe    = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)(?:#[^/])?/?$`, urlPattern))
+	issueRe = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)(?:#[^/])?/?$`, urlPattern))
 	// /owner/repo/issues
-	issuesRe   = regexp.MustCompile(fmt.Sprintf(`^%s/issues/?$`, urlPattern))
+	issuesRe = regexp.MustCompile(fmt.Sprintf(`^%s/issues/?$`, urlPattern))
 	// /owner/repo/pull/:id/? OR /owner/repo/:id#...
-	prRe       = regexp.MustCompile(fmt.Sprintf(`^%s/pull/(\d+)(?:#[^/]+)?/?$`, urlPattern))
+	prRe = regexp.MustCompile(fmt.Sprintf(`^%s/pull/(\d+)(?:#[^/]+)?/?$`, urlPattern))
 )
 
 type githubPattern = struct {
@@ -108,7 +108,7 @@ var githubPatterns = []githubPattern{
 
 // Match returns true for known github URLs, defined in githubPatterns
 func (e *GitHubExtractor) Match(d *document.Document) bool {
-	var parts = urlParts(d.URL)
+	parts := urlParts(d.URL)
 
 	if githubSystemPaths[strings.ToLower(parts[0])] {
 		return false
@@ -199,8 +199,8 @@ func (e *GitHubExtractor) Preview(d *document.Document) (types.PreviewResponse, 
 
 // --- Repositories --------------------------------------------------------
 func getRepo(url string) (string, error) {
-	var m = repoRe.FindStringSubmatch(url)
-	if m == nil || len(m) < 2 {
+	m := repoRe.FindStringSubmatch(url)
+	if len(m) < 2 {
 		return "", fmt.Errorf("%s is not a valid github url", url)
 	}
 	return m[1] + "/" + m[2], nil
@@ -265,7 +265,6 @@ func extractRepo(d *document.Document) (types.ExtractorState, error) {
 		return types.ExtractorContinue, fmt.Errorf("no content found")
 	}
 	return types.ExtractorStop, nil
-
 }
 
 // repoInfo holds the extracted fields from a GitHub repository page.

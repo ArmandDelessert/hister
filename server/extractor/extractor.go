@@ -291,7 +291,7 @@ func (e *basicExtractor) Match(_ *document.Document) bool {
 }
 
 func (e *basicExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
-	d.Title = ""
+	var extractedTitle strings.Builder
 	r := strings.NewReader(d.HTML)
 	doc := html.NewTokenizer(r)
 	inBody := false
@@ -319,7 +319,7 @@ out:
 			}
 		case html.TextToken:
 			if currentTag == "title" {
-				d.Title += strings.TrimSpace(string(doc.Text()))
+				extractedTitle.WriteString(strings.TrimSpace(string(doc.Text())))
 			}
 			if inBody && !skip {
 				text.Write(doc.Text())
@@ -335,6 +335,9 @@ out:
 		}
 	}
 	d.Text = strings.TrimSpace(text.String())
+	if extractedTitle.String() != "" {
+		d.Title = extractedTitle.String()
+	}
 	if d.Text == "" && d.Title == "" {
 		return types.ExtractorStop, errors.New("no content found")
 	}
@@ -373,7 +376,9 @@ func (e *readabilityExtractor) Extract(d *document.Document) (types.ExtractorSta
 		return types.ExtractorContinue, err
 	}
 	d.Text = buf.String()
-	d.Title = a.Title()
+	if t := a.Title(); t != "" {
+		d.Title = t
+	}
 	d.SetFaviconURL(a.Favicon())
 	writeReadabilityMeta(d, a)
 	return types.ExtractorStop, nil

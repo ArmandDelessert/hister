@@ -364,6 +364,12 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 		embedCancel: embedCancel,
 		data:        newDataStore(filepath.Join(basePath, dataDirName)),
 	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			i.Close()
+		}
+	}()
 	if !detectLanguages {
 		i.langDetector = document.NewNullLanguageDetector()
 	} else {
@@ -391,6 +397,7 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 		i.idx.Add(langIdx)
 		i.indexers[fn] = langIdx
 	}
+	initialized = true
 	return i, nil
 }
 

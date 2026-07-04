@@ -82,11 +82,16 @@ var (
 
 	urlPattern = fmt.Sprintf(`%s(%s)/(%s)`, githubURLPrefix, ownerPattern, repoPattern)
 
-	repoRe     = regexp.MustCompile(fmt.Sprintf(`^%s`, urlPattern))               // /owner/repo/...
-	fullRepoRe = regexp.MustCompile(fmt.Sprintf(`^%s$`, urlPattern))              // /owner/repo
-	issueRe    = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)$`, urlPattern)) // /owner/repo/issue/:id
-	issuesRe   = regexp.MustCompile(fmt.Sprintf(`^%s/issues$`, urlPattern))       // /owner/repo/issues
-	prRe       = regexp.MustCompile(fmt.Sprintf(`^%s/pull/(\d+)$`, urlPattern))   // /owner/repo/pull/:id
+	// /owner/repo/...
+	repoRe     = regexp.MustCompile(fmt.Sprintf(`^%s`, urlPattern))
+	// /owner/repo/? OR /owner/repo?... OR /owner/repo#...
+	fullRepoRe = regexp.MustCompile(fmt.Sprintf(`^%s(?:#[^/]*|\?[^/]*)?/?$`, urlPattern))
+	// /owner/repo/:id/? OR /owner/repo/:id#...
+	issueRe    = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)(?:#[^/])?/?$`, urlPattern))
+	// /owner/repo/issues
+	issuesRe   = regexp.MustCompile(fmt.Sprintf(`^%s/issues/?$`, urlPattern))
+	// /owner/repo/pull/:id/? OR /owner/repo/:id#...
+	prRe       = regexp.MustCompile(fmt.Sprintf(`^%s/pull/(\d+)(?:#[^/]+)?/?$`, urlPattern))
 )
 
 type githubPattern = struct {

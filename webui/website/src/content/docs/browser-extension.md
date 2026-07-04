@@ -58,6 +58,7 @@ Clicking the extension icon opens the popup, which provides quick access to the 
 | **Authenticate Extension** button            | Copy session cookies from the logged-in Hister web UI to authenticate the extension (user handling only).             |
 | **Settings icon** (⚙)                        | Expand an inline form to view and update the Server URL without opening the full options page.                        |
 | **Show indicator for indexed pages** setting | Show a `✓` badge on pages that are already indexed. This is available after opening the settings view from the popup. |
+| **Submit as public documents** setting       | Store newly indexed pages as public documents with user id `0`. This appears after the extension is authenticated.    |
 
 A status banner appears at the bottom of the popup after any action, showing success or error feedback. If the server rejected the last submission, a `!` badge is shown on the extension icon; saving valid settings clears it.
 
@@ -74,10 +75,11 @@ To open it directly, right click on the extension icon and select "Options", or 
 
 ### Connection Settings
 
-| Setting            | Default                  | Description                                                                                                                                                      |
-| ------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Server URL**     | `http://127.0.0.1:4433/` | The full URL of your Hister server, including scheme and port.                                                                                                   |
-| **Custom Headers** | _(none)_                 | Additional HTTP headers included with every request. Useful for reverse-proxy authentication (e.g., `Authorization: Basic …`). Each header is a name/value pair. |
+| Setting                        | Default                  | Description                                                                                                                                                      |
+| ------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Server URL**                 | `http://127.0.0.1:4433/` | The full URL of your Hister server, including scheme and port.                                                                                                   |
+| **Custom Headers**             | _(none)_                 | Additional HTTP headers included with every request. Useful for reverse-proxy authentication (e.g., `Authorization: Basic …`). Each header is a name/value pair. |
+| **Submit as public documents** | Off                      | Store newly indexed pages as public documents with user id `0`. This setting appears after the extension is authenticated.                                       |
 
 Click **Save Settings** to apply. The extension validates the connection by calling `GET /api/config` before saving; an invalid URL will show an error instead.
 
@@ -89,6 +91,8 @@ When [user handling](/docs/user-handling) is enabled, the extension authenticate
 2. Click the **Authenticate Extension** button in the popup.
 
 The extension copies the active session cookie, so it submits pages under your user account. You don't need to repeat this step if you log out in the web interface.
+
+After authentication, the popup settings and options page show **Submit as public documents**. Turn this on when pages indexed from the extension should be visible as public documents instead of being stored only under your user account. The extension sends this preference with document submissions, and the server stores those documents with user id `0`.
 
 ## Troubleshooting
 

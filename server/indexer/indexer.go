@@ -146,14 +146,10 @@ var visitCountFacetBuckets = []struct {
 	min   *float64
 	max   *float64
 }{
-	{"1", "1 visit", floatPtr(1), floatPtr(2)},
-	{"2..4", "2 to 4", floatPtr(2), floatPtr(5)},
-	{"5..9", "5 to 9", floatPtr(5), floatPtr(10)},
-	{"10..", "10 or more", floatPtr(10), nil},
-}
-
-func floatPtr(v float64) *float64 {
-	return &v
+	{"1", "1 visit", new(float64(1)), new(float64(2))},
+	{"2..4", "2 to 4", new(float64(2)), new(float64(5))},
+	{"5..9", "5 to 9", new(float64(5)), new(float64(10))},
+	{"10..", "10 or more", new(float64(10)), nil},
 }
 
 func addFacets(req *bleve.SearchRequest, sizes map[string]int) {

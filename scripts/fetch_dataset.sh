@@ -2,7 +2,7 @@
 
 set -eu
 
-DATASETS="go-stdlib mdn-css mdn-html mdn-js powershell python-docs rust-docs nodejs-api typescript-docs react-docs django-docs postgresql-docs kubernetes-docs owasp-cheatsheets"
+DATASETS="go-stdlib mdn-css mdn-html mdn-js powershell python-docs rust-docs nodejs-api typescript-docs react-docs django-docs postgresql-docs kubernetes-docs owasp-cheatsheets rfcs"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
@@ -237,6 +237,17 @@ fetch_owasp_cheatsheets() {
   export_dataset "owasp-cheatsheets" "$label"
 }
 
+fetch_rfcs() {
+  HELPERS_DIR="$SCRIPT_DIR/fetch_dataset_helpers"
+  MIRROR="$HELPERS_DIR/my-rfc-mirror"
+
+  rsync -a --delete \
+    --include='*.html' --include='*.json' --include='*.txt' --include='*/' --exclude='*' \
+    rsync.rfc-editor.org::rfcs "$MIRROR"
+
+  python3 "$HELPERS_DIR/fetch_rfcs.py"
+}
+
 fetch_dataset() {
   case "$1" in
     go-stdlib)
@@ -280,6 +291,9 @@ fetch_dataset() {
       ;;
     owasp-cheatsheets)
       fetch_owasp_cheatsheets
+      ;;
+    rfcs)
+      fetch_rfcs
       ;;
     all)
       for dataset in $DATASETS; do

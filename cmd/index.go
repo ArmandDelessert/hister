@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/asciimoo/hister/client"
@@ -150,7 +151,7 @@ var indexCmd = &cobra.Command{
 				}
 			}()
 
-			if err := crawlAndIndex(startURL, cr, validator, label, clientOpts...); err != nil {
+			if err := crawlAndIndex(jobID, startURL, cr, validator, label, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -201,7 +202,7 @@ var indexCmd = &cobra.Command{
 				}
 			}()
 
-			if err := crawlAndIndex(existingJob.StartURL, cr, validator, label, clientOpts...); err != nil {
+			if err := crawlAndIndex(jobID, existingJob.StartURL, cr, validator, label, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -299,7 +300,7 @@ func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.O
 	return nil
 }
 
-func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, label string, clientOpts ...client.Option) error {
+func crawlAndIndex(jobID string, startURL string, cr crawler.Crawler, v *crawler.Validator, label string, clientOpts ...client.Option) error {
 	ch, err := cr.Crawl(context.Background(), startURL, v)
 	if err != nil {
 		return err
@@ -308,6 +309,7 @@ func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, la
 	for doc := range ch {
 		if err := doc.Process(nil, extractor.Extract); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to process crawled document")
+			markPersistentIndexFailure(jobID, doc.URL, err)
 			continue
 		}
 		if doc.Favicon == "" {
@@ -318,9 +320,24 @@ func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, la
 		doc.Label = label
 		if err := c.AddDocumentJSON(doc); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to index crawled document")
+			markPersistentIndexFailure(jobID, doc.URL, err)
 		}
 	}
 	return nil
+}
+
+func markPersistentIndexFailure(jobID, rawURL string, err error) {
+	if jobID == "" || rawURL == "" || err == nil {
+		return
+	}
+	errCode := 0
+	var httpErr *client.HTTPError
+	if errors.As(err, &httpErr) {
+		errCode = httpErr.StatusCode
+	}
+	if dbErr := model.MarkCrawlURLFailed(jobID, rawURL, errCode, err.Error()); dbErr != nil {
+		log.Warn().Err(dbErr).Str("url", rawURL).Msg("failed to record persistent crawl indexing error")
+	}
 }
 
 func crawlerSkipOptions(force bool, clientOpts ...client.Option) []crawler.Option {

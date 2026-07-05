@@ -48,6 +48,7 @@ type CrawlURL struct {
 	Depth     int       `json:"depth"`
 	Status    string    `gorm:"not null;default:pending" json:"status"`
 	Error     string    `json:"error"`
+	ErrorCode int       `json:"error_code"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -134,7 +135,7 @@ func BulkInsertCrawlURLs(jobID string, urls []string, depth int) error {
 func MarkDoneAndEnqueueLinks(id uint, jobID string, links []string, depth int) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&CrawlURL{}).Where("id = ?", id).
-			Updates(map[string]any{"status": CrawlURLDone, "error": ""}).Error; err != nil {
+			Updates(map[string]any{"status": CrawlURLDone, "error": "", "error_code": 0}).Error; err != nil {
 			return err
 		}
 		if len(links) == 0 {
@@ -158,7 +159,7 @@ func InsertCrawlURLDone(jobID, rawURL string, depth int) error {
 	// Update if already present, otherwise insert as done.
 	result := DB.Model(&CrawlURL{}).
 		Where("job_id = ? AND url = ?", jobID, rawURL).
-		Updates(map[string]any{"status": CrawlURLDone, "error": ""})
+		Updates(map[string]any{"status": CrawlURLDone, "error": "", "error_code": 0})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -192,7 +193,12 @@ func NextPendingCrawlURL(jobID string) (*CrawlURL, error) {
 // UpdateCrawlURLStatus sets the status and optional error message on a URL row.
 func UpdateCrawlURLStatus(id uint, status, errMsg string) error {
 	return DB.Model(&CrawlURL{}).Where("id = ?", id).
-		Updates(map[string]any{"status": status, "error": errMsg}).Error
+		Updates(map[string]any{"status": status, "error": errMsg, "error_code": 0}).Error
+}
+
+func MarkCrawlURLFailed(jobID, rawURL string, errCode int, errMsg string) error {
+	return DB.Model(&CrawlURL{}).Where("job_id = ? AND url = ?", jobID, rawURL).
+		Updates(map[string]any{"status": CrawlURLFailed, "error": errMsg, "error_code": errCode}).Error
 }
 
 // ResetInProgressCrawlURLs moves all in_progress URLs back to pending so they

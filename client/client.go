@@ -23,6 +23,16 @@ type Client struct {
 	allowSensitive bool
 }
 
+type HTTPError struct {
+	StatusCode int
+	Detail     string
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	return e.Message
+}
+
 type Option func(*Client)
 
 func WithHTTPClient(hc *http.Client) Option {
@@ -69,6 +79,13 @@ func checkStatus(resp *http.Response) error {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	detail := strings.TrimSpace(string(body))
+	errWithStatus := func(msg string) error {
+		return &HTTPError{
+			StatusCode: resp.StatusCode,
+			Detail:     detail,
+			Message:    msg,
+		}
+	}
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
@@ -76,36 +93,36 @@ func checkStatus(resp *http.Response) error {
 		if detail != "" {
 			msg += " (" + detail + ")"
 		}
-		return fmt.Errorf("%s\nProvide one with --token / -t or set access_token in your config file", msg)
+		return errWithStatus(fmt.Sprintf("%s\nProvide one with --token / -t or set access_token in your config file", msg))
 	case http.StatusForbidden:
 		msg := "access denied: the token is invalid or does not have permission for this operation"
 		if detail != "" {
 			msg += " (" + detail + ")"
 		}
-		return fmt.Errorf("%s\nCheck the token with --token / -t or verify the user's permissions on the server", msg)
+		return errWithStatus(fmt.Sprintf("%s\nCheck the token with --token / -t or verify the user's permissions on the server", msg))
 	case http.StatusNotFound:
 		msg := "server not reachable at the configured URL"
 		if detail != "" {
 			msg += ": " + detail
 		}
-		return fmt.Errorf("%s\nVerify the server address with --server-url / -u", msg)
+		return errWithStatus(fmt.Sprintf("%s\nVerify the server address with --server-url / -u", msg))
 	case http.StatusNotAcceptable:
 		msg := "page skipped: this URL was rejected by the server (usually due to skip rules or disabled domains)"
 		if detail != "" {
 			msg += " (" + detail + ")"
 		}
-		return fmt.Errorf("%s", msg)
+		return errWithStatus(msg)
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		msg := fmt.Sprintf("server error (%d)", resp.StatusCode)
 		if detail != "" {
 			msg += ": " + detail
 		}
-		return fmt.Errorf("%s\nCheck the server logs for details", msg)
+		return errWithStatus(fmt.Sprintf("%s\nCheck the server logs for details", msg))
 	default:
 		if detail == "" {
 			detail = resp.Status
 		}
-		return fmt.Errorf("unexpected response (%d): %s", resp.StatusCode, detail)
+		return errWithStatus(fmt.Sprintf("unexpected response (%d): %s", resp.StatusCode, detail))
 	}
 }
 

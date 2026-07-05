@@ -27,6 +27,24 @@ type Crawler interface {
 	Close() error
 }
 
+// SkipURLChecker decides whether rawURL should be skipped before delay and fetch.
+type SkipURLChecker func(rawURL string) (bool, error)
+
+type options struct {
+	skipURLChecker SkipURLChecker
+}
+
+// Option customizes crawler traversal behavior.
+type Option func(*options)
+
+// WithSkipURLChecker installs a prefetch skip predicate. It runs after validator and
+// robots checks, but before configured crawl delay and network fetch.
+func WithSkipURLChecker(skipURLChecker SkipURLChecker) Option {
+	return func(opts *options) {
+		opts.skipURLChecker = skipURLChecker
+	}
+}
+
 // fetcher is the internal interface implemented by each scraping backend.
 // fetchPage downloads rawURL and returns the final URL after any redirects,
 // its HTML content together with the raw href values of all anchor tags found
@@ -38,36 +56,47 @@ type fetcher interface {
 
 // baseCrawler wraps a fetcher with BFS traversal logic.
 type baseCrawler struct {
-	fetcher fetcher
-	cfg     *config.CrawlerConfig
-	robots  *RobotsCache // nil means robots.txt enforcement is disabled
+	fetcher        fetcher
+	cfg            *config.CrawlerConfig
+	robots         *RobotsCache // nil means robots.txt enforcement is disabled
+	skipURLChecker SkipURLChecker
 }
 
 // New creates a Crawler backed by the backend specified in cfg.Backend.
 // Accepted values are "chromedp" and "http" (default).
 // Pass a non-nil RobotsCache to enforce robots.txt rules during crawling;
 // pass nil to disable robots.txt checks entirely.
-func New(cfg *config.CrawlerConfig, robots *RobotsCache) (Crawler, error) {
+func New(cfg *config.CrawlerConfig, robots *RobotsCache, opts ...Option) (Crawler, error) {
+	o := applyOptions(opts...)
+	var f fetcher
+	var err error
 	switch cfg.Backend {
 	case "chromedp":
-		f, err := newChromedpFetcher(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("chromedp backend: %w", err)
-		}
-		return &baseCrawler{fetcher: f, cfg: cfg, robots: robots}, nil
+		f, err = newChromedpFetcher(cfg)
 	case "bidi":
-		f, err := newBidiFetcher(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("bidi backend: %w", err)
-		}
-		return &baseCrawler{fetcher: f, cfg: cfg, robots: robots}, nil
+		f, err = newBidiFetcher(cfg)
 	default:
-		f, err := newHTTPFetcher(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("http backend: %w", err)
-		}
-		return &baseCrawler{fetcher: f, cfg: cfg, robots: robots}, nil
+		f, err = newHTTPFetcher(cfg)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("%s backend: %w", crawlerBackendName(cfg), err)
+	}
+	return &baseCrawler{fetcher: f, cfg: cfg, robots: robots, skipURLChecker: o.skipURLChecker}, nil
+}
+
+func crawlerBackendName(cfg *config.CrawlerConfig) string {
+	if cfg.Backend == "" {
+		return "http"
+	}
+	return cfg.Backend
+}
+
+func applyOptions(opts ...Option) options {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
 }
 
 // Crawl starts a BFS crawl from startURL. It returns a channel on which
@@ -124,6 +153,16 @@ func (c *baseCrawler) bfsCrawl(ctx context.Context, startURL string, v *Validato
 		if c.robots != nil && !c.robots.Allowed(ctx, cur.rawURL) {
 			log.Debug().Str("url", cur.rawURL).Msg("crawler: skipping URL disallowed by robots.txt")
 			continue
+		}
+
+		if c.skipURLChecker != nil {
+			skip, err := c.skipURLChecker(cur.rawURL)
+			if err != nil {
+				log.Warn().Err(err).Str("url", cur.rawURL).Msg("crawler: failed to check whether URL should be skipped")
+			} else if skip {
+				log.Debug().Str("url", cur.rawURL).Msg("crawler: skipping URL by prefetch skip predicate")
+				continue
+			}
 		}
 
 		if c.cfg.Delay > 0 {

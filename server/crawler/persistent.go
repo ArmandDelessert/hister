@@ -18,36 +18,32 @@ import (
 // persistentCrawler wraps a fetcher with DB-backed BFS so crawl jobs can be
 // interrupted and resumed.
 type persistentCrawler struct {
-	fetcher fetcher
-	cfg     *config.CrawlerConfig
-	jobID   string
-	robots  *RobotsCache // nil means robots.txt enforcement is disabled
+	fetcher        fetcher
+	cfg            *config.CrawlerConfig
+	jobID          string
+	robots         *RobotsCache // nil means robots.txt enforcement is disabled
+	skipURLChecker SkipURLChecker
 }
 
 // NewPersistent creates a Crawler that persists its state to the database.
 // jobID is used as the primary key for the crawl job.
 // Pass a non-nil RobotsCache to enforce robots.txt rules; pass nil to disable.
-func NewPersistent(cfg *config.CrawlerConfig, jobID string, robots *RobotsCache) (Crawler, error) {
+func NewPersistent(cfg *config.CrawlerConfig, jobID string, robots *RobotsCache, opts ...Option) (Crawler, error) {
+	o := applyOptions(opts...)
+	var f fetcher
+	var err error
 	switch cfg.Backend {
 	case "chromedp":
-		f, err := newChromedpFetcher(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("chromedp backend: %w", err)
-		}
-		return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots}, nil
+		f, err = newChromedpFetcher(cfg)
 	case "bidi":
-		f, err := newBidiFetcher(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("bidi backend: %w", err)
-		}
-		return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots}, nil
+		f, err = newBidiFetcher(cfg)
 	default:
-		f, err := newHTTPFetcher(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("http backend: %w", err)
-		}
-		return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots}, nil
+		f, err = newHTTPFetcher(cfg)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("%s backend: %w", crawlerBackendName(cfg), err)
+	}
+	return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots, skipURLChecker: o.skipURLChecker}, nil
 }
 
 // Crawl starts (or resumes) the persistent crawl job identified by jobID.
@@ -130,6 +126,19 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 				log.Warn().Err(err).Msg("failed to mark URL skipped by robots.txt")
 			}
 			continue
+		}
+
+		if c.skipURLChecker != nil {
+			skip, err := c.skipURLChecker(cur.URL)
+			if err != nil {
+				log.Warn().Err(err).Str("url", cur.URL).Msg("crawler: failed to check whether URL should be skipped")
+			} else if skip {
+				log.Debug().Str("url", cur.URL).Msg("crawler: skipping URL by prefetch skip predicate")
+				if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLSkipped, "prefetch skip"); err != nil {
+					log.Warn().Err(err).Msg("failed to mark URL skipped by prefetch predicate")
+				}
+				continue
+			}
 		}
 
 		if c.cfg.Delay > 0 {

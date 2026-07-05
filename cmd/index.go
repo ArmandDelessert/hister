@@ -140,7 +140,7 @@ var indexCmd = &cobra.Command{
 			}
 			validator.SetVisited(int(done + failed))
 
-			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID, robotsCache)
+			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID, robotsCache, crawlerSkipOptions(force, clientOpts...)...)
 			if err != nil {
 				exit(1, "Failed to initialize persistent crawler: "+err.Error())
 			}
@@ -150,7 +150,7 @@ var indexCmd = &cobra.Command{
 				}
 			}()
 
-			if err := crawlAndIndex(startURL, cr, validator, force, label, clientOpts...); err != nil {
+			if err := crawlAndIndex(startURL, cr, validator, label, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -191,7 +191,7 @@ var indexCmd = &cobra.Command{
 			}
 			validator.SetVisited(int(done + failed))
 
-			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID, robotsCache)
+			cr, err := crawler.NewPersistent(&cfg.Crawler, jobID, robotsCache, crawlerSkipOptions(force, clientOpts...)...)
 			if err != nil {
 				exit(1, "Failed to initialize persistent crawler: "+err.Error())
 			}
@@ -201,7 +201,7 @@ var indexCmd = &cobra.Command{
 				}
 			}()
 
-			if err := crawlAndIndex(existingJob.StartURL, cr, validator, force, label, clientOpts...); err != nil {
+			if err := crawlAndIndex(existingJob.StartURL, cr, validator, label, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -299,22 +299,13 @@ func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.O
 	return nil
 }
 
-func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, force bool, label string, clientOpts ...client.Option) error {
+func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, label string, clientOpts ...client.Option) error {
 	ch, err := cr.Crawl(context.Background(), startURL, v)
 	if err != nil {
 		return err
 	}
 	c := newClient(clientOpts...)
 	for doc := range ch {
-		if !force {
-			exists, err := c.DocumentExists(doc.URL)
-			if err != nil {
-				log.Warn().Err(err).Str("url", doc.URL).Msg("failed to check if URL is already indexed")
-			} else if exists {
-				log.Info().Str("url", doc.URL).Msg("URL already indexed, skipping (use --force to reindex)")
-				continue
-			}
-		}
 		if err := doc.Process(nil, extractor.Extract); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to process crawled document")
 			continue
@@ -330,4 +321,20 @@ func crawlAndIndex(startURL string, cr crawler.Crawler, v *crawler.Validator, fo
 		}
 	}
 	return nil
+}
+
+func crawlerSkipOptions(force bool, clientOpts ...client.Option) []crawler.Option {
+	if force {
+		return nil
+	}
+	c := newClient(clientOpts...)
+	return []crawler.Option{
+		crawler.WithSkipURLChecker(func(rawURL string) (bool, error) {
+			exists, err := c.DocumentExists(rawURL)
+			if err != nil || !exists {
+				return exists, err
+			}
+			return true, nil
+		}),
+	}
 }

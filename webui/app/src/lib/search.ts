@@ -28,6 +28,7 @@ export interface SearchResult {
   score?: number;
   text?: string;
   favicon?: string;
+  favicon_key?: string;
   added?: number;
   add_count?: number;
   label?: string;

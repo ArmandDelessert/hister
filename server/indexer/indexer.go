@@ -468,7 +468,7 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 			n := len(res.Hits)
 			b := newMultiBatch(tmpIdx)
 			for _, h := range res.Hits {
-				d := idx.resFromHit(h, true, true)
+				d := idx.resFromHit(h, true, true, true)
 				if d.Type == types.Local {
 					pu, err := url.Parse(d.URL)
 					if err == nil {
@@ -582,6 +582,28 @@ func CleanupDataFiles(basePath string) (int, int, error) {
 		return htmlRemoved, faviconRemoved, fmt.Errorf("failed to clean up orphaned favicon data files: %w", err)
 	}
 	return htmlRemoved, faviconRemoved, nil
+}
+
+func ReadFavicon(key string) ([]byte, error) {
+	if i == nil {
+		return nil, errors.New("indexer is not initialized")
+	}
+	if !validDataKey(key) {
+		return nil, errors.New("invalid favicon key")
+	}
+	return i.data.read(faviconSubdir, key)
+}
+
+func validDataKey(key string) bool {
+	if len(key) != 64 {
+		return false
+	}
+	for _, c := range key {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func DocumentCount() uint64 {
@@ -834,7 +856,7 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 		q = query.NewMatchAllQuery()
 	}
 	req := bleve.NewSearchRequest(q)
-	req.Fields = []string{"url", "title", "added", "add_count"}
+	req.Fields = []string{"url", "title", "added", "add_count", "favicon_key", "favicon"}
 	req.Size = limit
 	req.SortByCustom(search.SortOrder{
 		&search.SortField{
@@ -861,6 +883,12 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 		}
 		if n, ok := h.Fields["add_count"].(float64); ok {
 			d.AddCount = uint(n)
+		}
+		if s, ok := h.Fields["favicon_key"].(string); ok {
+			d.FaviconKey = s
+		} else if s, ok := h.Fields["favicon"].(string); ok {
+			// backward compat: old documents still have favicon inline in Bleve
+			d.Favicon = s
 		}
 		if d.AddCount < 1 {
 			d.AddCount = 1
@@ -1168,7 +1196,7 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	}
 	matches := make([]*document.Document, len(res.Hits))
 	for j, v := range res.Hits {
-		matches[j] = i.resFromHit(v, q.IncludeText, q.IncludeHTML)
+		matches[j] = i.resFromHit(v, q.IncludeText, q.IncludeHTML, false)
 	}
 	r := &Results{
 		Total:     res.Total,
@@ -1247,7 +1275,7 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 						MatchedChunk: truncateText(dh.chunkText, semanticTextPreviewLen),
 					}
 					// For semantic-only hits, populate the document with a truncated text preview.
-					d := GetByDocID(docID)
+					d := getByDocID(docID, false)
 					if d != nil {
 						if _, inKeyword := keywordURLs[d.URL]; !inKeyword {
 							d.Text = truncateText(d.Text, semanticTextPreviewLen)
@@ -1335,6 +1363,10 @@ func (i *indexer) getAddCountByDocID(id string) (uint, bool) {
 // GetByDocID returns the document with the given bleve document ID, or nil if
 // none exists. The ID is the uid-prefixed form produced by document.GetDocID.
 func GetByDocID(id string) *document.Document {
+	return getByDocID(id, true)
+}
+
+func getByDocID(id string, includeFavicon bool) *document.Document {
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
 	req.Fields = allFields
@@ -1343,7 +1375,7 @@ func GetByDocID(id string) *document.Document {
 	if err != nil || len(res.Hits) < 1 {
 		return nil
 	}
-	return i.resFromHit(res.Hits[0], true, true)
+	return i.resFromHit(res.Hits[0], true, true, includeFavicon)
 }
 
 func getLabel(id string) string {
@@ -1377,14 +1409,14 @@ func Iterate(fn func(*document.Document)) {
 			return
 		}
 		for _, h := range res.Hits {
-			d := i.resFromHit(h, true, true)
+			d := i.resFromHit(h, true, true, true)
 			fn(d)
 		}
 		sortKey = res.Hits[n-1].Sort
 	}
 }
 
-func (idx *indexer) resFromHit(h *search.DocumentMatch, includeText, includeHTML bool) *document.Document {
+func (idx *indexer) resFromHit(h *search.DocumentMatch, includeText, includeHTML, includeFavicon bool) *document.Document {
 	d := &document.Document{}
 	if t, ok := h.Fragments["title"]; ok {
 		d.Title = t[0]
@@ -1420,16 +1452,18 @@ func (idx *indexer) resFromHit(h *search.DocumentMatch, includeText, includeHTML
 			d.HTML = s
 		}
 	}
-	if d.FaviconKey != "" {
+	if includeFavicon && d.FaviconKey != "" {
 		data, err := idx.data.read(faviconSubdir, d.FaviconKey)
 		if err != nil {
 			log.Warn().Err(err).Str("key", d.FaviconKey).Msg("failed to load favicon from data store")
 		} else {
 			d.Favicon = string(data)
 		}
-	} else if s, ok := h.Fields["favicon"].(string); ok {
-		// backward compat: old documents still have favicon inline in Bleve
-		d.Favicon = s
+	} else if d.FaviconKey == "" {
+		if s, ok := h.Fields["favicon"].(string); ok {
+			// backward compat: old documents still have favicon inline in Bleve
+			d.Favicon = s
+		}
 	}
 	if s, ok := h.Fields["domain"].(string); ok {
 		d.Domain = s

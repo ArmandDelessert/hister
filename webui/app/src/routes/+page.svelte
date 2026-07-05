@@ -45,7 +45,7 @@
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
   import * as Tooltip from '@hister/components/ui/tooltip';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
-  import { PreviewPanel, ResultActionsMenu } from '$lib/components';
+  import { PreviewPanel, ResultActionsMenu, ResultFavicon } from '$lib/components';
   import { Kbd } from '@hister/components/ui/kbd';
   import {
     Search,
@@ -96,6 +96,7 @@
     score?: number;
     text?: string;
     favicon?: string;
+    favicon_key?: string;
     added?: number;
     add_count?: number;
     label?: string;
@@ -355,6 +356,7 @@
     score?: number;
     text?: string;
     favicon?: string;
+    favicon_key?: string;
     added?: number;
     add_count?: number;
     label?: string;
@@ -415,6 +417,7 @@
           title: hit.document.title ?? '',
           domain: hit.document.domain ?? '',
           favicon: hit.document.favicon,
+          favicon_key: hit.document.favicon_key,
           added: hit.document.added,
           add_count: hit.document.add_count,
           text: hit.document.text,
@@ -1149,11 +1152,6 @@
     e.preventDefault();
     contextMenuSearch = q;
     contextMenuPos = { x: e.clientX, y: e.clientY };
-  }
-
-  function getFaviconSrc(favicon: string | undefined, url: string): string | null {
-    if (favicon) return favicon;
-    return null;
   }
 
   async function loadHomeStats() {
@@ -2095,7 +2093,6 @@
               {#if displayResults.length > 0}
                 {#each displayResults as r, i}
                   {@const color = r.isPinned ? 'hister-teal' : 'hister-cyan'}
-                  {@const favSrc = getFaviconSrc(r.favicon, r.url)}
                   {@const state = getResultState(r.url, r.label)}
                   <article
                     data-result
@@ -2106,38 +2103,11 @@
                   >
                     <div class="w-0 min-w-0 flex-1 space-y-0.5">
                       <div class="flex min-w-0 items-center gap-1.5">
-                        <div
-                          class="result-favicon flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden"
-                          style="background-color: var(--{color});"
-                        >
-                          {#if favSrc}
-                            <img
-                              src={favSrc}
-                              alt=""
-                              class="h-full w-full object-cover"
-                              onload={(e) => {
-                                (
-                                  e.target as HTMLImageElement
-                                ).parentElement!.style.backgroundColor = 'transparent';
-                              }}
-                              onerror={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                (e.target as HTMLImageElement).nextElementSibling?.classList.remove(
-                                  'hidden',
-                                );
-                              }}
-                            />
-                            {#if r.isPinned}
-                              <Star class="text-primary-foreground hidden size-3" />
-                            {:else}
-                              <Globe class="text-primary-foreground hidden size-3" />
-                            {/if}
-                          {:else if r.isPinned}
-                            <Star class="text-primary-foreground size-3" />
-                          {:else}
-                            <Globe class="text-primary-foreground size-3" />
-                          {/if}
-                        </div>
+                        <ResultFavicon
+                          favicon={r.favicon}
+                          faviconKey={r.favicon_key}
+                          pinned={r.isPinned}
+                        />
                         <a
                           data-result-link={r.url}
                           href={fileResultUrl(r.url)}

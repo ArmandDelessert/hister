@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/asciimoo/hister/server/document"
@@ -134,5 +135,49 @@ func TestSearchVisitCountFacets(t *testing.T) {
 	}
 	if labels["2..4"] != "2 to 4" {
 		t.Fatalf("visit bucket label 2..4 = %q, want %q", labels["2..4"], "2 to 4")
+	}
+}
+
+func TestSearchReturnsFaviconKeyWithoutFaviconData(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	const faviconData = "data:image/png;base64,ZmF2aWNvbg=="
+	if err := Add(&document.Document{
+		URL:     "https://example.com/favicon-key",
+		Title:   "Favicon key",
+		Text:    "Favicon key document text",
+		Favicon: faviconData,
+	}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	res, err := Search(idxCfg, &Query{Text: "Favicon key"})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(res.Documents) != 1 {
+		t.Fatalf("Search returned %d documents, want 1", len(res.Documents))
+	}
+	doc := res.Documents[0]
+	if doc.Favicon != "" {
+		t.Fatalf("Favicon data was included in search result: %.32q", doc.Favicon)
+	}
+	if doc.FaviconKey == "" {
+		t.Fatal("FaviconKey is empty")
+	}
+	if strings.Contains(doc.FaviconKey, "data:") {
+		t.Fatalf("FaviconKey contains inline data: %q", doc.FaviconKey)
+	}
+
+	data, err := ReadFavicon(doc.FaviconKey)
+	if err != nil {
+		t.Fatalf("ReadFavicon failed: %v", err)
+	}
+	if string(data) != faviconData {
+		t.Fatalf("ReadFavicon = %q, want %q", string(data), faviconData)
 	}
 }

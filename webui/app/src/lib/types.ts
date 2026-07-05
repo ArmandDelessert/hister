@@ -7,6 +7,7 @@ export interface HistoryItem {
   added?: number;
   add_count?: number;
   favicon?: string;
+  favicon_key?: string;
   text?: string;
 }
 

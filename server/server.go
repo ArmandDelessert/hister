@@ -2034,6 +2034,61 @@ func serveFavicon(c *webContext) {
 	}
 }
 
+const storedFaviconCacheControl = "public, max-age=604800, immutable"
+
+func serveStoredFavicon(c *webContext) {
+	key := c.Request.URL.Query().Get("key")
+	dataURI, err := indexer.ReadFavicon(key)
+	if err != nil {
+		http.Error(c.Response, "favicon not found", http.StatusNotFound)
+		return
+	}
+	contentType, data, err := decodeFaviconDataURI(string(dataURI))
+	if err != nil {
+		http.Error(c.Response, "invalid favicon data", http.StatusInternalServerError)
+		return
+	}
+	c.Response.Header().Set("Content-Type", contentType)
+	c.Response.Header().Set("Cache-Control", storedFaviconCacheControl)
+	c.Response.Header().Set("ETag", `"`+key+`"`)
+	if _, err := c.Response.Write(data); err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("failed to write stored favicon response")
+	}
+}
+
+func decodeFaviconDataURI(dataURI string) (string, []byte, error) {
+	if !strings.HasPrefix(dataURI, "data:") {
+		return http.DetectContentType([]byte(dataURI)), []byte(dataURI), nil
+	}
+	meta, payload, ok := strings.Cut(dataURI, ",")
+	if !ok {
+		return "", nil, errors.New("invalid data URI")
+	}
+	contentType := strings.TrimPrefix(meta, "data:")
+	base64Encoded := false
+	if mediaType, params, found := strings.Cut(contentType, ";"); found {
+		contentType = mediaType
+		for param := range strings.SplitSeq(params, ";") {
+			if strings.EqualFold(param, "base64") {
+				base64Encoded = true
+				break
+			}
+		}
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if !base64Encoded {
+		data := []byte(payload)
+		return contentType, data, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return "", nil, err
+	}
+	return contentType, data, nil
+}
+
 func serveStatic(c *webContext) {
 	staticFileServer.ServeHTTP(c.Response, c.Request)
 }

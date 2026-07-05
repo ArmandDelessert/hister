@@ -299,7 +299,7 @@ func init() {
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "don't add documents that contain sensitive content matched by config.SensitiveContentPatterns")
 
 	searchCmd.Flags().StringP("format", "f", "text", "output format: text, json, csv")
-	searchCmd.Flags().StringP("fields", "F", "", "comma-separated list of document fields to display (id, url, title, domain, score, added, language, type, text, favicon, user_id, html)")
+	searchCmd.Flags().StringP("fields", "F", "", "comma-separated list of document fields to display (id, url, title, domain, score, added, language, type, text, favicon, favicon_key, user_id, html)")
 	searchCmd.Flags().IntP("limit", "L", 0, "maximum number of results to display (0 means no limit)")
 
 	cobra.OnInitialize(initialize)

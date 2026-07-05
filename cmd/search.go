@@ -16,18 +16,19 @@ import (
 
 func searchDocToMap(d *document.Document) map[string]any {
 	return map[string]any{
-		"id":       d.ID(),
-		"url":      d.URL,
-		"title":    d.Title,
-		"domain":   d.Domain,
-		"score":    d.Score,
-		"added":    d.Added,
-		"language": d.Language,
-		"type":     d.Type,
-		"text":     d.Text,
-		"favicon":  d.Favicon,
-		"user_id":  d.UserID,
-		"html":     d.HTML,
+		"id":          d.ID(),
+		"url":         d.URL,
+		"title":       d.Title,
+		"domain":      d.Domain,
+		"score":       d.Score,
+		"added":       d.Added,
+		"language":    d.Language,
+		"type":        d.Type,
+		"text":        d.Text,
+		"favicon":     d.Favicon,
+		"favicon_key": d.FaviconKey,
+		"user_id":     d.UserID,
+		"html":        d.HTML,
 	}
 }
 
@@ -66,7 +67,7 @@ var searchCmd = &cobra.Command{
 			validFields := map[string]bool{
 				"id": true, "url": true, "title": true, "domain": true, "score": true,
 				"added": true, "language": true, "type": true, "text": true,
-				"favicon": true, "user_id": true, "html": true,
+				"favicon": true, "favicon_key": true, "user_id": true, "html": true,
 			}
 			for f := range strings.SplitSeq(fieldsRaw, ",") {
 				f = strings.TrimSpace(f)
@@ -74,7 +75,7 @@ var searchCmd = &cobra.Command{
 					continue
 				}
 				if !validFields[f] {
-					exit(1, "Unknown field: "+f+" (valid fields: id, url, title, domain, score, added, language, type, text, favicon, user_id, html)")
+					exit(1, "Unknown field: "+f+" (valid fields: id, url, title, domain, score, added, language, type, text, favicon, favicon_key, user_id, html)")
 				}
 				fields = append(fields, f)
 				if f == "html" {

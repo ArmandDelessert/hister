@@ -17,7 +17,7 @@
   import { Separator } from '@hister/components/ui/separator';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
   import { PageHeader } from '@hister/components';
-  import { StatusMessage, PreviewPanel } from '$lib/components';
+  import { StatusMessage, PreviewPanel, ResultFavicon } from '$lib/components';
   import { CalendarDays, Clock, Eye, ListFilter, Rss, Search, Trash2, X } from '@lucide/svelte';
 
   let items: HistoryItem[] = $state([]);
@@ -736,6 +736,11 @@
                       class:history-row-active={flatIdx === highlightIdx}
                       style="--history-color: {getColorVar(itemColor)};"
                     >
+                      <ResultFavicon
+                        favicon={item.favicon}
+                        faviconKey={item.favicon_key}
+                        class="mt-1 md:mt-0"
+                      />
                       <div class="w-0 min-w-0 flex-1 space-y-1">
                         <a
                           data-result-link={item.url}

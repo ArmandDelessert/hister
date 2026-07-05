@@ -717,6 +717,23 @@ func init() {
 			Description:  "Return index statistics (document count, rule count, recent searches)",
 		},
 		{
+			Name:         "Favicon",
+			Path:         "/api/favicon",
+			Method:       GET,
+			CSRFRequired: false,
+			Public:       true,
+			Handler:      serveStoredFavicon,
+			Description:  "Serve a stored document favicon by favicon_key",
+			Args: []*EndpointArg{
+				{
+					Name:        "key",
+					Type:        "string",
+					Required:    true,
+					Description: "Content-addressed favicon_key returned in document results",
+				},
+			},
+		},
+		{
 			Name:         "File",
 			Path:         "/api/file",
 			Method:       GET,

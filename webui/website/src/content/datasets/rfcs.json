@@ -1,7 +1,7 @@
 {
   "name": "RFCs",
   "description": "It contains all the RFCs, including inline-errata",
-  "downloadUrl": "https://github.com/0x00cl/rfc-dataset/releases/download/2026.07.04/rfcs.json",
+  "downloadUrl": "/data/rfcs.json.7z",
   "image": null,
   "tags": ["rfc", "standard"],
   "license": "TLP",

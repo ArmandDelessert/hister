@@ -468,7 +468,7 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 			n := len(res.Hits)
 			b := newMultiBatch(tmpIdx)
 			for _, h := range res.Hits {
-				d := idx.resFromHit(h, true, true, true)
+				d := idx.resFromHit(h, resultIncludeAll)
 				if d.Type == types.Local {
 					pu, err := url.Parse(d.URL)
 					if err == nil {
@@ -1194,9 +1194,16 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	if err != nil {
 		return nil, err
 	}
+	include := resultInclude(0)
+	if q.IncludeText {
+		include |= resultIncludeText
+	}
+	if q.IncludeHTML {
+		include |= resultIncludeHTML
+	}
 	matches := make([]*document.Document, len(res.Hits))
 	for j, v := range res.Hits {
-		matches[j] = i.resFromHit(v, q.IncludeText, q.IncludeHTML, false)
+		matches[j] = i.resFromHit(v, include)
 	}
 	r := &Results{
 		Total:     res.Total,
@@ -1275,7 +1282,7 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 						MatchedChunk: truncateText(dh.chunkText, semanticTextPreviewLen),
 					}
 					// For semantic-only hits, populate the document with a truncated text preview.
-					d := getByDocID(docID, false)
+					d := getByDocID(docID, resultIncludeText|resultIncludeHTML)
 					if d != nil {
 						if _, inKeyword := keywordURLs[d.URL]; !inKeyword {
 							d.Text = truncateText(d.Text, semanticTextPreviewLen)
@@ -1363,10 +1370,10 @@ func (i *indexer) getAddCountByDocID(id string) (uint, bool) {
 // GetByDocID returns the document with the given bleve document ID, or nil if
 // none exists. The ID is the uid-prefixed form produced by document.GetDocID.
 func GetByDocID(id string) *document.Document {
-	return getByDocID(id, true)
+	return getByDocID(id, resultIncludeAll)
 }
 
-func getByDocID(id string, includeFavicon bool) *document.Document {
+func getByDocID(id string, include resultInclude) *document.Document {
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
 	req.Fields = allFields
@@ -1375,7 +1382,7 @@ func getByDocID(id string, includeFavicon bool) *document.Document {
 	if err != nil || len(res.Hits) < 1 {
 		return nil
 	}
-	return i.resFromHit(res.Hits[0], true, true, includeFavicon)
+	return i.resFromHit(res.Hits[0], include)
 }
 
 func getLabel(id string) string {
@@ -1409,14 +1416,28 @@ func Iterate(fn func(*document.Document)) {
 			return
 		}
 		for _, h := range res.Hits {
-			d := i.resFromHit(h, true, true, true)
+			d := i.resFromHit(h, resultIncludeAll)
 			fn(d)
 		}
 		sortKey = res.Hits[n-1].Sort
 	}
 }
 
-func (idx *indexer) resFromHit(h *search.DocumentMatch, includeText, includeHTML, includeFavicon bool) *document.Document {
+type resultInclude uint8
+
+const (
+	resultIncludeText resultInclude = 1 << iota
+	resultIncludeHTML
+	resultIncludeFavicon
+
+	resultIncludeAll = resultIncludeText | resultIncludeHTML | resultIncludeFavicon
+)
+
+func (include resultInclude) has(flag resultInclude) bool {
+	return include&flag != 0
+}
+
+func (idx *indexer) resFromHit(h *search.DocumentMatch, include resultInclude) *document.Document {
 	d := &document.Document{}
 	if t, ok := h.Fragments["title"]; ok {
 		d.Title = t[0]
@@ -1426,7 +1447,7 @@ func (idx *indexer) resFromHit(h *search.DocumentMatch, includeText, includeHTML
 	if s, ok := h.Fields["url"].(string); ok {
 		d.URL = s
 	}
-	if includeText {
+	if include.has(resultIncludeText) {
 		if s, ok := h.Fields["text"].(string); ok {
 			d.Text = s
 		}
@@ -1439,7 +1460,7 @@ func (idx *indexer) resFromHit(h *search.DocumentMatch, includeText, includeHTML
 	if s, ok := h.Fields["favicon_key"].(string); ok {
 		d.FaviconKey = s
 	}
-	if includeHTML {
+	if include.has(resultIncludeHTML) {
 		if d.HTMLKey != "" {
 			data, err := idx.data.read(htmlSubdir, d.HTMLKey)
 			if err != nil {
@@ -1452,7 +1473,7 @@ func (idx *indexer) resFromHit(h *search.DocumentMatch, includeText, includeHTML
 			d.HTML = s
 		}
 	}
-	if includeFavicon && d.FaviconKey != "" {
+	if include.has(resultIncludeFavicon) && d.FaviconKey != "" {
 		data, err := idx.data.read(faviconSubdir, d.FaviconKey)
 		if err != nil {
 			log.Warn().Err(err).Str("key", d.FaviconKey).Msg("failed to load favicon from data store")

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"maps"
 	"net/url"
@@ -29,6 +30,7 @@ import (
 	"github.com/asciimoo/hister/server/extractor/extractors/stackexchange"
 	"github.com/asciimoo/hister/server/extractor/extractors/wikipedia"
 	"github.com/asciimoo/hister/server/extractor/extractors/ytdlp"
+	"github.com/asciimoo/hister/server/sanitizer"
 	"github.com/asciimoo/hister/server/types"
 )
 
@@ -345,7 +347,7 @@ out:
 }
 
 func (e *basicExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
-	return types.PreviewResponse{Content: d.Text}, types.ExtractorStop, nil
+	return types.PreviewResponse{Content: stdhtml.EscapeString(d.Text)}, types.ExtractorStop, nil
 }
 
 func (e *readabilityExtractor) Name() string {
@@ -425,5 +427,5 @@ func (e *readabilityExtractor) Preview(d *document.Document) (types.PreviewRespo
 	if err := a.RenderHTML(&htmlContent); err != nil {
 		return types.PreviewResponse{}, types.ExtractorContinue, err
 	}
-	return types.PreviewResponse{Content: htmlContent.String()}, types.ExtractorStop, nil
+	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(htmlContent.String())}, types.ExtractorStop, nil
 }

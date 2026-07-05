@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
@@ -542,8 +543,10 @@ func mcpFormatResults(query string, res *indexer.Results, fields []string) strin
 	fmt.Fprintf(&b, "Found %d result(s) for %q (%s)\n", total, query, res.SearchDuration)
 
 	n := 1
+	renderedURLs := make(map[string]struct{}, len(res.History)+len(res.Documents))
 	for _, h := range res.History {
 		fmt.Fprintf(&b, "\n%d. %s\n   URL: %s\n", n, h.Title, h.URL)
+		renderedURLs[h.URL] = struct{}{}
 		if t := strings.TrimSpace(h.Text); t != "" {
 			if fieldSet["text"] {
 				fmt.Fprintf(&b, "   Text: %s\n", t)
@@ -554,36 +557,60 @@ func mcpFormatResults(query string, res *indexer.Results, fields []string) strin
 		n++
 	}
 	for _, d := range res.Documents {
-		added := time.Unix(d.Added, 0).Format("2006-01-02")
-		fmt.Fprintf(&b, "\n%d. %s\n   URL: %s\n   Added: %s\n", n, d.Title, d.URL, added)
-		if fieldSet["domain"] && d.Domain != "" {
-			fmt.Fprintf(&b, "   Domain: %s\n", d.Domain)
+		mcpFormatDocumentResult(&b, n, d, fieldSet, 0, "")
+		renderedURLs[d.URL] = struct{}{}
+		n++
+	}
+	for _, h := range res.SemanticHits {
+		if h.Document == nil {
+			continue
 		}
-		if fieldSet["language"] && d.Language != "" {
-			fmt.Fprintf(&b, "   Language: %s\n", d.Language)
+		if _, found := renderedURLs[h.Document.URL]; found {
+			continue
 		}
-		if fieldSet["label"] && d.Label != "" {
-			fmt.Fprintf(&b, "   Label: %s\n", d.Label)
-		}
-		if fieldSet["score"] {
-			fmt.Fprintf(&b, "   Score: %.4f\n", d.Score)
-		}
-		if fieldSet["type"] {
-			fmt.Fprintf(&b, "   Type: %s\n", d.Type.String())
-		}
-		if t := strings.TrimSpace(d.Text); t != "" {
-			if fieldSet["text"] {
-				fmt.Fprintf(&b, "   Text: %s\n", t)
-			} else {
-				fmt.Fprintf(&b, "   %s\n", mcpTruncate(t, 300))
-			}
-		}
-		if fieldSet["html"] && d.HTML != "" {
-			fmt.Fprintf(&b, "   HTML: %s\n", d.HTML)
-		}
+		mcpFormatDocumentResult(&b, n, h.Document, fieldSet, h.Similarity, h.MatchedChunk)
+		renderedURLs[h.Document.URL] = struct{}{}
 		n++
 	}
 	return b.String()
+}
+
+func mcpFormatDocumentResult(b *strings.Builder, n int, d *document.Document, fieldSet map[string]bool, similarity float64, matchedChunk string) {
+	added := time.Unix(d.Added, 0).Format("2006-01-02")
+	fmt.Fprintf(b, "\n%d. %s\n   URL: %s\n   Added: %s\n", n, d.Title, d.URL, added)
+	if fieldSet["domain"] && d.Domain != "" {
+		fmt.Fprintf(b, "   Domain: %s\n", d.Domain)
+	}
+	if fieldSet["language"] && d.Language != "" {
+		fmt.Fprintf(b, "   Language: %s\n", d.Language)
+	}
+	if fieldSet["label"] && d.Label != "" {
+		fmt.Fprintf(b, "   Label: %s\n", d.Label)
+	}
+	if fieldSet["score"] {
+		if similarity != 0 {
+			fmt.Fprintf(b, "   Similarity: %.4f\n", similarity)
+		} else {
+			fmt.Fprintf(b, "   Score: %.4f\n", d.Score)
+		}
+	}
+	if fieldSet["type"] {
+		fmt.Fprintf(b, "   Type: %s\n", d.Type.String())
+	}
+	text := strings.TrimSpace(d.Text)
+	if text == "" {
+		text = strings.TrimSpace(matchedChunk)
+	}
+	if text != "" {
+		if fieldSet["text"] {
+			fmt.Fprintf(b, "   Text: %s\n", text)
+		} else {
+			fmt.Fprintf(b, "   %s\n", mcpTruncate(text, 300))
+		}
+	}
+	if fieldSet["html"] && d.HTML != "" {
+		fmt.Fprintf(b, "   HTML: %s\n", d.HTML)
+	}
 }
 
 // mcpTruncate truncates s at a rune boundary so that the result contains at most maxRunes runes.

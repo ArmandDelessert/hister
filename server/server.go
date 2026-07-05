@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"path"
 	"path/filepath"
@@ -218,6 +219,9 @@ func registerEndpoints(cfg *config.Config) http.Handler {
 		}
 		mux.HandleFunc(e.Pattern(), createHandler(cfg, h))
 	}
+	if cfg.App.LogLevel == "debug" {
+		registerDebugEndpoints(mux, cfg)
+	}
 	// SPA catch-all: serve index.html for any path not matched above
 	mux.HandleFunc("GET /static/", createHandler(cfg, serveStatic))
 	mux.HandleFunc("GET /favicon.ico", createHandler(cfg, serveFavicon))
@@ -230,6 +234,27 @@ func registerEndpoints(cfg *config.Config) http.Handler {
 		return withOptionalBasePathPrefix(basePrefix, mux)
 	}
 	return mux
+}
+
+func registerDebugEndpoints(mux *http.ServeMux, cfg *config.Config) {
+	register := func(pattern string, handler http.HandlerFunc) {
+		h := endpointHandler(func(c *webContext) {
+			handler(c.Response, c.Request)
+		})
+		if cfg.App.UserHandling {
+			h = withAdminAuth(h)
+		} else if cfg.App.AccessToken != "" {
+			h = withTokenAuth(h)
+		}
+		mux.HandleFunc(pattern, createHandler(cfg, h))
+	}
+	register("GET /debug/pprof", pprof.Index)
+	register("GET /debug/pprof/", pprof.Index)
+	register("GET /debug/pprof/cmdline", pprof.Cmdline)
+	register("GET /debug/pprof/profile", pprof.Profile)
+	register("GET /debug/pprof/symbol", pprof.Symbol)
+	register("POST /debug/pprof/symbol", pprof.Symbol)
+	register("GET /debug/pprof/trace", pprof.Trace)
 }
 
 func endpointRequiresAuth(cfg *config.Config, e *Endpoint) bool {

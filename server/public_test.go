@@ -19,10 +19,15 @@ func newPublicTokenTestServer(t *testing.T) (*config.Config, http.Handler) {
 }
 
 func newTokenTestServer(t *testing.T, public bool) (*config.Config, http.Handler) {
+	return newTokenTestServerWithLogLevel(t, public, "info")
+}
+
+func newTokenTestServerWithLogLevel(t *testing.T, public bool, logLevel string) (*config.Config, http.Handler) {
 	t.Helper()
 	cfg := testutil.Config(t)
 	cfg.App.AccessToken = "secret"
 	cfg.App.Public = public
+	cfg.App.LogLevel = logLevel
 	cfg.Server.Address = "127.0.0.1:4433"
 	if err := cfg.UpdateBaseURL("http://127.0.0.1:4433"); err != nil {
 		t.Fatal(err)

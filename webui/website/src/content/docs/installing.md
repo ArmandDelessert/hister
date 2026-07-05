@@ -147,6 +147,7 @@ services.hister = {
 - To manage settings through the config file only, leave `port` and `dataDir` unset
 - `services.hister.config` was renamed to `services.hister.settings` to align with the nixpkgs `services.*.settings` convention. The old name still works via `mkRenamedOptionModule` but emits a deprecation warning.
 - On NixOS the systemd unit ships with a hardened `serviceConfig` (`ProtectSystem=strict`, `NoNewPrivileges`, private `/tmp` and `/dev`, an `AF_INET{,6}`/`AF_UNIX` address-family filter, `@system-service` syscall filter, `MemoryDenyWriteExecute`, etc.). Binding a privileged port (`< 1024`) automatically adds `CAP_NET_BIND_SERVICE`.
+- On other systemd-based Linux distributions, see the sample unit at [`contrib/systemd/hister.service`](https://github.com/asciimoo/hister/blob/master/contrib/systemd/hister.service).
 - On macOS (both `darwinModules` and `homeModules`) the launchd agent uses `KeepAlive = { Crashed = true; SuccessfulExit = false; }` so fatal config errors that exit 0 are not hidden, plus `ProcessType = "Background"` and `RunAtLoad = true`.
 - The home-manager module now gates the systemd user unit on Linux and the launchd agent on Darwin, so a single `homeModules.hister` import works on either host.
 

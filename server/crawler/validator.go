@@ -43,6 +43,9 @@ type ValidatorRules struct {
 	AllowedPatterns []string
 	// ExcludePatterns lists regexp patterns; URLs matching any are skipped.
 	ExcludePatterns []string
+	// NoDepth disables traversal beyond URLs explicitly inserted into the crawl
+	// queue. Discovered links are ignored instead of enqueued.
+	NoDepth bool
 }
 
 // Validator decides whether a URL should be crawled based on ValidatorRules.

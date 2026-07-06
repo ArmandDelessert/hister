@@ -173,25 +173,31 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 			}
 		}
 
-		// Resolve all discovered links first, then enqueue them together with
-		// the mark-done update in a single transaction.
-		finalParsed, err := url.Parse(finalURL)
-		if err != nil {
-			finalParsed = parsedURL
-		}
-		finalParsed.Fragment = ""
-
-		resolved := make([]string, 0, len(links))
-		for _, link := range links {
-			abs, err := resolveURL(finalParsed, link)
-			if err != nil || abs == "" {
-				continue
+		if v.Rules().NoDepth {
+			if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLDone, ""); err != nil {
+				log.Warn().Err(err).Msg("failed to mark URL done")
 			}
-			resolved = append(resolved, abs)
-		}
+		} else {
+			// Resolve all discovered links first, then enqueue them together with
+			// the mark-done update in a single transaction.
+			finalParsed, err := url.Parse(finalURL)
+			if err != nil {
+				finalParsed = parsedURL
+			}
+			finalParsed.Fragment = ""
 
-		if err := model.MarkDoneAndEnqueueLinks(cur.ID, c.jobID, resolved, cur.Depth+1); err != nil {
-			log.Warn().Err(err).Msg("failed to mark URL done and enqueue links")
+			resolved := make([]string, 0, len(links))
+			for _, link := range links {
+				abs, err := resolveURL(finalParsed, link)
+				if err != nil || abs == "" {
+					continue
+				}
+				resolved = append(resolved, abs)
+			}
+
+			if err := model.MarkDoneAndEnqueueLinks(cur.ID, c.jobID, resolved, cur.Depth+1); err != nil {
+				log.Warn().Err(err).Msg("failed to mark URL done and enqueue links")
+			}
 		}
 
 		doc := &document.Document{

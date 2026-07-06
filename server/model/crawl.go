@@ -218,6 +218,31 @@ func CountCrawlURLsByStatus(jobID, status string) (int64, error) {
 	return count, err
 }
 
+// ForEachFailedCrawlURL streams failed crawl URL error codes and URLs for a job.
+func ForEachFailedCrawlURL(jobID string, fn func(errorCode int, rawURL string) error) error {
+	rows, err := DB.Model(&CrawlURL{}).
+		Select("error_code, url").
+		Where("job_id = ? AND status = ?", jobID, CrawlURLFailed).
+		Order("id ASC").
+		Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var errorCode int
+		var rawURL string
+		if err := rows.Scan(&errorCode, &rawURL); err != nil {
+			return err
+		}
+		if err := fn(errorCode, rawURL); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // ListCrawlJobs returns all crawl jobs ordered by creation time descending.
 func ListCrawlJobs() ([]*CrawlJob, error) {
 	var jobs []*CrawlJob

@@ -61,6 +61,11 @@ var crawlShowCmd = &cobra.Command{
 		initDB()
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		showErrors, _ := cmd.Flags().GetBool("errors")
+		if showErrors {
+			showCrawlJobErrors(args[0])
+			return
+		}
 		showCrawlJob(args[0])
 	},
 }
@@ -124,5 +129,22 @@ func showCrawlJob(jobID string) {
 			exit(1, "Failed to format crawl job rules: "+err.Error())
 		}
 		fmt.Println(string(rulesJSON))
+	}
+}
+
+func showCrawlJobErrors(jobID string) {
+	job, err := model.GetCrawlJob(jobID)
+	if err != nil {
+		exit(1, "Failed to load crawl job: "+err.Error())
+	}
+	if job == nil {
+		exit(1, "Crawl job not found: "+jobID)
+	}
+
+	if err := model.ForEachFailedCrawlURL(job.ID, func(errorCode int, rawURL string) error {
+		fmt.Printf("%d\t%s\n", errorCode, rawURL)
+		return nil
+	}); err != nil {
+		exit(1, "Failed to load crawl job errors: "+err.Error())
 	}
 }

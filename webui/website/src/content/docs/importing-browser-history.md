@@ -74,12 +74,32 @@ For example:
 hister import-browser firefox ~/.mozilla/firefox/abc123.default/places.sqlite
 ```
 
-This will print a count of how many (unique) URLs have been detected, and ask for confirmation before proceeding (press Enter to submit your choice, `Y` being the default).
+This will print a count of how many unique URLs have been detected, and ask for confirmation before proceeding.
 Note that Hister doesn't print URLs it skips importing, which can happen if it is covered by a [skip rule](rules) or has already been indexed previously.
 
-It is okay to interrupt the importing process in any way!
-Since URLs previously indexed are not fetched again, it is possible to re-run the `hister import-browser` command later, and it will roughly resume from where it left off.
-(Pages that failed to be fetched won't be indexed on the server, so a new attempt will be made to fetch those.)
+### Resume and Inspect an Import
+
+Browser history imports run through the persistent crawler. Hister creates a crawl job named `browser-import-YYYY-MM-DD`, adds the URLs from your browser database to that job, and fetches only those queued URLs. Links discovered on the fetched pages are not added to the import job.
+
+It is okay to interrupt the importing process. When you run `hister import-browser` again, Hister checks for existing `browser-import-*` jobs and asks whether you want to continue one of them instead of creating a new job. If you continue an existing job, already completed URLs stay completed, failed URLs remain available for inspection, and pending URLs continue from the stored queue.
+
+You can list import jobs with:
+
+```bash
+hister crawl list
+```
+
+You can inspect the state of a specific import job with:
+
+```bash
+hister crawl show browser-import-YYYY-MM-DD
+```
+
+This shows the job status, the number of pending, completed, failed, and skipped URLs, and the crawler rules saved with the job. To list only failed URLs with their HTTP or crawler error code, use:
+
+```bash
+hister crawl show browser-import-YYYY-MM-DD --errors
+```
 
 ### Selecting a Scraping Backend
 

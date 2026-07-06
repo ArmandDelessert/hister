@@ -222,6 +222,19 @@ hister crawl list
 Output shows the job ID, status (`running`, `completed`, `interrupted`), start URL, and
 per-status URL counts (pending, done, failed, skipped).
 
+#### Show job details
+
+```bash
+hister crawl show my-docs
+```
+
+This shows the job status, start URL, saved crawler rules, and per-status URL counts.
+To print only failed URLs with their stored error codes:
+
+```bash
+hister crawl show my-docs --errors
+```
+
 #### Delete a job
 
 ```bash

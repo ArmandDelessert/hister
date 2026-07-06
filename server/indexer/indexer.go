@@ -1082,7 +1082,7 @@ func DeleteByQuery(text string, userID *uint, onDelete func(url string, userID u
 	var searchAfter []string
 	for {
 		req := bleve.NewSearchRequest(q)
-		req.Fields = []string{"url", "user_id", "html_key", "favicon_key"}
+		req.Fields = []string{"url", "user_id"}
 		req.Size = pageSize
 		req.SortBy([]string{"_id"})
 		if len(searchAfter) > 0 {
@@ -1102,18 +1102,6 @@ func DeleteByQuery(text string, userID *uint, onDelete func(url string, userID u
 		}
 		if err := batch.Save(); err != nil {
 			return count, err
-		}
-		// Clean up data files for all deleted documents. Keys are fetched
-		// before the batch delete so they are present in the Fields map;
-		// deleteIfOrphaned runs after the index update so countKeyRefs sees
-		// the correct (post-delete) reference count.
-		for _, h := range res.Hits {
-			if k, ok := h.Fields["html_key"].(string); ok && k != "" {
-				i.data.deleteIfOrphaned("html_key", htmlSubdir, k, i.countKeyRefs)
-			}
-			if k, ok := h.Fields["favicon_key"].(string); ok && k != "" {
-				i.data.deleteIfOrphaned("favicon_key", faviconSubdir, k, i.countKeyRefs)
-			}
 		}
 		if i.vectorStore != nil {
 			for _, h := range res.Hits {

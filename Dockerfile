@@ -41,6 +41,25 @@ RUN set -eux; \
       -X 'github.com/asciimoo/hister/config.DefaultServerBaseURL=$BASE_URL'" \
     -o hister .
 
+# Stage 3: Download the latest yt-dlp release binary
+FROM alpine:3.21 AS ytdlp
+
+ARG TARGETARCH=amd64
+
+RUN set -eux; \
+    apk add --no-cache ca-certificates wget; \
+    case "$TARGETARCH" in \
+      amd64) asset="yt-dlp_musllinux" ;; \
+      arm64) asset="yt-dlp_musllinux_aarch64" ;; \
+      *) echo "unsupported TARGETARCH for yt-dlp: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    wget -O /tmp/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${asset}"; \
+    wget -O /tmp/SHA2-256SUMS "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"; \
+    grep "  ${asset}$" /tmp/SHA2-256SUMS | sed "s/  ${asset}$/  \\/tmp\\/yt-dlp/" | sha256sum -c -; \
+    mkdir -p /usr/local/bin; \
+    mv /tmp/yt-dlp /usr/local/bin/yt-dlp; \
+    chmod 0755 /usr/local/bin/yt-dlp
+
 # Release stage (nonroot)
 # latest & vx.x.x
 FROM alpine:3.21 AS release
@@ -52,7 +71,8 @@ LABEL org.opencontainers.image.title="Hister" \
 
 WORKDIR /hister
 
-RUN apk add --no-cache yt-dlp && adduser -D -u 65532 hister && mkdir -p /hister/data && chown -R 65532:65532 /hister
+RUN adduser -D -u 65532 hister && mkdir -p /hister/data && chown -R 65532:65532 /hister
+COPY --from=ytdlp /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
 COPY --chown=65532:65532 --from=builder /app/hister .
 USER 65532:65532
 
@@ -72,7 +92,8 @@ CMD ["listen"]
 FROM alpine:3.21 AS root
 WORKDIR /hister
 
-RUN apk add --no-cache yt-dlp && mkdir -p /hister/data
+RUN mkdir -p /hister/data
+COPY --from=ytdlp /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
 COPY --from=builder /app/hister .
 
 USER root
@@ -93,7 +114,8 @@ CMD ["listen"]
 FROM alpine:3.21 AS debug
 WORKDIR /hister
 
-RUN apk add --no-cache curl bash yt-dlp && mkdir -p /hister/data
+RUN apk add --no-cache curl bash && mkdir -p /hister/data
+COPY --from=ytdlp /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
 
 COPY --from=builder /app/hister .
 

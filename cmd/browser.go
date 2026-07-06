@@ -83,6 +83,8 @@ type browserImportJob struct {
 	enqueued int
 }
 
+const browserImportJobPrefix = "browser-import-"
+
 func importHistory(cmd *cobra.Command, args []string) {
 	// TODO: get skip rules from server
 	cfg.Crawler.UserAgent = UserAgent
@@ -240,8 +242,19 @@ func importDB(databases []DBToImport, cmd *cobra.Command) {
 
 	chosen := multipleChoiceImport(dbsToImport)
 
-	jobID := "browser-import-" + time.Now().Format("2006-01-02")
+	defaultJobID := browserImportJobPrefix + time.Now().Format("2006-01-02")
+	jobID, resumeExisting, err := chooseBrowserImportJobID(defaultJobID)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to select browser import crawl job")
+		return
+	}
 	job := &browserImportJob{id: jobID}
+	if resumeExisting {
+		if err := ensureBrowserImportJob(job, ""); err != nil {
+			log.Error().Err(err).Msg("Failed to resume browser import crawl job")
+			return
+		}
+	}
 
 	for _, database := range chosen {
 		q := database.q
@@ -381,6 +394,104 @@ func ensureBrowserImportJob(job *browserImportJob, startURL string) error {
 	job.startURL = existing.StartURL
 	job.created = true
 	return nil
+}
+
+func chooseBrowserImportJobID(defaultID string) (string, bool, error) {
+	jobs, err := model.ListCrawlJobs()
+	if err != nil {
+		return "", false, fmt.Errorf("list crawl jobs: %w", err)
+	}
+	browserJobs := browserImportJobs(jobs)
+	if len(browserJobs) == 0 {
+		id, err := nextBrowserImportJobID(defaultID)
+		return id, false, err
+	}
+	if selected := promptBrowserImportJob(browserJobs, defaultID); selected != "" {
+		return selected, true, nil
+	}
+	id, err := nextBrowserImportJobID(defaultID)
+	return id, false, err
+}
+
+func browserImportJobs(jobs []*model.CrawlJob) []*model.CrawlJob {
+	var browserJobs []*model.CrawlJob
+	for _, job := range jobs {
+		if !strings.HasPrefix(job.ID, browserImportJobPrefix) {
+			continue
+		}
+		rules, err := crawler.UnmarshalValidatorRules(job.ValidatorRules)
+		if err != nil {
+			log.Warn().Err(err).Str("job_id", job.ID).Msg("failed to restore crawl job rules")
+			continue
+		}
+		if !rules.NoDepth {
+			continue
+		}
+		browserJobs = append(browserJobs, job)
+	}
+	return browserJobs
+}
+
+func promptBrowserImportJob(jobs []*model.CrawlJob, defaultID string) string {
+	r := bufio.NewReader(os.Stdin)
+	if len(jobs) == 1 {
+		job := jobs[0]
+		fmt.Println("Existing browser import job found:")
+		printBrowserImportJob(1, job)
+		if yesNoPrompt(fmt.Sprintf("Continue this job instead of creating %s?", defaultID), true) {
+			return job.ID
+		}
+		return ""
+	}
+
+	fmt.Println("Existing browser import jobs found:")
+	for i, job := range jobs {
+		printBrowserImportJob(i+1, job)
+	}
+	fmt.Printf("Choose job number to continue, or press enter to create %s: ", defaultID)
+	answer, _ := r.ReadString('\n')
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		return ""
+	}
+	selected, err := strconv.Atoi(answer)
+	if err != nil || selected < 1 || selected > len(jobs) {
+		fmt.Println("Invalid selection, creating a new browser import job.")
+		return ""
+	}
+	return jobs[selected-1].ID
+}
+
+func printBrowserImportJob(idx int, job *model.CrawlJob) {
+	stats, err := model.GetCrawlJobStats(job.ID)
+	if err != nil {
+		log.Warn().Err(err).Str("job_id", job.ID).Msg("failed to get job stats")
+	}
+	fmt.Printf("%d  %s  %s\n", idx, job.ID, job.Status)
+	fmt.Printf("   pending: %d  done: %d  failed: %d  skipped: %d  created: %s\n",
+		stats.Pending, stats.Done, stats.Failed, stats.Skipped,
+		job.CreatedAt.Format("2006-01-02 15:04:05"),
+	)
+}
+
+func nextBrowserImportJobID(baseID string) (string, error) {
+	job, err := model.GetCrawlJob(baseID)
+	if err != nil {
+		return "", fmt.Errorf("load crawl job: %w", err)
+	}
+	if job == nil {
+		return baseID, nil
+	}
+	for i := 2; ; i++ {
+		id := fmt.Sprintf("%s-%d", baseID, i)
+		job, err := model.GetCrawlJob(id)
+		if err != nil {
+			return "", fmt.Errorf("load crawl job: %w", err)
+		}
+		if job == nil {
+			return id, nil
+		}
+	}
 }
 
 func getDBPaths() []browserDB {

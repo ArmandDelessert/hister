@@ -205,35 +205,6 @@ func promptPassword(prompt string) (string, error) {
 	return final.input.Value(), nil
 }
 
-//func yesNoPrompt(label string, def bool) bool {
-//	choices := "Y/n"
-//	if !def {
-//		choices = "y/N"
-//	}
-//
-//	prompt := fmt.Appendf(nil, "%s [%s] ", label, choices)
-//	r := bufio.NewReader(os.Stdin)
-//	var s string
-//
-//	for {
-//		if _, err := os.Stderr.Write(prompt); err != nil {
-//			return def
-//		}
-//		s, _ = r.ReadString('\n')
-//		s = strings.TrimSpace(s)
-//		if s == "" {
-//			return def
-//		}
-//		s = strings.ToLower(s)
-//		if s == "y" || s == "yes" {
-//			return true
-//		}
-//		if s == "n" || s == "no" {
-//			return false
-//		}
-//	}
-//}
-
 //func stringPrompt(label string) string {
 //	var s string
 //	r := bufio.NewReader(os.Stdin)

@@ -140,7 +140,7 @@ func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error)
 	d.normalizeWebURL(pu)
 	d.Added = time.Now().Unix()
 	d.Type = types.Web
-	d.Domain = pu.Host
+	d.Domain = pu.Hostname()
 	if d.HTML != "" {
 		if err := extractFn(d); err != nil {
 			return err

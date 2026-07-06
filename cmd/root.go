@@ -259,6 +259,7 @@ func init() {
 	rootCmd.AddCommand(updateUserCmd)
 	rootCmd.AddCommand(crawlCmd)
 	crawlCmd.AddCommand(crawlListCmd)
+	crawlCmd.AddCommand(crawlShowCmd)
 	crawlCmd.AddCommand(crawlDeleteCmd)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")

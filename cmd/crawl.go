@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
+	"github.com/asciimoo/hister/server/crawler"
 	"github.com/asciimoo/hister/server/model"
 
 	"github.com/rs/zerolog/log"
@@ -50,6 +52,19 @@ var crawlListCmd = &cobra.Command{
 	},
 }
 
+var crawlShowCmd = &cobra.Command{
+	Use:   "show JOB_ID",
+	Short: "Show detailed persistent crawl job state",
+	Long:  "Display detailed information about a persistent crawl job and its queued URL state",
+	Args:  cobra.ExactArgs(1),
+	PreRun: func(_ *cobra.Command, _ []string) {
+		initDB()
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		showCrawlJob(args[0])
+	},
+}
+
 var crawlDeleteCmd = &cobra.Command{
 	Use:   "delete JOB_ID",
 	Short: "Delete a persistent crawl job",
@@ -65,4 +80,49 @@ var crawlDeleteCmd = &cobra.Command{
 		}
 		fmt.Println(cliSuccessStyle.Render("✓") + " Crawl job deleted: " + cliInfoStyle.Render(jobID))
 	},
+}
+
+func showCrawlJob(jobID string) {
+	job, err := model.GetCrawlJob(jobID)
+	if err != nil {
+		exit(1, "Failed to load crawl job: "+err.Error())
+	}
+	if job == nil {
+		exit(1, "Crawl job not found: "+jobID)
+	}
+
+	stats, err := model.GetCrawlJobStats(job.ID)
+	if err != nil {
+		exit(1, "Failed to load crawl job stats: "+err.Error())
+	}
+
+	fmt.Println(cliBoldStyle.Render("CRAWL JOB"))
+	fmt.Printf("id: %s\n", cliInfoStyle.Render(job.ID))
+	fmt.Printf("status: %s\n", job.Status)
+	fmt.Printf("start_url: %s\n", job.StartURL)
+	fmt.Printf("label: %s\n", job.Label)
+	fmt.Printf("created: %s\n", job.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("updated: %s\n", job.UpdatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Println()
+
+	fmt.Println(cliBoldStyle.Render("STATE"))
+	fmt.Printf("pending: %d\n", stats.Pending)
+	fmt.Printf("in_progress: %d\n", stats.InProgress)
+	fmt.Printf("done: %d\n", stats.Done)
+	fmt.Printf("failed: %d\n", stats.Failed)
+	fmt.Printf("skipped: %d\n", stats.Skipped)
+	fmt.Println()
+
+	fmt.Println(cliBoldStyle.Render("RULES"))
+	rules, err := crawler.UnmarshalValidatorRules(job.ValidatorRules)
+	if err != nil {
+		fmt.Println(job.ValidatorRules)
+		log.Warn().Err(err).Str("job_id", job.ID).Msg("failed to restore crawl job rules")
+	} else {
+		rulesJSON, err := json.MarshalIndent(rules, "", "  ")
+		if err != nil {
+			exit(1, "Failed to format crawl job rules: "+err.Error())
+		}
+		fmt.Println(string(rulesJSON))
+	}
 }

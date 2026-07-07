@@ -1,4 +1,18 @@
+const FETCHABLE_FAVICON_PROTOCOLS = new Set(['http:', 'https:']);
+
+function isFetchableFaviconURL(rawURL: string): boolean {
+  try {
+    const url = new URL(rawURL);
+    return FETCHABLE_FAVICON_PROTOCOLS.has(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
 async function fetchFavicon(url) {
+  if (!isFetchableFaviconURL(url)) {
+    return '';
+  }
   const response = await fetch(url);
   let iconBytes = await response.blob();
   const reader = new FileReader();

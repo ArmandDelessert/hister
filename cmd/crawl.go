@@ -78,6 +78,19 @@ var crawlErrorsCmd = &cobra.Command{
 	},
 }
 
+var crawlQueueCmd = &cobra.Command{
+	Use:   "queue JOB_ID",
+	Short: "List crawl queue URLs",
+	Long:  "List crawl URL status, depth, and URL rows for a persistent crawl job",
+	Args:  cobra.ExactArgs(1),
+	PreRun: func(_ *cobra.Command, _ []string) {
+		initDB()
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		showCrawlJobQueue(args[0])
+	},
+}
+
 var crawlDeleteCmd = &cobra.Command{
 	Use:   "delete JOB_ID",
 	Short: "Delete a persistent crawl job",
@@ -96,13 +109,7 @@ var crawlDeleteCmd = &cobra.Command{
 }
 
 func showCrawlJob(jobID string) {
-	job, err := model.GetCrawlJob(jobID)
-	if err != nil {
-		exit(1, "Failed to load crawl job: "+err.Error())
-	}
-	if job == nil {
-		exit(1, "Crawl job not found: "+jobID)
-	}
+	job := loadCrawlJob(jobID)
 
 	stats, err := model.GetCrawlJobStats(job.ID)
 	if err != nil {
@@ -140,7 +147,27 @@ func showCrawlJob(jobID string) {
 	}
 }
 
+func showCrawlJobQueue(jobID string) {
+	job := loadCrawlJob(jobID)
+	if err := model.ForEachCrawlURL(job.ID, func(status string, depth int, rawURL string) error {
+		fmt.Printf("%s\t%d\t%s\n", status, depth, rawURL)
+		return nil
+	}); err != nil {
+		exit(1, "Failed to load crawl job queue: "+err.Error())
+	}
+}
+
 func showCrawlJobErrors(jobID string) {
+	job := loadCrawlJob(jobID)
+	if err := model.ForEachFailedCrawlURL(job.ID, func(errorCode int, rawURL string) error {
+		fmt.Printf("%d\t%s\n", errorCode, rawURL)
+		return nil
+	}); err != nil {
+		exit(1, "Failed to load crawl job errors: "+err.Error())
+	}
+}
+
+func loadCrawlJob(jobID string) *model.CrawlJob {
 	job, err := model.GetCrawlJob(jobID)
 	if err != nil {
 		exit(1, "Failed to load crawl job: "+err.Error())
@@ -148,11 +175,5 @@ func showCrawlJobErrors(jobID string) {
 	if job == nil {
 		exit(1, "Crawl job not found: "+jobID)
 	}
-
-	if err := model.ForEachFailedCrawlURL(job.ID, func(errorCode int, rawURL string) error {
-		fmt.Printf("%d\t%s\n", errorCode, rawURL)
-		return nil
-	}); err != nil {
-		exit(1, "Failed to load crawl job errors: "+err.Error())
-	}
+	return job
 }

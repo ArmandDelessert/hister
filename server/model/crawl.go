@@ -243,6 +243,32 @@ func ForEachFailedCrawlURL(jobID string, fn func(errorCode int, rawURL string) e
 	return rows.Err()
 }
 
+// ForEachCrawlURL streams crawl URL status, depth, and URL rows for a job.
+func ForEachCrawlURL(jobID string, fn func(status string, depth int, rawURL string) error) error {
+	rows, err := DB.Model(&CrawlURL{}).
+		Select("status, depth, url").
+		Where("job_id = ?", jobID).
+		Order("id ASC").
+		Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var status string
+		var depth int
+		var rawURL string
+		if err := rows.Scan(&status, &depth, &rawURL); err != nil {
+			return err
+		}
+		if err := fn(status, depth, rawURL); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // ListCrawlJobs returns all crawl jobs ordered by creation time descending.
 func ListCrawlJobs() ([]*CrawlJob, error) {
 	var jobs []*CrawlJob

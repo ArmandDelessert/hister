@@ -235,6 +235,14 @@ To print only failed URLs with their stored error codes:
 hister crawl errors my-docs
 ```
 
+#### List queued URLs
+
+```bash
+hister crawl queue my-docs
+```
+
+This prints every URL row tracked by the job as tab-separated status, depth, and URL fields.
+
 #### Delete a job
 
 ```bash

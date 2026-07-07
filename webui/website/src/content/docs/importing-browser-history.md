@@ -101,6 +101,12 @@ This shows the job status, the number of pending, completed, failed, and skipped
 hister crawl errors browser-import-YYYY-MM-DD
 ```
 
+To list the URLs tracked by the import job, use:
+
+```bash
+hister crawl queue browser-import-YYYY-MM-DD
+```
+
 ### Selecting a Scraping Backend
 
 By default, `hister import-browser` fetches pages with a plain HTTP client. For sites that

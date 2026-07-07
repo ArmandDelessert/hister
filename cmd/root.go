@@ -261,6 +261,7 @@ func init() {
 	crawlCmd.AddCommand(crawlListCmd)
 	crawlCmd.AddCommand(crawlShowCmd)
 	crawlCmd.AddCommand(crawlErrorsCmd)
+	crawlCmd.AddCommand(crawlQueueCmd)
 	crawlCmd.AddCommand(crawlDeleteCmd)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")

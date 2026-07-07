@@ -232,7 +232,7 @@ This shows the job status, start URL, saved crawler rules, and per-status URL co
 To print only failed URLs with their stored error codes:
 
 ```bash
-hister crawl show my-docs --errors
+hister crawl errors my-docs
 ```
 
 #### Delete a job

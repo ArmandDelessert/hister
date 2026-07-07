@@ -61,12 +61,20 @@ var crawlShowCmd = &cobra.Command{
 		initDB()
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		showErrors, _ := cmd.Flags().GetBool("errors")
-		if showErrors {
-			showCrawlJobErrors(args[0])
-			return
-		}
 		showCrawlJob(args[0])
+	},
+}
+
+var crawlErrorsCmd = &cobra.Command{
+	Use:   "errors JOB_ID",
+	Short: "List failed crawl URLs",
+	Long:  "List failed crawl URL error codes and URLs for a persistent crawl job",
+	Args:  cobra.ExactArgs(1),
+	PreRun: func(_ *cobra.Command, _ []string) {
+		initDB()
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		showCrawlJobErrors(args[0])
 	},
 }
 

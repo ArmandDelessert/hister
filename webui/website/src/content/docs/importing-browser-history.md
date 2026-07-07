@@ -98,7 +98,7 @@ hister crawl show browser-import-YYYY-MM-DD
 This shows the job status, the number of pending, completed, failed, and skipped URLs, and the crawler rules saved with the job. To list only failed URLs with their HTTP or crawler error code, use:
 
 ```bash
-hister crawl show browser-import-YYYY-MM-DD --errors
+hister crawl errors browser-import-YYYY-MM-DD
 ```
 
 ### Selecting a Scraping Backend

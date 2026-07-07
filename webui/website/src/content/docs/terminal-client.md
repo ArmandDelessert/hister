@@ -242,6 +242,11 @@ hister crawl queue my-docs
 ```
 
 This prints every URL row tracked by the job as tab-separated status, depth, and URL fields.
+Use `-c` or `--count` to print only the number of tracked URL rows:
+
+```bash
+hister crawl queue my-docs --count
+```
 
 #### Delete a job
 

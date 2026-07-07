@@ -218,8 +218,17 @@ func CountCrawlURLsByStatus(jobID, status string) (int64, error) {
 	return count, err
 }
 
+// CountCrawlURLs returns the number of URL rows tracked for a job.
+func CountCrawlURLs(jobID string) (int64, error) {
+	var count int64
+	err := DB.Model(&CrawlURL{}).
+		Where("job_id = ?", jobID).
+		Count(&count).Error
+	return count, err
+}
+
 // ForEachFailedCrawlURL streams failed crawl URL error codes and URLs for a job.
-func ForEachFailedCrawlURL(jobID string, fn func(errorCode int, rawURL string) error) error {
+func ForEachFailedCrawlURL(jobID string, fn func(errorCode int, rawURL string) error) (err error) {
 	rows, err := DB.Model(&CrawlURL{}).
 		Select("error_code, url").
 		Where("job_id = ? AND status = ?", jobID, CrawlURLFailed).
@@ -228,7 +237,11 @@ func ForEachFailedCrawlURL(jobID string, fn func(errorCode int, rawURL string) e
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	for rows.Next() {
 		var errorCode int
@@ -244,7 +257,7 @@ func ForEachFailedCrawlURL(jobID string, fn func(errorCode int, rawURL string) e
 }
 
 // ForEachCrawlURL streams crawl URL status, depth, and URL rows for a job.
-func ForEachCrawlURL(jobID string, fn func(status string, depth int, rawURL string) error) error {
+func ForEachCrawlURL(jobID string, fn func(status string, depth int, rawURL string) error) (err error) {
 	rows, err := DB.Model(&CrawlURL{}).
 		Select("status, depth, url").
 		Where("job_id = ?", jobID).
@@ -253,7 +266,11 @@ func ForEachCrawlURL(jobID string, fn func(status string, depth int, rawURL stri
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	for rows.Next() {
 		var status string

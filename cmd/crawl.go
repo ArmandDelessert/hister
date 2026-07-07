@@ -87,7 +87,8 @@ var crawlQueueCmd = &cobra.Command{
 		initDB()
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		showCrawlJobQueue(args[0])
+		countOnly, _ := cmd.Flags().GetBool("count")
+		showCrawlJobQueue(args[0], countOnly)
 	},
 }
 
@@ -147,8 +148,16 @@ func showCrawlJob(jobID string) {
 	}
 }
 
-func showCrawlJobQueue(jobID string) {
+func showCrawlJobQueue(jobID string, countOnly bool) {
 	job := loadCrawlJob(jobID)
+	if countOnly {
+		count, err := model.CountCrawlURLs(job.ID)
+		if err != nil {
+			exit(1, "Failed to count crawl job queue: "+err.Error())
+		}
+		fmt.Println(count)
+		return
+	}
 	if err := model.ForEachCrawlURL(job.ID, func(status string, depth int, rawURL string) error {
 		fmt.Printf("%s\t%d\t%s\n", status, depth, rawURL)
 		return nil

@@ -107,6 +107,12 @@ To list the URLs tracked by the import job, use:
 hister crawl queue browser-import-YYYY-MM-DD
 ```
 
+To print only the number of URLs tracked by the import job, use:
+
+```bash
+hister crawl queue browser-import-YYYY-MM-DD --count
+```
+
 ### Selecting a Scraping Backend
 
 By default, `hister import-browser` fetches pages with a plain HTTP client. For sites that

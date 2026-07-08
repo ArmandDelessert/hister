@@ -147,11 +147,12 @@ func (c *baseCrawler) bfsCrawl(ctx context.Context, startURL string, v *Validato
 		case URLStop:
 			return
 		case URLSkip:
+			log.Info().Str("url", cur.rawURL).Int("depth", cur.depth).Msg("crawler: skipping URL by crawler rules")
 			continue
 		}
 
 		if c.robots != nil && !c.robots.Allowed(ctx, cur.rawURL) {
-			log.Debug().Str("url", cur.rawURL).Msg("crawler: skipping URL disallowed by robots.txt")
+			log.Info().Str("url", cur.rawURL).Msg("crawler: skipping URL disallowed by robots.txt")
 			continue
 		}
 
@@ -160,7 +161,7 @@ func (c *baseCrawler) bfsCrawl(ctx context.Context, startURL string, v *Validato
 			if err != nil {
 				log.Warn().Err(err).Str("url", cur.rawURL).Msg("crawler: failed to check whether URL should be skipped")
 			} else if skip {
-				log.Debug().Str("url", cur.rawURL).Msg("crawler: skipping URL by prefetch skip predicate")
+				log.Info().Str("url", cur.rawURL).Msg("crawler: skipping URL by prefetch skip predicate")
 				continue
 			}
 		}

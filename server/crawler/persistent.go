@@ -114,6 +114,7 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 			}
 			return model.UpdateCrawlJobStatus(c.jobID, model.CrawlJobInterrupted)
 		case URLSkip:
+			log.Info().Str("url", cur.URL).Int("depth", cur.Depth).Msg("crawler: skipping URL by crawler rules")
 			if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLSkipped, ""); err != nil {
 				log.Warn().Err(err).Msg("failed to mark URL skipped")
 			}
@@ -121,7 +122,7 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 		}
 
 		if c.robots != nil && !c.robots.Allowed(ctx, cur.URL) {
-			log.Debug().Str("url", cur.URL).Msg("crawler: skipping URL disallowed by robots.txt")
+			log.Info().Str("url", cur.URL).Msg("crawler: skipping URL disallowed by robots.txt")
 			if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLSkipped, "robots.txt"); err != nil {
 				log.Warn().Err(err).Msg("failed to mark URL skipped by robots.txt")
 			}
@@ -133,7 +134,7 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 			if err != nil {
 				log.Warn().Err(err).Str("url", cur.URL).Msg("crawler: failed to check whether URL should be skipped")
 			} else if skip {
-				log.Debug().Str("url", cur.URL).Msg("crawler: skipping URL by prefetch skip predicate")
+				log.Info().Str("url", cur.URL).Msg("crawler: skipping URL by prefetch skip predicate")
 				if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLSkipped, "prefetch skip"); err != nil {
 					log.Warn().Err(err).Msg("failed to mark URL skipped by prefetch predicate")
 				}

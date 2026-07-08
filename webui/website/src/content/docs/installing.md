@@ -174,3 +174,13 @@ If you don't want to use the module system, add the package directly:
 ## Docker
 
 We publish a [Docker container](https://github.com/asciimoo/hister/pkgs/container/hister).
+
+## Proxmox VE
+
+Hister is also available through the [Proxmox VE Community Scripts](https://community-scripts.org/scripts/hister) project for LXC based installs:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/ct/hister.sh)"
+```
+
+This installer is maintained by the community scripts project, not by the Hister project. Review the script before running it on your Proxmox host.

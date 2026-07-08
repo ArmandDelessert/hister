@@ -282,7 +282,7 @@ func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, en
 		reader = f
 	}
 
-	const maxLineSize = 16 * 1024 * 1024 // 16 MB covers large HTML+favicon lines
+	const maxLineSize = 64 * 1024 * 1024 // 64 MB covers large HTML+favicon lines
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), maxLineSize)
 

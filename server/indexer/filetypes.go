@@ -3,6 +3,7 @@ package indexer
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -54,10 +55,5 @@ func (plainTextFileType) Index(d *document.Document, content []byte) error {
 
 func hasExtension(path string, exts ...string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
-	for _, candidate := range exts {
-		if ext == candidate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(exts, ext)
 }

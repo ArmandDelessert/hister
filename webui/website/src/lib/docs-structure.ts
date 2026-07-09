@@ -17,7 +17,7 @@ export const docsStructure: DocsCategory[] = [
   },
   {
     name: 'Reference',
-    slugs: ['configuration', 'query-language', 'rules', 'extractors', 'mcp'],
+    slugs: ['configuration', 'query-language', 'rules', 'extractors', 'file-types', 'mcp'],
     color: 'teal',
   },
   {

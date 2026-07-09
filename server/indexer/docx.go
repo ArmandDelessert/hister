@@ -8,11 +8,11 @@ import (
 	"runtime/debug"
 	"strings"
 
+	docx "github.com/mmonterroca/docxgo/v2"
+	"github.com/mmonterroca/docxgo/v2/domain"
 	"github.com/rs/zerolog/log"
 
 	"github.com/asciimoo/hister/server/document"
-	docx "github.com/mmonterroca/docxgo/v2"
-	"github.com/mmonterroca/docxgo/v2/domain"
 )
 
 type docxFileType struct{}

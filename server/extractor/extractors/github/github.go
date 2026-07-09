@@ -23,10 +23,6 @@ const (
 	githubURLPrefix = githubBase + "/"
 )
 
-// relativeURLRe matches src="/" or href="/" attributes with root-relative paths
-// (but not protocol-relative URLs starting with "//").
-var relativeURLRe = regexp.MustCompile(`(?i)((?:src|href)=")(\/[^/"])`)
-
 // githubSystemPaths are top-level GitHub path segments that are never
 // repository owner namespaces.
 var githubSystemPaths = map[string]bool{
@@ -54,8 +50,6 @@ var githubSystemPaths = map[string]bool{
 	"apps":           true,
 }
 
-var starsRe = regexp.MustCompile(`^([\d,]+)\s+users?\s+starred\s+this\s+repository$`)
-
 // GitHubExtractor extracts project details and README content from GitHub repository pages.
 type GitHubExtractor struct {
 	cfg *config.Extractor
@@ -82,82 +76,72 @@ func (e *GitHubExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-// Match returns true for github.com/{owner}/{repo} URLs, excluding known
-// GitHub system path prefixes.
+var (
+	ownerPattern = `[a-zA-Z0-9-]+`
+	repoPattern  = `[a-zA-Z0-9-._]+`
+
+	urlPattern = fmt.Sprintf(`%s(%s)/(%s)`, githubURLPrefix, ownerPattern, repoPattern)
+
+	// /owner/repo/...
+	repoRe = regexp.MustCompile(fmt.Sprintf(`^%s`, urlPattern))
+	// /owner/repo/? OR /owner/repo?... OR /owner/repo#...
+	fullRepoRe = regexp.MustCompile(fmt.Sprintf(`^%s(?:#[^/]*|\?[^/]*)?/?$`, urlPattern))
+	// /owner/repo/:id/? OR /owner/repo/:id#...
+	issueRe = regexp.MustCompile(fmt.Sprintf(`^%s/issues/(\d+)(?:#[^/])?/?$`, urlPattern))
+	// /owner/repo/issues
+	issuesRe = regexp.MustCompile(fmt.Sprintf(`^%s/issues/?$`, urlPattern))
+	// /owner/repo/pull/:id/? OR /owner/repo/:id#...
+	prRe = regexp.MustCompile(fmt.Sprintf(`^%s/pull/(\d+)(?:#[^/]+)?/?$`, urlPattern))
+)
+
+type githubPattern = struct {
+	re      *regexp.Regexp
+	handler func(*document.Document) (types.ExtractorState, error)
+}
+
+var githubPatterns = []githubPattern{
+	{fullRepoRe, extractRepo},
+	{issueRe, extractIssue},
+	{issuesRe, extractIssues},
+	{prRe, extractPull},
+}
+
+// Match returns true for known github URLs, defined in githubPatterns
 func (e *GitHubExtractor) Match(d *document.Document) bool {
-	if !strings.HasPrefix(d.URL, githubURLPrefix) {
+	parts := urlParts(d.URL)
+
+	if githubSystemPaths[strings.ToLower(parts[0])] {
 		return false
 	}
-	path := strings.TrimPrefix(d.URL, githubURLPrefix)
-	// Strip query string and fragment.
+
+	for _, p := range githubPatterns {
+		if p.re.MatchString(d.URL) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func urlParts(url string) []string {
+	path := strings.TrimPrefix(url, githubURLPrefix)
 	if i := strings.IndexAny(path, "?#"); i >= 0 {
 		path = path[:i]
 	}
 	path = strings.TrimSuffix(path, "/")
-	parts := strings.SplitN(path, "/", 3)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return false
-	}
-	return !githubSystemPaths[strings.ToLower(parts[0])]
-}
-
-// repoInfo holds the extracted fields from a GitHub repository page.
-type repoInfo struct {
-	description string
-	stars       string
-	topics      []string
-	languages   []string
-	readmeHTML  string
+	return strings.Split(path, "/")
 }
 
 // Extract populates d.Title and d.Text with repository metadata and README
 // plain text, making the content fully searchable.
 func (e *GitHubExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
-	if err != nil {
-		return types.ExtractorContinue, err
-	}
-
-	info := parseRepoPage(doc, d.HTML)
-	if info == nil {
-		return types.ExtractorContinue, nil
-	}
-
-	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
-
-	var b strings.Builder
-	if info.description != "" {
-		b.WriteString(info.description)
-		b.WriteString("\n\n")
-	}
-	if len(info.topics) > 0 {
-		b.WriteString("topics: ")
-		b.WriteString(strings.Join(info.topics, ", "))
-		b.WriteString("\n")
-	}
-	if len(info.languages) > 0 {
-		b.WriteString("languages: ")
-		b.WriteString(strings.Join(info.languages, ", "))
-		b.WriteString("\n")
-	}
-	if info.stars != "" {
-		b.WriteString("stars: ")
-		b.WriteString(info.stars)
-		b.WriteString("\n")
-	}
-	if info.readmeHTML != "" {
-		readmeDoc, err := goquery.NewDocumentFromReader(strings.NewReader(info.readmeHTML))
-		if err == nil {
-			b.WriteString("\n")
-			b.WriteString(strings.TrimSpace(readmeDoc.Text()))
+	for _, p := range githubPatterns {
+		if p.re.MatchString(d.URL) {
+			return p.handler(d)
 		}
 	}
 
-	d.Text = strings.TrimSpace(b.String())
-	if d.Text == "" && d.Title == "" {
-		return types.ExtractorContinue, fmt.Errorf("no content found")
-	}
-	return types.ExtractorStop, nil
+	return types.ExtractorContinue, fmt.Errorf("no extractor matched for %s", d.URL)
 }
 
 // Preview renders a summary card (description, stars, topics, languages) and
@@ -213,6 +197,88 @@ func (e *GitHubExtractor) Preview(d *document.Document) (types.PreviewResponse, 
 	return types.PreviewResponse{Content: b.String()}, types.ExtractorStop, nil
 }
 
+// --- Repositories --------------------------------------------------------
+func getRepo(url string) (string, error) {
+	m := repoRe.FindStringSubmatch(url)
+	if len(m) < 2 {
+		return "", fmt.Errorf("%s is not a valid github url", url)
+	}
+	return m[1] + "/" + m[2], nil
+}
+
+func extractRepo(d *document.Document) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	info := parseRepoPage(doc, d.HTML)
+	if info == nil {
+		return types.ExtractorContinue, nil
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	var b strings.Builder
+
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "Repository"
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
+
+	if info.description != "" {
+		b.WriteString("description: ")
+		b.WriteString(info.description)
+		b.WriteString("\n\n")
+		d.Metadata["description"] = info.description
+	}
+	if len(info.topics) > 0 {
+		b.WriteString("topics: ")
+		b.WriteString(strings.Join(info.topics, ", "))
+		b.WriteString("\n")
+		d.Metadata["topics"] = strings.Join(info.topics, ", ")
+	}
+	if len(info.languages) > 0 {
+		b.WriteString("languages: ")
+		b.WriteString(strings.Join(info.languages, ", "))
+		b.WriteString("\n")
+		d.Metadata["languages"] = strings.Join(info.languages, ", ")
+	}
+	if info.stars != "" {
+		b.WriteString("stars: ")
+		b.WriteString(info.stars)
+		b.WriteString("\n")
+	}
+	if info.readmeHTML != "" {
+		readmeDoc, err := goquery.NewDocumentFromReader(strings.NewReader(info.readmeHTML))
+		if err == nil {
+			b.WriteString("\n")
+			b.WriteString(strings.TrimSpace(readmeDoc.Text()))
+		}
+	}
+
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
+	return types.ExtractorStop, nil
+}
+
+// repoInfo holds the extracted fields from a GitHub repository page.
+type repoInfo struct {
+	description string
+	stars       string
+	topics      []string
+	languages   []string
+	readmeHTML  string
+}
+
+// Star count from the star button aria-label.
+var starsRe = regexp.MustCompile(`^([\d,]+)\s+users?\s+starred\s+this\s+repository$`)
+
 // parseRepoPage extracts repository metadata from the parsed goquery document.
 // Returns nil if the page does not appear to be a repository overview page.
 func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
@@ -225,7 +291,6 @@ func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
 	}
 	info.description = desc
 
-	// Star count from the star button aria-label.
 	doc.Find("[aria-label]").Each(func(_ int, s *goquery.Selection) {
 		label, _ := s.Attr("aria-label")
 		if m := starsRe.FindStringSubmatch(strings.TrimSpace(label)); m != nil {
@@ -262,6 +327,10 @@ func parseRepoPage(doc *goquery.Document, rawHTML string) *repoInfo {
 
 	return info
 }
+
+// relativeURLRe matches src="/" or href="/" attributes with root-relative paths
+// (but not protocol-relative URLs starting with "//").
+var relativeURLRe = regexp.MustCompile(`(?i)((?:src|href)=")(\/[^/"])`)
 
 // resolveRelativeURLs rewrites root-relative src/href attributes in README HTML
 // to absolute github.com URLs (e.g. "/owner/repo/raw/..." → "https://github.com/owner/repo/raw/...").
@@ -335,4 +404,139 @@ func richTextFromFiles(v any) string {
 		}
 	}
 	return ""
+}
+
+// --- Issues --------------------------------------------------------------
+func extractIssue(d *document.Document) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	var b strings.Builder
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "Issue"
+
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
+
+	if title := doc.Find(`bdi[data-testid="issue-title"]`).Text(); title != "" {
+		d.Metadata["title"] = title
+		fmt.Fprintf(&b, "title: %s\n\n", title)
+	}
+	if dateOpened := doc.Find(`[data-testid="issue-body"] relative-time`).AttrOr("datetime", ""); dateOpened != "" {
+		d.Metadata["date"] = dateOpened
+	}
+
+	if body := doc.Find(`#issue-body-viewer`).Text(); body != "" {
+		fmt.Fprintf(&b, "body: %s\n\n", body)
+	}
+
+	var commentBodies []string
+	doc.Find(`[data-testid="issue-viewer-comments-container"] [data-testid="markdown-body"]`).Each(func(_ int, s *goquery.Selection) {
+		commentBodies = append(commentBodies, strings.TrimSpace(s.Text()))
+	})
+	if len(commentBodies) > 0 {
+		fmt.Fprintf(&b, "comments: %s\n", strings.Join(commentBodies, ", "))
+	}
+
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
+	return types.ExtractorStop, nil
+}
+
+func extractIssues(d *document.Document) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	var b strings.Builder
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "Issues"
+
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
+
+	var pinnedIssues []string
+	doc.Find(`ul[aria-label="Drag and drop pinned issues list."] li`).Each(func(_ int, s *goquery.Selection) {
+		pinnedIssues = append(pinnedIssues, strings.TrimSpace(s.Text()))
+	})
+	if len(pinnedIssues) > 0 {
+		fmt.Fprintf(&b, "pinned issues: %s\n", strings.Join(pinnedIssues, ", "))
+	}
+
+	var issues []string
+	doc.Find(`ul[data-listview-component="items-list"] li`).Each(func(_ int, s *goquery.Selection) {
+		issues = append(issues, strings.TrimSpace(s.Text()))
+	})
+	if len(issues) > 0 {
+		fmt.Fprintf(&b, "regular issues: %s\n", strings.Join(issues, ", "))
+	}
+
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
+	return types.ExtractorStop, nil
+}
+
+// --- Pull Requests -------------------------------------------------------
+func extractPull(d *document.Document) (types.ExtractorState, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
+	if err != nil {
+		return types.ExtractorContinue, err
+	}
+
+	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
+
+	var b strings.Builder
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	d.Metadata["type"] = "PullRequest"
+
+	if repo, err := getRepo(d.URL); err == nil {
+		d.Metadata["repo"] = repo
+	}
+
+	if title := strings.TrimSpace(doc.Find(`h1[data-component="PH_Title"] .markdown-title`).Text()); title != "" {
+		d.Metadata["title"] = title
+		fmt.Fprintf(&b, "title: %s\n\n", title)
+	}
+	if dateOpened := doc.Find(`.js-command-palette-pull-body relative-time`).AttrOr("datetime", ""); dateOpened != "" {
+		d.Metadata["date"] = dateOpened
+	}
+
+	// the PR "body" is just a comment
+	var comments []string
+	doc.Find(`.js-comment-container`).Each(func(i int, s *goquery.Selection) {
+		comments = append(comments, strings.TrimSpace(s.Text()))
+	})
+	if len(comments) > 0 {
+		fmt.Fprintf(&b, "comments: %s\n", strings.Join(comments, ", "))
+	}
+
+	if state := strings.TrimSpace(doc.Find(`[data-status]`).First().Text()); state != "" {
+		d.Metadata["state"] = state
+	}
+
+	d.Text = strings.TrimSpace(b.String())
+	if d.Text == "" && d.Title == "" {
+		return types.ExtractorContinue, fmt.Errorf("no content found")
+	}
+
+	return types.ExtractorStop, nil
 }

@@ -22,6 +22,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/mattn/go-sqlite3 v1.14.47
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/mmonterroca/docxgo/v2 v2.5.1
 	github.com/muesli/termenv v0.16.0
 	github.com/niklasfasching/go-org v1.9.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c

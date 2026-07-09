@@ -17,6 +17,7 @@ type fileTypeHandler interface {
 
 var fileTypeHandlers = []fileTypeHandler{
 	pdfFileType{},
+	docxFileType{},
 	markdownFileType{},
 	orgFileType{},
 	plainTextFileType{},

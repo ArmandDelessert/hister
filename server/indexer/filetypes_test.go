@@ -9,6 +9,8 @@ func TestFileTypeHandlerForPath(t *testing.T) {
 	}{
 		{path: "paper.pdf", want: pdfFileType{}},
 		{path: "paper.PDF", want: pdfFileType{}},
+		{path: "paper.docx", want: docxFileType{}},
+		{path: "paper.DOCX", want: docxFileType{}},
 		{path: "notes.md", want: markdownFileType{}},
 		{path: "notes.markdown", want: markdownFileType{}},
 		{path: "notes.org", want: orgFileType{}},

@@ -7,9 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 
@@ -248,28 +246,7 @@ func IndexFile(path string, userID uint) error {
 		UserID: userID,
 	}
 
-	if strings.EqualFold(filepath.Ext(path), ".pdf") {
-		return AddPDF(doc, content)
-	}
-
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext == ".md" || ext == ".markdown" {
-		return AddMarkdown(doc, content)
-	}
-
-	if strings.EqualFold(filepath.Ext(path), ".org") {
-		return AddOrg(doc, content)
-	}
-
-	if !utf8.Valid(content) {
-		return ErrBinaryFile
-	}
-	if int64(len(content)) > maxFileSize {
-		return fmt.Errorf("%w: %d bytes", ErrFileTooLarge, int64(len(content)))
-	}
-
-	doc.Text = string(content)
-	return i.AddDocument(doc)
+	return indexFileContent(path, doc, content)
 }
 
 // DeleteFile removes the document for the given filesystem path from the index.

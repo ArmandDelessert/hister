@@ -14,9 +14,13 @@ import (
 	"github.com/asciimoo/hister/server/sanitizer"
 )
 
-// AddMarkdown renders mdData to HTML, stores it in d.HTML, and stores the raw
-// source in d.Text for full-text indexing.
-func AddMarkdown(d *document.Document, mdData []byte) error {
+type markdownFileType struct{}
+
+func (markdownFileType) Match(path string) bool {
+	return hasExtension(path, ".md", ".markdown")
+}
+
+func (markdownFileType) Index(d *document.Document, mdData []byte) error {
 	src := strings.TrimSpace(string(mdData))
 	if src == "" {
 		return errors.New("markdown file is empty")
@@ -26,6 +30,12 @@ func AddMarkdown(d *document.Document, mdData []byte) error {
 	d.Title = extractMarkdownTitle(src)
 	d.AddMetadata("type", "markdown")
 	return Add(d)
+}
+
+// AddMarkdown renders mdData to HTML, stores it in d.HTML, and stores the raw
+// source in d.Text for full-text indexing.
+func AddMarkdown(d *document.Document, mdData []byte) error {
+	return markdownFileType{}.Index(d, mdData)
 }
 
 // extractMarkdownTitle returns the text of the first ATX H1 heading ("# ...").

@@ -14,9 +14,13 @@ import (
 	"github.com/asciimoo/hister/server/sanitizer"
 )
 
-// AddOrg renders Org files to HTML, stores it in d.HTML, and stores the raw
-// source in d.Text for full-text indexing.
-func AddOrg(d *document.Document, orgData []byte) error {
+type orgFileType struct{}
+
+func (orgFileType) Match(path string) bool {
+	return hasExtension(path, ".org")
+}
+
+func (orgFileType) Index(d *document.Document, orgData []byte) error {
 	src := strings.TrimSpace(string(orgData))
 	if src == "" {
 		return errors.New("org file empty")
@@ -30,6 +34,12 @@ func AddOrg(d *document.Document, orgData []byte) error {
 	d.Title = title
 	d.AddMetadata("type", "org")
 	return Add(d)
+}
+
+// AddOrg renders Org files to HTML, stores it in d.HTML, and stores the raw
+// source in d.Text for full-text indexing.
+func AddOrg(d *document.Document, orgData []byte) error {
+	return orgFileType{}.Index(d, orgData)
 }
 
 func renderOrg(src []byte) (string, string, error) {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -17,10 +18,13 @@ import (
 	"github.com/asciimoo/pdf"
 )
 
-// AddPDF extracts plain text from pdfData, stores it in d.Text, then indexes
-// the document via Add. d.URL and d.Type must already be set by the caller.
-// d.Title is set to the last path segment of the URL if it is not already set.
-func AddPDF(d *document.Document, pdfData []byte) error {
+type pdfFileType struct{}
+
+func (pdfFileType) Match(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".pdf")
+}
+
+func (pdfFileType) Index(d *document.Document, pdfData []byte) error {
 	text, err := extractPDFText(pdfData)
 	if err != nil {
 		return fmt.Errorf("pdf text extraction: %w", err)
@@ -31,6 +35,13 @@ func AddPDF(d *document.Document, pdfData []byte) error {
 	d.Text = text
 	d.AddMetadata("type", "pdf")
 	return Add(d)
+}
+
+// AddPDF extracts plain text from pdfData, stores it in d.Text, then indexes
+// the document via Add. d.URL and d.Type must already be set by the caller.
+// d.Title is set to the last path segment of the URL if it is not already set.
+func AddPDF(d *document.Document, pdfData []byte) error {
+	return pdfFileType{}.Index(d, pdfData)
 }
 
 // extractPDFText reads all pages of a PDF from pdfData and returns the

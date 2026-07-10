@@ -102,8 +102,8 @@ semantic_search:
   embedding_endpoint: 'http://localhost:11434/v1/embeddings'
   embedding_model: 'qwen3-embedding:8b'
   dimensions: 4096
-  max_context_length: 4096
-  chunk_overlap: 128
+  max_context_length: 512
+  chunk_overlap: 64
   similarity_threshold: 0.1
   result_limit: 50
   semantic_weight: 0.4
@@ -194,8 +194,8 @@ Semantic search is **opt-in** and disabled by default. It requires an OpenAI-com
 | `api_key`                   | string            | `""`                                   | Optional API key sent as `Authorization: Bearer <key>`. Required for hosted providers such as OpenAI, Together, Mistral, or Voyage.                                                                                                                            |
 | `headers`                   | map[string]string | `{}`                                   | Optional extra HTTP headers added to every embedding request. Useful for proxies or providers that use a non-standard auth scheme.                                                                                                                             |
 | `dimensions`                | int               | `4096`                                 | Vector dimensionality. Must match the output of the chosen model.                                                                                                                                                                                              |
-| `max_context_length`        | int               | `4096`                                 | Maximum number of tokens per text chunk sent to the embedding model.                                                                                                                                                                                           |
-| `chunk_overlap`             | int               | `128`                                  | Number of tokens shared between consecutive chunks. Helps preserve context across chunk boundaries.                                                                                                                                                            |
+| `max_context_length`        | int               | `512`                                  | Maximum approximate token count per text chunk sent to the embedding model. Smaller chunks generally provide more focused passage retrieval.                                                                                                                   |
+| `chunk_overlap`             | int               | `64`                                   | Approximate token allowance for complete structural units shared between consecutive chunks. Helps preserve context while keeping paragraph, sentence, list item, and code boundaries intact.                                                                  |
 | `query_prefix`              | string            | `"query: "`                            | String prepended to every search query before embedding. Many models require a task prefix for optimal recall (e.g. `"search_query: "` for Nomic, `"query: "` for E5/BGE). Set to `""` for models that do not use prefixes (e.g. OpenAI `text-embedding-3-*`). |
 | `document_prefix`           | string            | `""`                                   | String prepended to every document chunk before embedding (e.g. `"search_document: "` for Nomic, `"passage: "` for E5/BGE). Must match the model's expected convention.                                                                                        |
 | `similarity_threshold`      | float             | `0.1`                                  | Minimum cosine similarity score for a chunk to be included in results. Raise this to surface only highly relevant matches.                                                                                                                                     |

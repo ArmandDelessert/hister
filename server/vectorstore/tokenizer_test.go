@@ -138,6 +138,105 @@ func TestChunkText_SentenceBoundaryChunking(t *testing.T) {
 	}
 }
 
+func TestChunkText_SentenceBoundaryOverlap(t *testing.T) {
+	text := "First one. Second two. Third three. Fourth four."
+	chunks := ChunkText(text, 6, 3)
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 overlapping chunks, got %d: %#v", len(chunks), chunks)
+	}
+	want := []string{
+		"First one. Second two.",
+		"Second two. Third three.",
+		"Third three. Fourth four.",
+	}
+	for i := range want {
+		if chunks[i].Text != want[i] {
+			t.Errorf("chunk %d: got %q, want %q", i, chunks[i].Text, want[i])
+		}
+	}
+}
+
+func TestSplitStructuralBlocks(t *testing.T) {
+	text := strings.Join([]string{
+		"# Heading",
+		"",
+		"A prose paragraph",
+		"continued on another line.",
+		"",
+		"- first item",
+		"- second item",
+		"",
+		"```go",
+		"fmt.Println(\"hello\")",
+		"```",
+		"",
+		"    indented()",
+		"    code()",
+	}, "\n")
+	want := []string{
+		"# Heading",
+		"A prose paragraph\ncontinued on another line.",
+		"- first item",
+		"- second item",
+		"```go\nfmt.Println(\"hello\")\n```",
+		"    indented()\n    code()",
+	}
+	got := splitStructuralBlocks(text)
+	assertSentences(t, got, want)
+}
+
+func TestChunkText_PreservesStructuralBoundaries(t *testing.T) {
+	text := strings.Join([]string{
+		"# Search",
+		"",
+		"Semantic retrieval finds related passages.",
+		"",
+		"- preserve list items",
+		"- preserve code blocks",
+		"",
+		"```go",
+		"result := search(query)",
+		"```",
+	}, "\n")
+	chunks := ChunkText(text, 18, 4)
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple structural chunks, got %d", len(chunks))
+	}
+	for _, expected := range []string{
+		"# Search",
+		"Semantic retrieval finds related passages.",
+		"- preserve list items",
+		"- preserve code blocks",
+		"```go\nresult := search(query)\n```",
+	} {
+		found := false
+		for _, chunk := range chunks {
+			if strings.Contains(chunk.Text, expected) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("structural unit %q was split or lost: %#v", expected, chunks)
+		}
+	}
+}
+
+func TestChunkByStructureDoesNotEmitOverlapOnlyChunk(t *testing.T) {
+	units := []chunkUnit{
+		{text: "first", tokenCount: 4, block: 0},
+		{text: "second", tokenCount: 4, block: 1},
+		{text: "large next block", tokenCount: 10, block: 2},
+	}
+	chunks := chunkByStructure(units, 10, 4)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks without an overlap-only chunk, got %d: %#v", len(chunks), chunks)
+	}
+	if chunks[1].Text != "large next block" {
+		t.Fatalf("unexpected second chunk: %q", chunks[1].Text)
+	}
+}
+
 func TestChunkText_NaiveFallbackWhenNoSentences(t *testing.T) {
 	// Text with no sentence boundaries: continuous words without periods.
 	words := make([]string, 30)

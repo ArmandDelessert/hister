@@ -171,50 +171,213 @@ func naiveChunkTokens(tokens []string, maxTokens, overlap int) []TextChunk {
 	return chunks
 }
 
-// chunkBySentences groups sentences into chunks of at most maxTokens tokens.
-// Sentences that individually exceed maxTokens are broken by the naive
-// token-window fallback. No overlap is applied between sentence chunks.
-func chunkBySentences(sentences []string, sentTokens []int, maxTokens int) []TextChunk {
-	var chunks []TextChunk
-	chunkStart := 0
-
-	for chunkStart < len(sentences) {
-		total := 0
-		j := chunkStart
-		for j < len(sentences) {
-			// Always include at least one sentence even if it exceeds maxTokens.
-			if total+sentTokens[j] > maxTokens && j > chunkStart {
-				break
-			}
-			total += sentTokens[j]
-			j++
+func isFenceLine(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	for _, marker := range []string{"```", "~~~"} {
+		if strings.HasPrefix(trimmed, marker) {
+			return marker, true
 		}
+	}
+	return "", false
+}
 
-		if j == chunkStart {
-			// A single sentence exceeds maxTokens: apply naive chunking to it.
-			naive := naiveChunkTokens(tokenize(sentences[chunkStart]), maxTokens, 0)
-			chunks = append(chunks, naive...)
-			chunkStart++
+func isHeadingLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) < 2 || trimmed[0] != '#' {
+		return false
+	}
+	i := 0
+	for i < len(trimmed) && trimmed[i] == '#' {
+		i++
+	}
+	return i <= 6 && i < len(trimmed) && unicode.IsSpace(rune(trimmed[i]))
+}
+
+func isListLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	for _, prefix := range []string{"- ", "* ", "+ ", "> "} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	i := 0
+	for i < len(trimmed) && unicode.IsDigit(rune(trimmed[i])) {
+		i++
+	}
+	return i > 0 && i+1 < len(trimmed) &&
+		(trimmed[i] == '.' || trimmed[i] == ')') && unicode.IsSpace(rune(trimmed[i+1]))
+}
+
+func isIndentedCodeLine(line string) bool {
+	return strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "    ")
+}
+
+// splitStructuralBlocks separates text at paragraph and lightweight markup
+// boundaries. Fenced code is kept together, as are consecutive indented code
+// lines. Headings and list items become independent blocks so chunk boundaries
+// do not split their contents.
+func splitStructuralBlocks(text string) []string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	var blocks []string
+	var current []string
+	inFence := false
+	fenceMarker := ""
+	currentIndented := false
+
+	flush := func() {
+		block := strings.Join(current, "\n")
+		if currentIndented || inFence {
+			block = strings.Trim(block, "\r\n")
+		} else {
+			block = strings.TrimSpace(block)
+		}
+		if block != "" {
+			blocks = append(blocks, block)
+		}
+		current = nil
+		currentIndented = false
+	}
+
+	for _, line := range lines {
+		if marker, fence := isFenceLine(line); fence {
+			if !inFence {
+				flush()
+				inFence = true
+				fenceMarker = marker
+				current = append(current, line)
+				continue
+			}
+			current = append(current, line)
+			if marker == fenceMarker {
+				flush()
+				inFence = false
+				fenceMarker = ""
+			}
+			continue
+		}
+		if inFence {
+			current = append(current, line)
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			flush()
+			continue
+		}
+		if isHeadingLine(line) || isListLine(line) {
+			flush()
+			blocks = append(blocks, strings.TrimSpace(line))
+			continue
+		}
+		if isIndentedCodeLine(line) {
+			if len(current) > 0 && !currentIndented {
+				flush()
+			}
+			currentIndented = true
+			current = append(current, line)
+			continue
+		}
+		if currentIndented {
+			flush()
+		}
+		current = append(current, line)
+	}
+	flush()
+	return blocks
+}
+
+type chunkUnit struct {
+	text       string
+	tokenCount int
+	block      int
+}
+
+func chunkUnits(text string, maxTokens int) []chunkUnit {
+	blocks := splitStructuralBlocks(text)
+	units := make([]chunkUnit, 0, len(blocks))
+	for blockIdx, block := range blocks {
+		count := len(tokenize(block))
+		if count <= maxTokens {
+			units = append(units, chunkUnit{text: block, tokenCount: count, block: blockIdx})
+			continue
+		}
+		sentences := splitSentences(block)
+		if len(sentences) <= 1 {
+			units = append(units, chunkUnit{text: block, tokenCount: count, block: blockIdx})
+			continue
+		}
+		for _, sentence := range sentences {
+			units = append(units, chunkUnit{
+				text:       sentence,
+				tokenCount: len(tokenize(sentence)),
+				block:      blockIdx,
+			})
+		}
+	}
+	return units
+}
+
+func joinChunkUnits(units []chunkUnit) string {
+	var b strings.Builder
+	for i, unit := range units {
+		if i > 0 {
+			if unit.block == units[i-1].block {
+				b.WriteByte(' ')
+			} else {
+				b.WriteString("\n\n")
+			}
+		}
+		b.WriteString(unit.text)
+	}
+	return b.String()
+}
+
+// chunkByStructure packs complete structural or sentence units into chunks.
+// Overlap reuses complete trailing units when they fit within the configured
+// allowance. A unit larger than maxTokens uses the token window fallback.
+func chunkByStructure(units []chunkUnit, maxTokens, overlap int) []TextChunk {
+	var chunks []TextChunk
+	for start := 0; start < len(units); {
+		if units[start].tokenCount > maxTokens {
+			chunks = append(chunks, naiveChunkTokens(tokenize(units[start].text), maxTokens, overlap)...)
+			start++
 			continue
 		}
 
+		total := 0
+		end := start
+		for end < len(units) && total+units[end].tokenCount <= maxTokens {
+			total += units[end].tokenCount
+			end++
+		}
 		chunks = append(chunks, TextChunk{
-			Text:       strings.Join(sentences[chunkStart:j], " "),
+			Text:       joinChunkUnits(units[start:end]),
 			TokenCount: total,
 		})
-		chunkStart = j
-	}
+		if end == len(units) {
+			break
+		}
 
+		next := end
+		overlapTokens := 0
+		for candidate := end - 1; candidate > start; candidate-- {
+			if overlapTokens+units[candidate].tokenCount > overlap {
+				break
+			}
+			if overlapTokens+units[candidate].tokenCount+units[end].tokenCount > maxTokens {
+				break
+			}
+			overlapTokens += units[candidate].tokenCount
+			next = candidate
+		}
+		start = next
+	}
 	return chunks
 }
 
 // ChunkText splits text into chunks of at most maxTokens tokens, preferring
-// sentence boundaries when detectable. When the text decomposes into multiple
-// sentences, chunks are aligned to sentence boundaries with no overlap between
-// chunks. Sentences that individually exceed maxTokens are broken using the
-// naive token-window fallback. When no sentence boundaries are found (e.g.
-// code blocks or continuous prose without punctuation), the naive token-window
-// chunker with overlap is used throughout.
+// paragraphs, headings, list items, code blocks, and sentence boundaries.
+// Complete trailing units are reused to provide overlap without cutting those
+// structures. Oversized indivisible units use the token window fallback.
 func ChunkText(text string, maxTokens, overlap int) []TextChunk {
 	if maxTokens <= 0 {
 		maxTokens = 2048
@@ -235,18 +398,5 @@ func ChunkText(text string, maxTokens, overlap int) []TextChunk {
 		return []TextChunk{{Text: text, TokenCount: len(tokens)}}
 	}
 
-	// Attempt sentence-level splitting.
-	sentences := splitSentences(text)
-	if len(sentences) <= 1 {
-		// No usable sentence boundaries: fall back to naive chunking.
-		return naiveChunkTokens(tokens, maxTokens, overlap)
-	}
-
-	// Pre-compute token count per sentence.
-	sentTokens := make([]int, len(sentences))
-	for i, s := range sentences {
-		sentTokens[i] = len(tokenize(s))
-	}
-
-	return chunkBySentences(sentences, sentTokens, maxTokens)
+	return chunkByStructure(chunkUnits(text, maxTokens), maxTokens, overlap)
 }

@@ -265,6 +265,15 @@ type batchKeyChange struct {
 	newFaviconKey string
 }
 
+type storedDocumentState struct {
+	htmlKeys    []string
+	faviconKeys []string
+	indexNames  map[string]struct{}
+	addCount    uint
+	found       bool
+	label       string
+}
+
 type MultiBatch struct {
 	indexer           *indexer
 	batches           map[string]*bleve.Batch
@@ -695,8 +704,13 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 		}
 	}
 	if !d.SkipIndexing {
+		state := i.getStoredDocumentState(d.ID())
 		if incrementAddCount {
-			d.AddCount = i.nextAddCount(d)
+			if state.found {
+				d.AddCount = state.addCount + 1
+			} else {
+				d.AddCount = 1
+			}
 		} else if d.AddCount < 1 {
 			d.AddCount = 1
 		}
@@ -706,9 +720,9 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 			})
 		}
 		if d.Label == "" {
-			d.Label = getLabel(d.ID())
+			d.Label = state.label
 		}
-		if err := i.save(d); err != nil {
+		if err := i.saveWithState(d, state); err != nil {
 			return err
 		}
 	}
@@ -721,7 +735,11 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 }
 
 func (i *indexer) save(d *document.Document) error {
-	oldHTMLKeys, oldFaviconKeys, existingIndexes := i.getDocStorageByID(d.ID())
+	return i.saveWithState(d, i.getStoredDocumentState(d.ID()))
+}
+
+func (i *indexer) saveWithState(d *document.Document, state storedDocumentState) error {
+	existingIndexes := state.indexNames
 	if existingIndexes == nil {
 		existingIndexes = make(map[string]struct{}, len(i.indexers))
 		for name := range i.indexers {
@@ -748,12 +766,12 @@ func (i *indexer) save(d *document.Document) error {
 			return err
 		}
 	}
-	for _, k := range oldHTMLKeys {
+	for _, k := range state.htmlKeys {
 		if k != d.HTMLKey {
 			i.data.deleteIfOrphaned("html_key", htmlSubdir, k, i.countKeyRefs)
 		}
 	}
-	for _, k := range oldFaviconKeys {
+	for _, k := range state.faviconKeys {
 		if k != d.FaviconKey {
 			i.data.deleteIfOrphaned("favicon_key", faviconSubdir, k, i.countKeyRefs)
 		}
@@ -761,50 +779,59 @@ func (i *indexer) save(d *document.Document) error {
 	return nil
 }
 
-// getDocStorageByID fetches stored content keys and the indexes containing
-// every entry with the given Bleve document ID. The same document can appear
-// in more than one index when its detected language changes between additions.
-func (i *indexer) getDocStorageByID(id string) (htmlKeys, faviconKeys []string, indexNames map[string]struct{}) {
+// getStoredDocumentState fetches the fields needed to update an existing
+// document. The same document can appear in more than one index when its
+// detected language changes between additions.
+func (i *indexer) getStoredDocumentState(id string) storedDocumentState {
+	var state storedDocumentState
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
-	req.Fields = []string{"html_key", "favicon_key", "language"}
+	req.Fields = []string{"html_key", "favicon_key", "language", "add_count", "label"}
 	req.Size = len(i.indexers) + 1 // at most one entry per index
 	res, err := i.idx.Search(req)
 	if err != nil {
-		return nil, nil, nil
+		return state
 	}
 	seenHTML := make(map[string]struct{})
 	seenFav := make(map[string]struct{})
-	indexNames = make(map[string]struct{})
+	state.indexNames = make(map[string]struct{})
 	if len(res.Hits) < 1 {
-		return nil, nil, indexNames
+		return state
 	}
+	state.found = true
+	state.addCount = 1
 	for _, h := range res.Hits {
 		indexName := h.Index
 		if indexName == "" {
 			lang, _ := h.Fields["language"].(string)
 			indexName = indexNameForLanguage(lang)
 		}
-		indexNames[indexName] = struct{}{}
+		state.indexNames[indexName] = struct{}{}
+		if n, ok := h.Fields["add_count"].(float64); ok {
+			state.addCount = max(state.addCount, uint(n))
+		}
+		if state.label == "" {
+			state.label, _ = h.Fields["label"].(string)
+		}
 		if k, ok := h.Fields["html_key"].(string); ok && k != "" {
 			if _, dup := seenHTML[k]; !dup {
-				htmlKeys = append(htmlKeys, k)
+				state.htmlKeys = append(state.htmlKeys, k)
 				seenHTML[k] = struct{}{}
 			}
 		}
 		if k, ok := h.Fields["favicon_key"].(string); ok && k != "" {
 			if _, dup := seenFav[k]; !dup {
-				faviconKeys = append(faviconKeys, k)
+				state.faviconKeys = append(state.faviconKeys, k)
 				seenFav[k] = struct{}{}
 			}
 		}
 	}
-	return
+	return state
 }
 
 func (i *indexer) getDocKeysByID(id string) (htmlKeys, faviconKeys []string) {
-	htmlKeys, faviconKeys, _ = i.getDocStorageByID(id)
-	return
+	state := i.getStoredDocumentState(id)
+	return state.htmlKeys, state.faviconKeys
 }
 
 // countKeyRefs returns the number of indexed documents that reference the
@@ -1401,20 +1428,6 @@ func getByDocID(id string, include resultInclude) *document.Document {
 		return nil
 	}
 	return i.resFromHit(res.Hits[0], include)
-}
-
-func getLabel(id string) string {
-	q := bleve.NewDocIDQuery([]string{id})
-	req := bleve.NewSearchRequest(q)
-	req.Fields = []string{"label"}
-	res, err := i.idx.Search(req)
-	if err != nil || len(res.Hits) < 1 {
-		return ""
-	}
-	if l, ok := res.Hits[0].Fields["label"].(string); ok {
-		return l
-	}
-	return ""
 }
 
 func Iterate(fn func(*document.Document)) {

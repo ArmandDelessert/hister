@@ -254,6 +254,49 @@ func TestAddDocumentTreatsMissingAddCountAsOne(t *testing.T) {
 	}
 }
 
+func TestAddDocumentReusesExistingDocumentLookup(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	url := "https://example.com/reused-lookup"
+	if err := i.save(&document.Document{
+		URL:      url,
+		Title:    "Existing document",
+		Text:     "Existing document text",
+		Label:    "preserved label",
+		AddCount: 2,
+	}); err != nil {
+		t.Fatalf("initial save failed: %v", err)
+	}
+
+	searchesBefore := indexSearchCount(t, i.indexers[defaultIndexerName])
+	if err := Add(&document.Document{
+		URL:   url,
+		Title: "Updated document",
+		Text:  "Updated document text",
+	}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	searches := indexSearchCount(t, i.indexers[defaultIndexerName]) - searchesBefore
+	if searches != 1 {
+		t.Fatalf("existing document searches = %d, want 1", searches)
+	}
+
+	got := GetByURLAndUser(url, 0)
+	if got == nil {
+		t.Fatal("document not found after add")
+	}
+	if got.AddCount != 3 {
+		t.Fatalf("AddCount = %d, want 3", got.AddCount)
+	}
+	if got.Label != "preserved label" {
+		t.Fatalf("Label = %q, want %q", got.Label, "preserved label")
+	}
+}
+
 func TestSaveRemovesStaleLanguageCopy(t *testing.T) {
 	idxCfg := testutil.Config(t)
 	if err := Init(idxCfg); err != nil {
@@ -324,6 +367,16 @@ func indexDeleteCount(t *testing.T, idx bleve.Index) uint64 {
 		t.Fatalf("delete count has type %T, want uint64", indexStats["deletes"])
 	}
 	return deletes
+}
+
+func indexSearchCount(t *testing.T, idx bleve.Index) uint64 {
+	t.Helper()
+	stats := idx.StatsMap()
+	searches, ok := stats["searches"].(uint64)
+	if !ok {
+		t.Fatalf("search count has type %T, want uint64", stats["searches"])
+	}
+	return searches
 }
 
 func countDocIDCopies(t *testing.T, id string) uint64 {

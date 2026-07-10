@@ -211,6 +211,46 @@ func TestAddDocumentDoesNotIncrementAddCountForExtraDocuments(t *testing.T) {
 	}
 }
 
+func TestMultiBatchAddsExtraDocuments(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	parentURL := "https://example.com/batch-parent"
+	extraURL := "https://example.com/batch-extra"
+	batch := NewMultiBatch()
+	if err := batch.Add(&document.Document{
+		URL:   parentURL,
+		Title: "Parent",
+		Text:  "Parent document text",
+		ExtraDocuments: []*document.Document{
+			{
+				URL:   extraURL,
+				Title: "Extra",
+				Text:  "Extra document text",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("batch add failed: %v", err)
+	}
+	if err := batch.Save(); err != nil {
+		t.Fatalf("batch save failed: %v", err)
+	}
+
+	if GetByURLAndUser(parentURL, 0) == nil {
+		t.Fatal("parent document not found")
+	}
+	extra := GetByURLAndUser(extraURL, 0)
+	if extra == nil {
+		t.Fatal("extra document not found")
+	}
+	if extra.AddCount != 1 {
+		t.Fatalf("extra AddCount = %d, want 1", extra.AddCount)
+	}
+}
+
 func TestAddDocumentTreatsMissingAddCountAsOne(t *testing.T) {
 	idxCfg := testutil.Config(t)
 	if err := Init(idxCfg); err != nil {

@@ -3,12 +3,64 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/asciimoo/hister/server/document"
 )
+
+// AddDocumentResult describes the outcome of one document in a bulk request.
+type AddDocumentResult struct {
+	Status int    `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+type addDocumentOperation struct {
+	Op string `json:"op"`
+	*document.Document
+}
+
+// AddDocumentsJSON submits documents in one bulk request.
+func (c *Client) AddDocumentsJSON(docs []*document.Document) (_ []AddDocumentResult, err error) {
+	ops := make([]addDocumentOperation, len(docs))
+	for i, doc := range docs {
+		if c.allowSensitive {
+			doc.SkipSensitiveCheck = true
+		}
+		ops[i] = addDocumentOperation{Op: "add", Document: doc}
+	}
+	data, err := json.Marshal(struct {
+		Ops []addDocumentOperation `json:"ops"`
+	}{Ops: ops})
+	if err != nil {
+		return nil, err
+	}
+	req, err := c.newRequest("POST", "/api/batch", bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer closeBody(resp, &err)
+	if err = checkStatus(resp); err != nil {
+		return nil, err
+	}
+	var result struct {
+		Results []AddDocumentResult `json:"results"`
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if len(result.Results) != len(docs) {
+		return nil, fmt.Errorf("batch response contained %d results for %d documents", len(result.Results), len(docs))
+	}
+	return result.Results, nil
+}
 
 func (c *Client) AddDocumentJSON(doc *document.Document) (err error) {
 	if c.allowSensitive {

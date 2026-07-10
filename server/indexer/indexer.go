@@ -1083,41 +1083,59 @@ func (b *MultiBatch) getOrCreateBatch(name string, idx bleve.Index) *bleve.Batch
 }
 
 func (b *MultiBatch) Add(d *document.Document) error {
+	return b.add(d, b.incrementAddCount)
+}
+
+func (b *MultiBatch) add(d *document.Document, incrementAddCount bool) error {
 	if !d.IsProcessed() {
 		if err := d.Process(i.langDetector, extractor.Extract); err != nil {
 			return err
 		}
 	}
-	if b.incrementAddCount {
-		d.AddCount = b.indexer.nextAddCount(d)
-	} else if d.AddCount < 1 {
-		d.AddCount = 1
-	}
-	if b.indexer.embedder != nil && b.indexer.vectorStore != nil {
-		embedDocumentChunks(b.indexer.embedCtx, b.indexer, d)
-	}
-	oldHTMLKeys, oldFaviconKeys := b.indexer.getDocKeysByID(d.ID())
-	if err := b.indexer.prepareForStorage(d); err != nil {
-		return err
-	}
-	idx := b.indexer.getOrCreate(d.Language)
-	for name, subIdx := range b.indexer.indexers {
-		if name == idx.Name() {
-			continue
+	if !d.SkipIndexing {
+		state := b.indexer.getStoredDocumentState(d.ID())
+		if incrementAddCount {
+			if state.found {
+				d.AddCount = state.addCount + 1
+			} else {
+				d.AddCount = 1
+			}
+		} else if d.AddCount < 1 {
+			d.AddCount = 1
 		}
-		b.getOrCreateBatch(name, subIdx).Delete(d.ID())
-	}
-	if err := b.getOrCreateBatch(idx.Name(), idx).Index(d.ID(), d); err != nil {
-		return err
-	}
-	for _, k := range oldHTMLKeys {
-		if k != d.HTMLKey {
-			b.keyChanges = append(b.keyChanges, batchKeyChange{oldHTMLKey: k, newHTMLKey: d.HTMLKey})
+		if d.Label == "" {
+			d.Label = state.label
+		}
+		if b.indexer.embedder != nil && b.indexer.vectorStore != nil {
+			embedDocumentChunks(b.indexer.embedCtx, b.indexer, d)
+		}
+		if err := b.indexer.prepareForStorage(d); err != nil {
+			return err
+		}
+		idx := b.indexer.getOrCreate(d.Language)
+		for name, subIdx := range b.indexer.indexers {
+			if name == idx.Name() {
+				continue
+			}
+			b.getOrCreateBatch(name, subIdx).Delete(d.ID())
+		}
+		if err := b.getOrCreateBatch(idx.Name(), idx).Index(d.ID(), d); err != nil {
+			return err
+		}
+		for _, k := range state.htmlKeys {
+			if k != d.HTMLKey {
+				b.keyChanges = append(b.keyChanges, batchKeyChange{oldHTMLKey: k, newHTMLKey: d.HTMLKey})
+			}
+		}
+		for _, k := range state.faviconKeys {
+			if k != d.FaviconKey {
+				b.keyChanges = append(b.keyChanges, batchKeyChange{oldFaviconKey: k, newFaviconKey: d.FaviconKey})
+			}
 		}
 	}
-	for _, k := range oldFaviconKeys {
-		if k != d.FaviconKey {
-			b.keyChanges = append(b.keyChanges, batchKeyChange{oldFaviconKey: k, newFaviconKey: d.FaviconKey})
+	for _, extra := range d.ExtraDocuments {
+		if err := b.add(extra, false); err != nil {
+			log.Warn().Err(err).Str("url", extra.URL).Msg("failed to index extra document")
 		}
 	}
 	return nil
@@ -1432,15 +1450,6 @@ func GetAddCountByURLAndUser(u string, uid uint) uint {
 	}
 	count, _ := i.getAddCountByDocID(document.GetDocID(0, u))
 	return count
-}
-
-func (i *indexer) nextAddCount(d *document.Document) uint {
-	// TODO perhaps a lock here?
-	count, found := i.getAddCountByDocID(d.ID())
-	if !found {
-		return 1
-	}
-	return count + 1
 }
 
 func (i *indexer) getAddCountByDocID(id string) (uint, bool) {

@@ -152,6 +152,10 @@ documents whose "added" timestamp falls within the given date range.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		skip, _ := cmd.Flags().GetBool("skip-existing")
 		global, _ := cmd.Flags().GetBool("global")
+		batchSize, _ := cmd.Flags().GetInt("batch-size")
+		if batchSize < 1 || batchSize > maxImportBatchSize {
+			exit(1, fmt.Sprintf("--batch-size must be between 1 and %d", maxImportBatchSize))
+		}
 
 		dateRange, err := parseDateRangeFlags(cmd)
 		if err != nil {
@@ -174,7 +178,7 @@ documents whose "added" timestamp falls within the given date range.`,
 			if ext := strings.ToLower(filepath.Ext(inputFile)); ext == ".html" || ext == ".htm" {
 				i, s, e = importHTMLFile(c, inputFile, skip)
 			} else {
-				i, s, e = importJSONFile(c, inputFile, skip, dateRange.From, dateRange.To)
+				i, s, e = importJSONFile(c, inputFile, skip, dateRange.From, dateRange.To, batchSize)
 			}
 			imported += i
 			skipped += s
@@ -191,6 +195,11 @@ documents whose "added" timestamp falls within the given date range.`,
 		fmt.Println(msg)
 	},
 }
+
+const (
+	defaultImportBatchSize = 10
+	maxImportBatchSize     = 100
+)
 
 func isSupportedImportInput(inputFile string) bool {
 	switch strings.ToLower(filepath.Ext(inputFile)) {
@@ -231,7 +240,7 @@ func expandImportInputs(args []string) ([]string, error) {
 // importJSONFile imports documents from a JSON export file (optionally a
 // 7z-compressed archive) and submits them to the running server. It returns
 // the number of documents imported, skipped and failed.
-func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, endDate int64) (imported, skipped, errCount int) {
+func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, endDate int64, batchSize int) (imported, skipped, errCount int) {
 	var reader io.Reader
 
 	if strings.HasSuffix(strings.ToLower(inputFile), ".7z") {
@@ -285,6 +294,16 @@ func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, en
 	const maxLineSize = 64 * 1024 * 1024 // 64 MB covers large HTML+favicon lines
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), maxLineSize)
+	docs := make([]*document.Document, 0, batchSize)
+	flush := func() {
+		if len(docs) == 0 {
+			return
+		}
+		i, e := addDocumentBatch(c, docs)
+		imported += i
+		errCount += e
+		docs = docs[:0]
+	}
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -315,13 +334,12 @@ func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, en
 				continue
 			}
 		}
-		if err := c.AddDocumentJSON(&d); err != nil {
-			log.Warn().Err(err).Str("url", d.URL).Msg("Failed to add document")
-			errCount++
-			continue
+		docs = append(docs, &d)
+		if len(docs) == batchSize {
+			flush()
 		}
-		imported++
 	}
+	flush()
 
 	if err := scanner.Err(); err != nil {
 		log.Warn().Err(err).Str("file", inputFile).Msg("Failed to read input file")
@@ -329,6 +347,23 @@ func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, en
 	}
 
 	return imported, skipped, errCount
+}
+
+func addDocumentBatch(c *client.Client, docs []*document.Document) (imported, errCount int) {
+	results, err := c.AddDocumentsJSON(docs)
+	if err != nil {
+		log.Warn().Err(err).Int("documents", len(docs)).Msg("Failed to add document batch")
+		return 0, len(docs)
+	}
+	for i, result := range results {
+		if result.Status >= 200 && result.Status < 300 {
+			imported++
+			continue
+		}
+		log.Warn().Int("status", result.Status).Str("error", result.Error).Str("url", docs[i].URL).Msg("Failed to add document")
+		errCount++
+	}
+	return imported, errCount
 }
 
 // importHTMLFile reads a single HTML file, builds a document from it by
@@ -359,10 +394,6 @@ func importHTMLFile(c *client.Client, inputFile string, skip bool) (imported, sk
 		}
 	}
 
-	if err := c.AddDocumentJSON(d); err != nil {
-		log.Warn().Err(err).Str("url", d.URL).Msg("Failed to add document")
-		return 0, 0, 1
-	}
-
-	return 1, 0, 0
+	imported, errCount = addDocumentBatch(c, []*document.Document{d})
+	return imported, 0, errCount
 }

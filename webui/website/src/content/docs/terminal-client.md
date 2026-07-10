@@ -130,6 +130,8 @@ Useful flags:
 - `--skip-existing` do not overwrite documents that are already in the index.
 - `--start-date` / `--end-date` (`YYYY-MM-DD`) only import documents whose `added`
   timestamp falls within the given date range (applies to JSON exports).
+- `--batch-size` controls how many documents are submitted in each bulk request.
+  The default is `10` and the maximum is `100`.
 
 > **Note:** `hister import` talks to a running Hister server, so make sure the server
 > is started before importing. To bulk-import browsing history instead, see

@@ -1,11 +1,26 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/asciimoo/hister/client"
+	"github.com/asciimoo/hister/server/document"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestExpandImportInputsExpandsDirectory(t *testing.T) {
 	dir := t.TempDir()
@@ -60,5 +75,94 @@ func TestIsSupportedImportInput(t *testing.T) {
 		if got := isSupportedImportInput(input); got != want {
 			t.Fatalf("isSupportedImportInput(%q) = %v, want %v", input, got, want)
 		}
+	}
+}
+
+func TestImportJSONFileUsesConfiguredBatchSize(t *testing.T) {
+	var batchSizes []int
+	var receivedLabel string
+	var receivedMetadata map[string]any
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/batch" {
+			t.Errorf("request path = %q, want /api/batch", r.URL.Path)
+		}
+		var req struct {
+			Ops []struct {
+				Op       string         `json:"op"`
+				Label    string         `json:"label"`
+				Metadata map[string]any `json:"metadata"`
+			} `json:"ops"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return nil, fmt.Errorf("decode request: %w", err)
+		}
+		batchSizes = append(batchSizes, len(req.Ops))
+		if len(batchSizes) == 1 && len(req.Ops) > 0 {
+			receivedLabel = req.Ops[0].Label
+			receivedMetadata = req.Ops[0].Metadata
+		}
+		results := make([]map[string]any, len(req.Ops))
+		for i, op := range req.Ops {
+			if op.Op != "add" {
+				t.Errorf("operation = %q, want add", op.Op)
+			}
+			results[i] = map[string]any{"status": http.StatusCreated}
+		}
+		var response bytes.Buffer
+		if err := json.NewEncoder(&response).Encode(map[string]any{"results": results}); err != nil {
+			return nil, fmt.Errorf("encode response: %w", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(response.Bytes())),
+			Request:    r,
+		}, nil
+	})}
+
+	var input strings.Builder
+	for i := range 23 {
+		doc := &document.Document{
+			URL:   fmt.Sprintf("https://example.com/%d", i),
+			Title: fmt.Sprintf("Document %d", i),
+		}
+		if i == 0 {
+			doc.Label = "reference"
+			doc.Metadata = map[string]any{"source": "export"}
+		}
+		line, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input.Write(line)
+		input.WriteByte('\n')
+	}
+	inputFile := filepath.Join(t.TempDir(), "export.json")
+	if err := os.WriteFile(inputFile, []byte(input.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	imported, skipped, errCount := importJSONFile(client.New("http://hister.test", client.WithHTTPClient(httpClient)), inputFile, false, 0, 0, 10)
+	if imported != 23 || skipped != 0 || errCount != 0 {
+		t.Fatalf("importJSONFile() = (%d, %d, %d), want (23, 0, 0)", imported, skipped, errCount)
+	}
+	if want := []int{10, 10, 3}; !reflect.DeepEqual(batchSizes, want) {
+		t.Fatalf("batch sizes = %v, want %v", batchSizes, want)
+	}
+	if receivedLabel != "reference" {
+		t.Fatalf("label = %q, want reference", receivedLabel)
+	}
+	if receivedMetadata["source"] != "export" {
+		t.Fatalf("metadata source = %v, want export", receivedMetadata["source"])
+	}
+}
+
+func TestImportBatchSizeDefault(t *testing.T) {
+	batchSize, err := importCmd.Flags().GetInt("batch-size")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batchSize != 10 {
+		t.Fatalf("batch size default = %d, want 10", batchSize)
 	}
 }

@@ -281,6 +281,7 @@ func init() {
 	importCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 	importCmd.Flags().String("start-date", "", "only import documents added on or after this date (YYYY-MM-DD)")
 	importCmd.Flags().String("end-date", "", "only import documents added on or before this date (YYYY-MM-DD)")
+	importCmd.Flags().Int("batch-size", defaultImportBatchSize, "number of documents submitted per bulk request (maximum 100)")
 	importCmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
 	importCmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
 

@@ -8,6 +8,11 @@ import (
 	"github.com/asciimoo/hister/config"
 )
 
+const (
+	searchCandidateMultiplier = 4
+	maxChunksPerDocument      = 2
+)
+
 // Result represents a single semantic search hit at the chunk level.
 type Result struct {
 	DocID      string  `json:"doc_id"`
@@ -66,6 +71,41 @@ func mergeSearchResults(topK int, groups ...[]Result) []Result {
 	return results
 }
 
+func searchCandidateLimit(documentLimit int) int {
+	if documentLimit <= 0 {
+		return documentLimit
+	}
+	return documentLimit * searchCandidateMultiplier
+}
+
+// diversifySearchResults selects the best matching documents while retaining
+// a small number of their strongest chunks. Results must be ordered by
+// descending similarity. Limiting chunks per document prevents long documents
+// from consuming the semantic candidate pool returned to the indexer.
+func diversifySearchResults(results []Result, documentLimit, chunkLimit int) []Result {
+	if documentLimit <= 0 || chunkLimit <= 0 || len(results) == 0 {
+		return nil
+	}
+
+	selectedDocuments := make(map[string]struct{}, documentLimit)
+	chunkCounts := make(map[string]int, documentLimit)
+	diverse := make([]Result, 0, min(len(results), documentLimit*chunkLimit))
+	for _, result := range results {
+		if _, selected := selectedDocuments[result.DocID]; !selected {
+			if len(selectedDocuments) >= documentLimit {
+				continue
+			}
+			selectedDocuments[result.DocID] = struct{}{}
+		}
+		if chunkCounts[result.DocID] >= chunkLimit {
+			continue
+		}
+		diverse = append(diverse, result)
+		chunkCounts[result.DocID]++
+	}
+	return diverse
+}
+
 // VectorStore is the interface for vector similarity backends.
 type VectorStore interface {
 	// Init creates tables/extensions if missing. Safe to call on every startup.
@@ -79,8 +119,9 @@ type VectorStore interface {
 	// Delete removes all chunk embeddings for a document.
 	Delete(docID string) error
 
-	// Search returns up to topK chunks whose embeddings are closest to the
-	// query vector, with similarity >= threshold, scoped to the given userID.
+	// Search returns candidates for up to topK documents whose chunk embeddings
+	// are closest to the query vector, with similarity >= threshold, scoped to
+	// the given userID. A backend may return more than one chunk per document.
 	Search(vector []float32, topK int, threshold float64, userID uint) ([]Result, error)
 
 	// Clear removes all embeddings. Used during reindex to rebuild from scratch.

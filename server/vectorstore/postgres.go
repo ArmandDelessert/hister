@@ -114,15 +114,17 @@ func (p *pgVectorStore) Delete(docID string) error {
 }
 
 func (p *pgVectorStore) Search(vector []float32, topK int, threshold float64, userID uint) (_ []Result, err error) {
-	userResults, err := p.searchUser(vector, topK, threshold, userID)
+	candidateLimit := searchCandidateLimit(topK)
+	userResults, err := p.searchUser(vector, candidateLimit, threshold, userID)
 	if err != nil || userID == 0 {
-		return userResults, err
+		return diversifySearchResults(userResults, topK, maxChunksPerDocument), err
 	}
-	globalResults, err := p.searchUser(vector, topK, threshold, 0)
+	globalResults, err := p.searchUser(vector, candidateLimit, threshold, 0)
 	if err != nil {
 		return nil, err
 	}
-	return mergeSearchResults(topK, userResults, globalResults), nil
+	merged := mergeSearchResults(0, userResults, globalResults)
+	return diversifySearchResults(merged, topK, maxChunksPerDocument), nil
 }
 
 func (p *pgVectorStore) searchUser(vector []float32, topK int, threshold float64, userID uint) (_ []Result, err error) {

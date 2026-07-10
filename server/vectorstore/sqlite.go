@@ -144,15 +144,17 @@ func (s *sqliteVectorStore) Delete(docID string) error {
 }
 
 func (s *sqliteVectorStore) Search(vector []float32, topK int, threshold float64, userID uint) (_ []Result, err error) {
-	userResults, err := s.searchUser(vector, topK, threshold, userID)
+	candidateLimit := searchCandidateLimit(topK)
+	userResults, err := s.searchUser(vector, candidateLimit, threshold, userID)
 	if err != nil || userID == 0 {
-		return userResults, err
+		return diversifySearchResults(userResults, topK, maxChunksPerDocument), err
 	}
-	globalResults, err := s.searchUser(vector, topK, threshold, 0)
+	globalResults, err := s.searchUser(vector, candidateLimit, threshold, 0)
 	if err != nil {
 		return nil, err
 	}
-	return mergeSearchResults(topK, userResults, globalResults), nil
+	merged := mergeSearchResults(0, userResults, globalResults)
+	return diversifySearchResults(merged, topK, maxChunksPerDocument), nil
 }
 
 func (s *sqliteVectorStore) searchUser(vector []float32, topK int, threshold float64, userID uint) (_ []Result, err error) {

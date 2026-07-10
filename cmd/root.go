@@ -476,6 +476,22 @@ func initIndex() {
 	} else if indexer.Version > v {
 		log.Warn().Msg(cliWarningStyle.Render("There is a new indexer version. Run `hister reindex` to update your index."))
 	}
+	activeFingerprint := indexer.AnalyzerFingerprint(cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords)
+	storedFingerprint, err := model.GetAnalyzerFingerprint()
+	if err != nil {
+		exit(1, "Failed to retrieve analyzer configuration fingerprint: "+err.Error())
+	}
+	if storedFingerprint == "" {
+		if v == -1 {
+			if err := model.SetAnalyzerFingerprint(activeFingerprint); err != nil {
+				exit(1, "Failed to store analyzer configuration fingerprint: "+err.Error())
+			}
+		} else {
+			log.Warn().Msg(cliWarningStyle.Render("The indexed analyzer configuration is unknown. Run `hister reindex` to record the active configuration."))
+		}
+	} else if storedFingerprint != activeFingerprint {
+		log.Warn().Msg(cliWarningStyle.Render("The analyzer configuration differs from the indexed configuration. Run `hister reindex` to update your index."))
+	}
 	log.Debug().Msg("Indexer initialization complete")
 }
 

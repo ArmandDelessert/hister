@@ -86,6 +86,7 @@ server:
 
 indexer:
   detect_languages: true
+  keep_stopwords: false
   directories:
     - path: '~/notes'
       filetypes: ['txt', 'md']
@@ -251,6 +252,7 @@ TUI settings are configured in a separate `tui.yaml` file located in the same di
 | Key                | Type        | Default | Description                                                                                                                                                        |
 | ------------------ | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `detect_languages` | bool        | `true`  | Enable automatic language detection for indexed pages. See [Language Detection](#language-detection) for details on memory/CPU impact and reindexing requirements. |
+| `keep_stopwords`   | bool        | `false` | Preserve stop words while retaining language analysis. Changing this option requires reindexing.                                                                   |
 | `directories`      | Directory[] | (none)  | List of local directories to index. See [Local Directory Indexing](#local-directory-indexing) for details.                                                         |
 | `max_file_size_mb` | int         | `1`     | Maximum file size (in MB) to index. Files larger than this value are skipped.                                                                                      |
 
@@ -492,15 +494,17 @@ The login page hides the username/password form when `oauth_only` is active, sho
 
 The `indexer.detect_languages` option (default: `true`) controls automatic language detection for indexed pages. When enabled, Hister uses language detection libraries to identify the language of each page's content, creating separate language-specific indexes that improve search accuracy through language-aware tokenization and stemming.
 
+The `indexer.keep_stopwords` option defaults to `false`. When enabled together with language detection, Hister retains stop words while continuing to apply the other language analyzer operations, including normalization and stemming. This is useful when quoted phrases must include common words such as `for` and `your`.
+
 **Performance considerations**: Language detection increases both CPU usage and memory consumption. Each document requires additional processing to analyze text and determine its language, and separate indexes are maintained for each detected language. If you're experiencing memory pressure or slow indexing performance, especially with large numbers of documents, consider disabling this feature.
 
-**Important**: Changing this setting requires a full reindex to take effect. After enabling or disabling language detection in your config file, run:
+**Important**: Changing either analyzer setting requires a full reindex to take effect. After changing `detect_languages` or `keep_stopwords`, run:
 
 ```bash
 hister reindex
 ```
 
-The reindex operation will rebuild all indexes according to the new setting. With language detection disabled, all documents are indexed using a single default analyzer, reducing memory overhead and simplifying the indexing process at the cost of potentially less accurate search results.
+The reindex operation will rebuild all indexes according to the new settings. Hister stores an analyzer configuration fingerprint and warns at startup when the configured settings differ from those used by the current index. With language detection disabled, all documents are indexed using a single default analyzer, reducing memory overhead and simplifying the indexing process at the cost of potentially less accurate search results.
 
 ## `hotkeys.web` Section
 

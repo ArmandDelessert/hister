@@ -1996,13 +1996,18 @@ func serveReindex(c *webContext) {
 		serve500(c)
 		return
 	}
-	if err := indexer.Reindex(c.Config.FullPath(""), c.Config.Rules, req.SkipSensitive, req.DetectLanguages, c.Config.Indexer.Directories); err != nil {
+	if err := indexer.Reindex(c.Config.FullPath(""), c.Config.Rules, req.SkipSensitive, req.DetectLanguages, c.Config.Indexer.KeepStopwords, c.Config.Indexer.Directories); err != nil {
 		log.Error().Err(err).Msg("reindex failed")
 		serve500(c)
 		return
 	}
 	if err := model.SetIndexerVersion(indexer.Version); err != nil {
 		log.Error().Err(err).Msg("failed to update indexer version")
+		serve500(c)
+		return
+	}
+	if err := model.SetAnalyzerFingerprint(indexer.AnalyzerFingerprint(req.DetectLanguages, c.Config.Indexer.KeepStopwords)); err != nil {
+		log.Error().Err(err).Msg("failed to update analyzer configuration fingerprint")
 		serve500(c)
 		return
 	}

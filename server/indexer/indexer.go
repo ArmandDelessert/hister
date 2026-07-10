@@ -56,6 +56,7 @@ type indexer struct {
 	embedCancel       context.CancelFunc
 	embedWg           sync.WaitGroup // tracks in-flight async embeddings
 	disablePreviews   bool
+	keepStopwords     bool
 }
 
 const (
@@ -313,7 +314,7 @@ func Init(cfg *config.Config) error {
 	}
 	document.SetSensitiveContentPattern(regexp.MustCompile(fmt.Sprintf("(%s)", strings.Join(sp, "|"))))
 	var err error
-	i, err = initializeIndexer(cfg.FullPath(""), cfg.Indexer.DetectLanguages)
+	i, err = initializeIndexer(cfg.FullPath(""), cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords)
 	if err != nil {
 		return err
 	}
@@ -343,7 +344,7 @@ func Init(cfg *config.Config) error {
 	return nil
 }
 
-func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) {
+func initializeIndexer(basePath string, detectLanguages, keepStopwords bool) (*indexer, error) {
 	if _, err := os.Stat(basePath); errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 			return nil, err
@@ -355,7 +356,7 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 		if err.Error() == "timeout" {
 			return nil, errors.New("cannot open index: index is already opened - close other Hister instances and try again")
 		}
-		mapping := createMapping("default")
+		mapping := createMapping("default", keepStopwords)
 		idx, err = bleve.NewUsing(idxPath, mapping, bleve.Config.DefaultIndexType, bleve.Config.DefaultMemKVStore, bleveRuntimeConfig())
 		if err != nil {
 			return nil, err
@@ -368,10 +369,11 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 		indexers: map[string]bleve.Index{
 			defaultIndexerName: idx,
 		},
-		dir:         basePath,
-		embedCtx:    embedCtx,
-		embedCancel: embedCancel,
-		data:        newDataStore(filepath.Join(basePath, dataDirName)),
+		dir:           basePath,
+		keepStopwords: keepStopwords,
+		embedCtx:      embedCtx,
+		embedCancel:   embedCancel,
+		data:          newDataStore(filepath.Join(basePath, dataDirName)),
 	}
 	initialized := false
 	defer func() {
@@ -410,7 +412,43 @@ func initializeIndexer(basePath string, detectLanguages bool) (*indexer, error) 
 	return i, nil
 }
 
-func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages bool, dirs []*config.Directory) error {
+func openReindexSources(basePath string, current map[string]bleve.Index) (map[string]bleve.Index, func(), error) {
+	sources := maps.Clone(current)
+	extraSources := []bleve.Index{}
+	closeExtraSources := func() {
+		for _, source := range extraSources {
+			if err := source.Close(); err != nil {
+				log.Warn().Err(err).Str("index", source.Name()).Msg("failed to close reindex source")
+			}
+		}
+		extraSources = nil
+	}
+
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "index_") || !strings.HasSuffix(name, ".db") {
+			continue
+		}
+		if _, exists := sources[name]; exists {
+			continue
+		}
+		source, err := bleve.OpenUsing(filepath.Join(basePath, name), bleveRuntimeConfig())
+		if err != nil {
+			closeExtraSources()
+			return nil, nil, err
+		}
+		source.SetName(name)
+		sources[name] = source
+		extraSources = append(extraSources, source)
+	}
+	return sources, closeExtraSources, nil
+}
+
+func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages, keepStopwords bool, dirs []*config.Directory) error {
 	// TODO store new documents in both indexes while running reindex to guarantee not losing any data.
 	if !i.reindexInProgress.CompareAndSwap(false, true) {
 		return errors.New("Reindex is already running")
@@ -423,7 +461,12 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 			return err
 		}
 	}
-	tmpIdx, err := initializeIndexer(tmpBasePath, detectLanguages)
+	sourceIndexes, closeExtraSources, err := openReindexSources(basePath, idx.indexers)
+	if err != nil {
+		return err
+	}
+	defer closeExtraSources()
+	tmpIdx, err := initializeIndexer(tmpBasePath, detectLanguages, keepStopwords)
 	if err != nil {
 		return err
 	}
@@ -456,10 +499,18 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 		return err
 	}
 	q := query.NewMatchAllQuery()
-	total := idx.Total()
+	var total uint64
+	for name, source := range sourceIndexes {
+		count, err := source.DocCount()
+		if err != nil {
+			log.Warn().Err(err).Str("index", name).Msg("failed to count reindex source")
+			continue
+		}
+		total += count
+	}
 	batchSize := 50
 	processed := 0
-	for subIdxName, subIdx := range idx.indexers {
+	for subIdxName, subIdx := range sourceIndexes {
 		log.Info().Str("sub-index", subIdxName).Msg("Reindexing sub-index")
 		var sortKey []string
 		req := bleve.NewSearchRequest(q)
@@ -529,11 +580,12 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 			log.Info().Msg(fmt.Sprintf("Reindexed [%d/%d]", processed, total))
 		}
 	}
+	closeExtraSources()
 	idx.vectorStore = nil // prevent Close() from closing the store we're still using
 	idx.Close()
 	tmpIdx.vectorStore = nil // already referenced by vs; prevent double-close
 	tmpIdx.Close()
-	for n := range idx.indexers {
+	for n := range sourceIndexes {
 		idxPath := filepath.Join(basePath, n)
 		if err := os.RemoveAll(idxPath); err != nil {
 			return err
@@ -550,7 +602,7 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 	if renameError != nil {
 		return errors.New("failed to rename tmp indexes during the reindex, resolve the issue manually")
 	}
-	i, err = initializeIndexer(basePath, detectLanguages)
+	i, err = initializeIndexer(basePath, detectLanguages, keepStopwords)
 	if err != nil {
 		return err
 	}
@@ -977,7 +1029,7 @@ func indexNameForLanguage(lang string) string {
 }
 
 func (i *indexer) addIndexer(name, lang string) error {
-	mapping := createMapping(lang)
+	mapping := createMapping(lang, i.keepStopwords)
 	idx, err := bleve.NewUsing(filepath.Join(i.dir, name), mapping, bleve.Config.DefaultIndexType, bleve.Config.DefaultMemKVStore, bleveRuntimeConfig())
 	if err != nil {
 		return err
@@ -1608,22 +1660,38 @@ func (q *Query) create() query.Query {
 	return sq
 }
 
-func createMapping(lang string) mapping.IndexMapping {
+func createMapping(lang string, keepStopwords bool) mapping.IndexMapping {
 	im := bleve.NewIndexMapping()
 	textAnalyzer := lang
-	if lang == document.UnknownLanguage || lang == "" || lang == "default" {
-		err := im.AddCustomAnalyzer("default", map[string]any{
+	addDefaultAnalyzer := func() {
+		if err := im.AddCustomAnalyzer("default", map[string]any{
 			"type":         custom.Name,
 			"char_filters": []string{},
 			"tokenizer":    unicode.Name,
 			"token_filters": []string{
 				lowercase.Name,
 			},
-		})
-		if err != nil {
+		}); err != nil {
 			panic(err)
 		}
+	}
+	if lang == document.UnknownLanguage || lang == "" || lang == "default" {
+		addDefaultAnalyzer()
 		textAnalyzer = "default"
+	} else if keepStopwords {
+		if im.AnalyzerNamed(lang) == nil {
+			log.Warn().Str("language", lang).Msg("Language analyzer unavailable, using default analyzer")
+			addDefaultAnalyzer()
+			textAnalyzer = "default"
+		} else {
+			textAnalyzer = lang + "_keep_stopwords"
+			if err := im.AddCustomAnalyzer(textAnalyzer, map[string]any{
+				"type":     keepStopwordsAnalyzerType,
+				"language": lang,
+			}); err != nil {
+				panic(err)
+			}
+		}
 	}
 	err := im.AddCustomAnalyzer("url", map[string]any{
 		"type":          custom.Name,

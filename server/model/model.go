@@ -101,7 +101,8 @@ type CommonFields struct {
 }
 
 type IndexerVersion struct {
-	Version int `json:"version"`
+	Version             int    `json:"version"`
+	AnalyzerFingerprint string `json:"analyzer_fingerprint"`
 }
 
 func GetIndexerVersion() (int, error) {
@@ -117,8 +118,33 @@ func GetIndexerVersion() (int, error) {
 func SetIndexerVersion(v int) error {
 	var r IndexerVersion
 	if err := DB.Model(&IndexerVersion{}).First(&r).Error; err != nil {
-		r = IndexerVersion{v}
+		r = IndexerVersion{Version: v}
 		return DB.Create(&r).Error
 	}
 	return DB.Model(&IndexerVersion{}).Where("version != ?", v).Update("version", v).Error
+}
+
+func GetAnalyzerFingerprint() (string, error) {
+	var r IndexerVersion
+	if err := DB.Model(&IndexerVersion{}).First(&r).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return r.AnalyzerFingerprint, nil
+}
+
+func SetAnalyzerFingerprint(fingerprint string) error {
+	var r IndexerVersion
+	if err := DB.Model(&IndexerVersion{}).First(&r).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		r = IndexerVersion{AnalyzerFingerprint: fingerprint}
+		return DB.Create(&r).Error
+	}
+	return DB.Model(&IndexerVersion{}).
+		Where("analyzer_fingerprint != ? OR analyzer_fingerprint IS NULL", fingerprint).
+		Update("analyzer_fingerprint", fingerprint).Error
 }

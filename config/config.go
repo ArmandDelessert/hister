@@ -107,6 +107,7 @@ type Directory struct {
 
 type Indexer struct {
 	DetectLanguages bool         `yaml:"detect_languages" mapstructure:"detect_languages"`
+	KeepStopwords   bool         `yaml:"keep_stopwords" mapstructure:"keep_stopwords"`
 	Directories     []*Directory `yaml:"directories" mapstructure:"directories"`
 	MaxFileSize     int64        `yaml:"max_file_size_mb" mapstructure:"max_file_size_mb"`
 }
@@ -490,6 +491,7 @@ func CreateDefaultConfig() *Config {
 		},
 		Indexer: Indexer{
 			DetectLanguages: true,
+			KeepStopwords:   false,
 			MaxFileSize:     1,
 		},
 		Crawler: CrawlerConfig{

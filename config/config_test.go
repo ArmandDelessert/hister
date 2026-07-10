@@ -34,6 +34,24 @@ func TestServerDefaults(t *testing.T) {
 	}
 }
 
+func TestIndexerDefaults(t *testing.T) {
+	cfg := CreateDefaultConfig()
+	if !cfg.Indexer.DetectLanguages {
+		t.Fatal("default indexer.detect_languages=false, want true")
+	}
+	if cfg.Indexer.KeepStopwords {
+		t.Fatal("default indexer.keep_stopwords=true, want false")
+	}
+
+	cfg, err := parseConfig([]byte("indexer:\n  keep_stopwords: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Indexer.KeepStopwords {
+		t.Fatal("configured indexer.keep_stopwords=false, want true")
+	}
+}
+
 func TestAppTitleDefaultsAndOverrides(t *testing.T) {
 	cfg := CreateDefaultConfig()
 	if cfg.App.Title != "Hister" {

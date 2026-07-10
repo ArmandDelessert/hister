@@ -245,6 +245,33 @@ func Test_build_title_field(t *testing.T) {
 	}
 }
 
+func Test_build_quoted_text_fields_use_phrase_query(t *testing.T) {
+	tests := []struct {
+		field string
+		value string
+	}{
+		{field: "title", value: "for your information"},
+		{field: "text", value: "exact phrase"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.field, func(t *testing.T) {
+			bq := buildBoolQ(t, fmt.Sprintf(`%s:"%s"`, test.field, test.value))
+			clauses := mustClauses(t, bq)
+			if len(clauses) != 1 {
+				t.Fatalf("expected 1 must clause, got %d", len(clauses))
+			}
+			pq := asMatchPhrase(t, clauses[0])
+			if pq.MatchPhrase != test.value {
+				t.Fatalf("expected phrase %q, got %q", test.value, pq.MatchPhrase)
+			}
+			if pq.FieldVal != test.field {
+				t.Fatalf("expected field %q, got %q", test.field, pq.FieldVal)
+			}
+		})
+	}
+}
+
 func Test_build_url_field_uses_term_query(t *testing.T) {
 	bq := buildBoolQ(t, "url:https://example.com")
 	clauses := mustClauses(t, bq)

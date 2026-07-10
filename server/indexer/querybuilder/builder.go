@@ -155,6 +155,18 @@ func buildFieldQuery(field, v string) query.Query {
 	return q
 }
 
+// buildQuotedFieldQuery preserves phrase semantics for analyzed text fields.
+// URL and other fields retain their existing query behavior.
+func buildQuotedFieldQuery(field, v string) query.Query {
+	if field == "title" || field == "text" {
+		q := bleve.NewMatchPhraseQuery(v)
+		q.SetField(field)
+		q.SetBoost(weights[field])
+		return q
+	}
+	return buildFieldQuery(field, v)
+}
+
 func visitCountFilterValue(v string) (string, bool) {
 	if value, ok := strings.CutPrefix(v, "visits:"); ok {
 		return value, true
@@ -239,7 +251,7 @@ func getTokenQuery(t Token) (query.Query, bool) {
 				negated = true
 				v = v[1:]
 			}
-			return buildFieldQuery(field, v), negated
+			return buildQuotedFieldQuery(field, v), negated
 		}
 		return createMatchPhraseQuery(v, 1), negated
 	case TokenWord:

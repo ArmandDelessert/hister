@@ -721,7 +721,13 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 }
 
 func (i *indexer) save(d *document.Document) error {
-	oldHTMLKeys, oldFaviconKeys := i.getDocKeysByID(d.ID())
+	oldHTMLKeys, oldFaviconKeys, existingIndexes := i.getDocStorageByID(d.ID())
+	if existingIndexes == nil {
+		existingIndexes = make(map[string]struct{}, len(i.indexers))
+		for name := range i.indexers {
+			existingIndexes[name] = struct{}{}
+		}
+	}
 	if err := i.prepareForStorage(d); err != nil {
 		return err
 	}
@@ -730,8 +736,12 @@ func (i *indexer) save(d *document.Document) error {
 	if err := targetIdx.Index(d.ID(), d); err != nil {
 		return err
 	}
-	for name, idx := range i.indexers {
+	for name := range existingIndexes {
 		if name == targetIdx.Name() {
+			continue
+		}
+		idx, ok := i.indexers[name]
+		if !ok {
 			continue
 		}
 		if err := idx.Delete(d.ID()); err != nil {
@@ -751,23 +761,31 @@ func (i *indexer) save(d *document.Document) error {
 	return nil
 }
 
-// getDocKeysByID fetches all html_key and favicon_key values for every
-// sub-index entry with the given Bleve document ID. The same document can
-// appear in more than one sub-index when language routing changed across
-// re-adds (stale entry in old sub-index + current entry in new one).
-// Collecting all keys ensures every stale copy is considered for cleanup.
-func (i *indexer) getDocKeysByID(id string) (htmlKeys, faviconKeys []string) {
+// getDocStorageByID fetches stored content keys and the indexes containing
+// every entry with the given Bleve document ID. The same document can appear
+// in more than one index when its detected language changes between additions.
+func (i *indexer) getDocStorageByID(id string) (htmlKeys, faviconKeys []string, indexNames map[string]struct{}) {
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
-	req.Fields = []string{"html_key", "favicon_key"}
-	req.Size = len(i.indexers) + 1 // at most one entry per sub-index
+	req.Fields = []string{"html_key", "favicon_key", "language"}
+	req.Size = len(i.indexers) + 1 // at most one entry per index
 	res, err := i.idx.Search(req)
-	if err != nil || len(res.Hits) < 1 {
-		return nil, nil
+	if err != nil {
+		return nil, nil, nil
 	}
 	seenHTML := make(map[string]struct{})
 	seenFav := make(map[string]struct{})
+	indexNames = make(map[string]struct{})
+	if len(res.Hits) < 1 {
+		return nil, nil, indexNames
+	}
 	for _, h := range res.Hits {
+		indexName := h.Index
+		if indexName == "" {
+			lang, _ := h.Fields["language"].(string)
+			indexName = indexNameForLanguage(lang)
+		}
+		indexNames[indexName] = struct{}{}
 		if k, ok := h.Fields["html_key"].(string); ok && k != "" {
 			if _, dup := seenHTML[k]; !dup {
 				htmlKeys = append(htmlKeys, k)
@@ -781,6 +799,11 @@ func (i *indexer) getDocKeysByID(id string) (htmlKeys, faviconKeys []string) {
 			}
 		}
 	}
+	return
+}
+
+func (i *indexer) getDocKeysByID(id string) (htmlKeys, faviconKeys []string) {
+	htmlKeys, faviconKeys, _ = i.getDocStorageByID(id)
 	return
 }
 
@@ -903,10 +926,10 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 }
 
 func (i *indexer) getOrCreate(lang string) bleve.Index {
-	if lang == document.UnknownLanguage || lang == "" {
+	idxName := indexNameForLanguage(lang)
+	if idxName == defaultIndexerName {
 		return i.indexers[defaultIndexerName]
 	}
-	idxName := fmt.Sprintf(langIndexerName, lang)
 	idx, ok := i.indexers[idxName]
 	if !ok {
 		err := i.addIndexer(idxName, lang)
@@ -917,6 +940,13 @@ func (i *indexer) getOrCreate(lang string) bleve.Index {
 		idx = i.indexers[idxName]
 	}
 	return idx
+}
+
+func indexNameForLanguage(lang string) string {
+	if lang == document.UnknownLanguage || lang == "" {
+		return defaultIndexerName
+	}
+	return fmt.Sprintf(langIndexerName, lang)
 }
 
 func (i *indexer) addIndexer(name, lang string) error {

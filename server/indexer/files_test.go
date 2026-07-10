@@ -276,6 +276,11 @@ func TestSaveRemovesStaleLanguageCopy(t *testing.T) {
 		t.Fatalf("copies after first save = %d, want 1", copies)
 	}
 
+	staleIndex := i.indexers[indexNameForLanguage("en")]
+	unrelated := i.getOrCreate("fr")
+	staleDeletesBefore := indexDeleteCount(t, staleIndex)
+	unrelatedDeletesBefore := indexDeleteCount(t, unrelated)
+
 	err = i.save(&document.Document{
 		URL:      url,
 		Title:    "Language copy",
@@ -297,6 +302,28 @@ func TestSaveRemovesStaleLanguageCopy(t *testing.T) {
 	if got.AddCount != 5 {
 		t.Fatalf("AddCount = %d, want 5", got.AddCount)
 	}
+	staleDeletes := indexDeleteCount(t, staleIndex) - staleDeletesBefore
+	if staleDeletes != 1 {
+		t.Fatalf("stale index delete count = %d, want 1", staleDeletes)
+	}
+	unrelatedDeletes := indexDeleteCount(t, unrelated) - unrelatedDeletesBefore
+	if unrelatedDeletes != 0 {
+		t.Fatalf("unrelated index delete count = %d, want 0", unrelatedDeletes)
+	}
+}
+
+func indexDeleteCount(t *testing.T, idx bleve.Index) uint64 {
+	t.Helper()
+	stats := idx.StatsMap()
+	indexStats, ok := stats["index"].(map[string]any)
+	if !ok {
+		t.Fatalf("index stats have type %T, want map[string]any", stats["index"])
+	}
+	deletes, ok := indexStats["deletes"].(uint64)
+	if !ok {
+		t.Fatalf("delete count has type %T, want uint64", indexStats["deletes"])
+	}
+	return deletes
 }
 
 func countDocIDCopies(t *testing.T, id string) uint64 {

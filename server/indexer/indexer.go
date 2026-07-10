@@ -298,7 +298,7 @@ var (
 		},
 		"scorchMergePlanOptions": map[string]any{
 			"FloorSegmentFileSize": 20 * 1024 * 1024, // bytes
-			"SegmentsPerMergeTask": 4,                // default is 10
+			"SegmentsPerMergeTask": 10,               // default is 10
 		},
 	}
 )

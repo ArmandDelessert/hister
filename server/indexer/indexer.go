@@ -694,12 +694,39 @@ func truncateText(s string, maxRunes int) string {
 	return string(runes[:maxRunes]) + "…"
 }
 
-// embedDocumentChunks splits the document text into chunks, batch-embeds them,
-// and stores the resulting chunk vectors. Errors are logged but not propagated
-// so that Bleve indexing can still proceed.
+func documentMetadataString(d *document.Document, key string) string {
+	if d.Metadata == nil {
+		return ""
+	}
+	value, _ := d.Metadata[key].(string)
+	return value
+}
+
+func documentEmbeddingContext(d *document.Document) vectorstore.DocumentContext {
+	documentType := documentMetadataString(d, "type")
+	var keywords []string
+	for _, key := range []string{"topics", "tags", "categories", "languages"} {
+		if value := documentMetadataString(d, key); value != "" {
+			keywords = append(keywords, value)
+		}
+	}
+	return vectorstore.DocumentContext{
+		Title:       d.Title,
+		URL:         d.URL,
+		Type:        documentType,
+		Language:    d.Language,
+		Author:      documentMetadataString(d, "author"),
+		Description: documentMetadataString(d, "description"),
+		Keywords:    strings.Join(keywords, ", "),
+	}
+}
+
+// embedDocumentChunks creates metadata and body chunk embeddings and stores the
+// resulting vectors. Errors are logged but not propagated so that Bleve
+// indexing can still proceed.
 func embedDocumentChunks(ctx context.Context, idx *indexer, d *document.Document) {
 	start := time.Now()
-	chunks, err := idx.embedder.ChunkAndEmbed(ctx, d.Title+" "+d.Text, d.Title)
+	chunks, err := idx.embedder.ChunkAndEmbed(ctx, d.Text, documentEmbeddingContext(d))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Debug().Str("url", d.URL).Msg("chunk embedding canceled")

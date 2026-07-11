@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/asciimoo/hister/config"
@@ -30,6 +31,29 @@ type Embedder struct {
 	queryPrefix      string
 	documentPrefix   string
 	sem              chan struct{} // nil means unlimited concurrency
+}
+
+// DocumentContext contains stable metadata used to contextualize document
+// embeddings. Description and keywords are embedded only in the dedicated
+// metadata vector, not repeated in every body chunk.
+type DocumentContext struct {
+	Title       string
+	URL         string
+	Type        string
+	Language    string
+	Author      string
+	Description string
+	Keywords    string
+}
+
+type embeddingField struct {
+	name  string
+	value string
+}
+
+type documentEmbeddingInput struct {
+	embeddingText string
+	chunkText     string
 }
 
 const embeddingMaxAttempts = 3
@@ -245,36 +269,123 @@ func toFloat32(f64 []float64) []float32 {
 	return f32
 }
 
-// ChunkAndEmbed splits text into overlapping chunks, prepends document context
-// metadata title and the configured document prefix to each chunk,
-// batch-embeds them, and returns Chunk values ready for storage. Returns nil
-// (not an error) when the text is empty.
-func (e *Embedder) ChunkAndEmbed(ctx context.Context, text, title string) ([]Chunk, error) {
-	textChunks := ChunkText(text, e.maxContextLength, e.chunkOverlap)
-	if len(textChunks) == 0 {
+func cleanEmbeddingField(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+// formatEmbeddingFields formats as many complete metadata fields as fit in
+// tokenBudget. The last field may be shortened when part of it still fits.
+func formatEmbeddingFields(fields []embeddingField, tokenBudget int) string {
+	if tokenBudget <= 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(fields))
+	remaining := tokenBudget
+	for _, field := range fields {
+		value := cleanEmbeddingField(field.value)
+		if value == "" {
+			continue
+		}
+		line := field.name + ": " + value
+		lineTokens := len(tokenize(line))
+		if lineTokens > remaining {
+			labelTokens := len(tokenize(field.name + ":"))
+			valueBudget := remaining - labelTokens
+			if valueBudget <= 0 {
+				break
+			}
+			valueTokens := tokenize(value)
+			if len(valueTokens) > valueBudget {
+				valueTokens = valueTokens[:valueBudget]
+			}
+			line = field.name + ": " + strings.Join(valueTokens, " ")
+			lineTokens = len(tokenize(line))
+		}
+		lines = append(lines, line)
+		remaining -= lineTokens
+		if remaining <= 0 {
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func fullDocumentFields(d DocumentContext) []embeddingField {
+	return []embeddingField{
+		{name: "title", value: d.Title},
+		{name: "type", value: d.Type},
+		{name: "language", value: d.Language},
+		{name: "author", value: d.Author},
+		{name: "description", value: d.Description},
+		{name: "keywords", value: d.Keywords},
+		{name: "url", value: d.URL},
+	}
+}
+
+func bodyDocumentFields(d DocumentContext) []embeddingField {
+	return []embeddingField{
+		{name: "title", value: d.Title},
+		{name: "language", value: d.Language},
+	}
+}
+
+func (e *Embedder) documentEmbeddingInputs(text string, d DocumentContext) []documentEmbeddingInput {
+	var inputs []documentEmbeddingInput
+	metadataLabel := e.documentPrefix + "document:\n"
+	metadataBudget := e.maxContextLength - len(tokenize(metadataLabel))
+	metadata := formatEmbeddingFields(fullDocumentFields(d), metadataBudget)
+	if metadata != "" {
+		inputs = append(inputs, documentEmbeddingInput{
+			embeddingText: metadataLabel + metadata,
+			chunkText:     metadata,
+		})
+	}
+
+	bodyFieldBudget := max(1, e.maxContextLength/4)
+	bodyContext := formatEmbeddingFields(bodyDocumentFields(d), bodyFieldBudget)
+	bodyHeader := e.documentPrefix
+	if bodyContext != "" {
+		bodyHeader += bodyContext + "\n"
+	}
+	bodyHeader += "content:\n"
+	contentLimit := max(1, e.maxContextLength-len(tokenize(bodyHeader)))
+	textChunks := ChunkText(text, contentLimit, e.chunkOverlap)
+	for _, chunk := range textChunks {
+		inputs = append(inputs, documentEmbeddingInput{
+			embeddingText: bodyHeader + chunk.Text,
+			chunkText:     chunk.Text,
+		})
+	}
+	return inputs
+}
+
+// ChunkAndEmbed creates a dedicated metadata embedding and separate structured
+// body chunk embeddings, then returns them ready for storage. Returns nil when
+// both document context and text are empty.
+func (e *Embedder) ChunkAndEmbed(ctx context.Context, text string, d DocumentContext) ([]Chunk, error) {
+	inputs := e.documentEmbeddingInputs(text, d)
+	if len(inputs) == 0 {
 		return nil, nil
 	}
 
-	header := e.documentPrefix + "Title: " + title + " | "
-
-	texts := make([]string, len(textChunks))
-	for i, tc := range textChunks {
-		texts[i] = header + tc.Text
+	texts := make([]string, len(inputs))
+	for i, input := range inputs {
+		texts[i] = input.embeddingText
 	}
 
 	vectors, err := e.EmbedBatch(ctx, texts)
 	if err != nil {
 		return nil, err
 	}
-	if len(vectors) != len(textChunks) {
-		return nil, fmt.Errorf("embedding count mismatch: expected %d, got %d", len(textChunks), len(vectors))
+	if len(vectors) != len(inputs) {
+		return nil, fmt.Errorf("embedding count mismatch: expected %d, got %d", len(inputs), len(vectors))
 	}
 
-	chunks := make([]Chunk, len(textChunks))
-	for i := range textChunks {
+	chunks := make([]Chunk, len(inputs))
+	for i := range inputs {
 		chunks[i] = Chunk{
 			Index:     i,
-			Text:      textChunks[i].Text,
+			Text:      inputs[i].chunkText,
 			Embedding: vectors[i],
 		}
 	}

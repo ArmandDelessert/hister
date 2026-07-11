@@ -182,7 +182,7 @@ Hister uses the standard PostgreSQL DSN key=value format. Adjust `host`, `user`,
 
 ## Semantic Search
 
-Hister can augment keyword search with vector similarity search. When enabled, every indexed document is split into overlapping text chunks, each chunk is converted to a floating-point vector by an external embedding model, and the vectors are stored alongside the main index. At search time the query is also embedded and the closest chunks are retrieved, then merged with keyword results and re-ranked.
+Hister can augment keyword search with vector similarity search. When enabled, each indexed document gets a metadata vector containing its title, URL, specific extractor type when available, language, author, description, and topic metadata. Document text is split into overlapping structural chunks with compact title and language context, and each chunk is converted to a floating point vector by an external embedding model. The vectors are stored alongside the main index. At search time the query is also embedded and the closest chunks are retrieved, then merged with keyword results and reranked.
 
 Semantic search is **opt-in** and disabled by default. It requires an OpenAI-compatible embeddings endpoint such as [Ollama](https://ollama.com), a local [llama.cpp](https://github.com/ggml-org/llama.cpp) server, or the OpenAI API itself.
 

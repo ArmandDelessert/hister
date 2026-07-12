@@ -7,6 +7,7 @@
   };
   import { fetchConfig, apiFetch } from '$lib/api';
   import { base } from '$app/paths';
+  import BulkRulesDialog from '$lib/components/BulkRulesDialog.svelte';
   import { Button } from '@hister/components/ui/button';
   import { Input } from '@hister/components/ui/input';
   import { Badge } from '@hister/components/ui/badge';
@@ -24,6 +25,7 @@
     ChevronsUpDown,
     ChevronUp,
     ChevronDown,
+    ListPlus,
   } from '@lucide/svelte';
   import { PageHeader } from '@hister/components';
   import { Label } from '@hister/components/ui/label';
@@ -44,6 +46,36 @@
     addedOrder: number;
   }
 
+  function parseRulePatterns(value: string, existingPatterns: string[]) {
+    const seenPatterns = new Set(existingPatterns);
+    const uniquePatterns: string[] = [];
+    let duplicateCount = 0;
+
+    for (const pattern of value.split(/\r?\n/)) {
+      const trimmedPattern = pattern.trim();
+      if (!trimmedPattern) continue;
+      if (seenPatterns.has(trimmedPattern)) {
+        duplicateCount++;
+        continue;
+      }
+      seenPatterns.add(trimmedPattern);
+      uniquePatterns.push(trimmedPattern);
+    }
+
+    return { uniquePatterns, duplicateCount };
+  }
+
+  function ruleCount(count: number) {
+    return `${count} rule${count === 1 ? '' : 's'}`;
+  }
+
+  function rulesAddedMessage(addedCount: number, duplicateCount: number) {
+    const duplicateMessage = `${duplicateCount} duplicate${duplicateCount === 1 ? '' : 's'}`;
+    if (addedCount === 0) return `No new rules added; skipped ${duplicateMessage}.`;
+    if (duplicateCount === 0) return `${ruleCount(addedCount)} added.`;
+    return `${ruleCount(addedCount)} added; skipped ${duplicateMessage}.`;
+  }
+
   let rules: RulesData = $state({ skip: [], priority: [], versioning: [], aliases: {} });
   let loading = $state(true);
   let saving = $state(false);
@@ -53,6 +85,8 @@
   let newAliasValue = $state('');
   let newRulePattern = $state('');
   let newRuleType: 'skip' | 'priority' | 'versioning' = $state('skip');
+  let bulkAddOpen = $state(false);
+  let bulkRulePatterns = $state('');
 
   // Editing state for aliases
   let editingAliasKey = $state<string | null>(null);
@@ -89,6 +123,11 @@
   }
   const aliasSort = new SortState<'keyword' | 'value'>();
   const ruleSort = new SortState<'pattern' | 'type'>();
+
+  const existingRulePatterns = $derived([...rules.skip, ...rules.priority, ...rules.versioning]);
+  const bulkRuleSummary = $derived.by(() =>
+    parseRulePatterns(bulkRulePatterns, existingRulePatterns),
+  );
 
   const ruleRows = $derived.by(() => {
     const rows: RuleRow[] = [];
@@ -166,15 +205,15 @@
     }
   }
 
-  async function saveRules() {
-    if (saving) return;
+  async function saveRules(nextRules: RulesData = rules): Promise<boolean> {
+    if (saving) return false;
     saving = true;
     message = '';
     try {
       const formData = new URLSearchParams();
-      formData.set('skip', rules.skip.join('\n'));
-      formData.set('priority', rules.priority.join('\n'));
-      formData.set('versioning', rules.versioning.join('\n'));
+      formData.set('skip', nextRules.skip.join('\n'));
+      formData.set('priority', nextRules.priority.join('\n'));
+      formData.set('versioning', nextRules.versioning.join('\n'));
       const res = await apiFetch('/rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -187,9 +226,11 @@
       message = 'Rules saved successfully';
       isError = false;
       await loadRules();
+      return true;
     } catch (e) {
       message = String(e);
       isError = true;
+      return false;
     } finally {
       saving = false;
     }
@@ -206,27 +247,49 @@
     saveRules();
   }
 
-  function addRule() {
-    if (!newRulePattern.trim()) return;
+  function rulesWithPatterns(patterns: string[]): RulesData {
+    return {
+      ...rules,
+      [newRuleType]: [...rules[newRuleType], ...patterns],
+    };
+  }
+
+  async function addRule() {
     const pattern = newRulePattern.trim();
-    if (
-      rules.skip.includes(pattern) ||
-      rules.priority.includes(pattern) ||
-      rules.versioning.includes(pattern)
-    ) {
+    if (!pattern) return;
+
+    if (existingRulePatterns.includes(pattern)) {
       message = `Rule "${pattern}" already exists.`;
       isError = true;
       return;
     }
-    if (newRuleType === 'skip') {
-      rules.skip = [...rules.skip, pattern];
-    } else if (newRuleType === 'priority') {
-      rules.priority = [...rules.priority, pattern];
-    } else {
-      rules.versioning = [...rules.versioning, pattern];
-    }
+
+    if (!(await saveRules(rulesWithPatterns([pattern])))) return;
     newRulePattern = '';
-    saveRules();
+    message = rulesAddedMessage(1, 0);
+  }
+
+  function openBulkAdd() {
+    bulkRulePatterns = '';
+    bulkAddOpen = true;
+  }
+
+  async function addBulkRules() {
+    const { uniquePatterns, duplicateCount } = bulkRuleSummary;
+
+    if (uniquePatterns.length === 0) {
+      bulkRulePatterns = '';
+      bulkAddOpen = false;
+      message = rulesAddedMessage(0, duplicateCount);
+      isError = false;
+      return;
+    }
+
+    if (!(await saveRules(rulesWithPatterns(uniquePatterns)))) return;
+
+    bulkRulePatterns = '';
+    bulkAddOpen = false;
+    message = rulesAddedMessage(uniquePatterns.length, duplicateCount);
   }
 
   async function deleteAlias(keyword: string) {
@@ -689,18 +752,27 @@
         >
           <div class="flex w-full flex-col items-stretch gap-3 md:flex-row md:items-end">
             <div class="flex flex-1 flex-col gap-1">
-              <Label class="font-outfit text-text-brand text-sm font-bold">Pattern</Label>
+              <Label for="rule-pattern" class="font-outfit text-text-brand text-sm font-bold"
+                >Pattern</Label
+              >
               <Input
+                id="rule-pattern"
                 type="text"
                 variant="brutal"
                 bind:value={newRulePattern}
                 placeholder="Enter Go regexp pattern"
                 class="bg-card-surface focus-visible:border-hister-coral h-10 w-full px-3"
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') addRule();
+                }}
               />
             </div>
             <div class="flex flex-col gap-1">
-              <Label class="font-outfit text-text-brand text-sm font-bold">Type</Label>
+              <Label for="rule-type" class="font-outfit text-text-brand text-sm font-bold"
+                >Type</Label
+              >
               <select
+                id="rule-type"
                 bind:value={newRuleType}
                 class="bg-card-surface border-brutal-border font-space text-text-brand h-10 w-full shrink-0 cursor-pointer appearance-none border-[3px] px-3 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-27.5"
               >
@@ -709,14 +781,27 @@
                 <option value="versioning">VERSION</option>
               </select>
             </div>
-            <Button
-              type="button"
-              onclick={addRule}
-              class="bg-hister-coral font-space border-brutal-border brutal-press h-10 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] text-white uppercase"
-            >
-              <Plus class="size-4 shrink-0" />
-              Add
-            </Button>
+            <div class="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onclick={openBulkAdd}
+                disabled={saving}
+                class="bg-card-surface text-text-brand-secondary font-space border-brutal-border brutal-press h-10 flex-1 gap-2 rounded-none border-[3px] px-4 text-xs font-bold tracking-[0.5px] uppercase md:flex-none"
+              >
+                <ListPlus class="size-4 shrink-0" />
+                Bulk add
+              </Button>
+              <Button
+                type="button"
+                onclick={addRule}
+                disabled={saving || !newRulePattern.trim()}
+                class="bg-hister-coral font-space border-brutal-border brutal-press h-10 flex-1 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] text-white uppercase md:flex-none"
+              >
+                <Plus class="size-4 shrink-0" />
+                Add
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -836,3 +921,13 @@
     </div>
   {/if}
 </div>
+
+<BulkRulesDialog
+  bind:open={bulkAddOpen}
+  bind:patterns={bulkRulePatterns}
+  bind:ruleType={newRuleType}
+  {saving}
+  newCount={bulkRuleSummary.uniquePatterns.length}
+  duplicateCount={bulkRuleSummary.duplicateCount}
+  onAdd={addBulkRules}
+/>

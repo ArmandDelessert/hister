@@ -1191,6 +1191,11 @@
   function startHeroAnimations() {
     cleanupAnimations();
 
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      underlineEl?.style.setProperty('transform', 'scaleX(1)');
+      return;
+    }
+
     addAnimation(heroTitleEl, {
       backgroundPosition: ['0% 50%', '100% 50%'],
       ease: 'inOutSine',
@@ -2330,36 +2335,37 @@
   </div>
 {:else}
   <div
-    class="relative flex flex-1 flex-col items-center gap-5 overflow-y-auto px-4 py-8 md:gap-8 md:px-12 md:py-12"
+    class="home-shell relative flex flex-1 flex-col items-center gap-5 overflow-y-auto px-4 py-8 md:gap-8 md:px-12 md:py-12"
   >
     <h1
       bind:this={heroTitleEl}
-      class="font-outfit bg-clip-text text-5xl leading-none font-black tracking-[8px] text-transparent uppercase select-none md:text-9xl"
+      class="home-title font-outfit bg-clip-text text-5xl leading-none font-black tracking-[8px] text-transparent uppercase select-none md:text-9xl"
       style="background-image: linear-gradient(90deg, var(--hister-indigo), var(--hister-coral), var(--hister-teal), var(--hister-indigo)); background-size: 300% 100%; background-position: 0% 50%;"
     >
       {config.title}
     </h1>
 
     {#if config.subtitle}
-      <p class="font-inter text-text-brand-secondary text-center text-sm md:text-lg">
+      <p class="home-subtitle font-inter text-text-brand-secondary text-center text-sm md:text-lg">
         {@html config.subtitle}
       </p>
     {/if}
     <div
       bind:this={underlineEl}
-      class="h-[3px] w-48"
+      class="home-underline h-[3px] w-48"
       style="background: linear-gradient(90deg, var(--hister-indigo), var(--hister-coral), var(--hister-teal)); transform: scaleX(0); transform-origin: left;"
     ></div>
 
     <div
       bind:this={searchBoxEl}
-      class="home-search border-brutal-border bg-card-surface flex h-12 w-full max-w-[1100px] items-center gap-3 border-[3px] px-4 md:h-15 md:px-5"
+      class="home-search border-brutal-border bg-card-surface flex h-12 w-full max-w-[1100px] shrink-0 items-center gap-3 border-[3px] px-4 md:h-15 md:px-5"
     >
-      <Search class="text-hister-indigo size-5 shrink-0 md:size-6" />
+      <Search aria-hidden="true" class="text-hister-indigo size-5 shrink-0 md:size-6" />
       <Input
         bind:ref={inputEl}
         bind:value={query}
         type="search"
+        aria-label="Search your history"
         placeholder="Search..."
         class="font-inter text-text-brand placeholder:text-text-brand-muted h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-lg font-medium shadow-none focus-visible:ring-0 md:text-2xl"
       />
@@ -2380,7 +2386,7 @@
     </div>
 
     <div
-      class="font-inter text-text-brand-muted hidden items-center gap-1 text-xs md:flex md:gap-2"
+      class="home-tip font-inter text-text-brand-muted hidden shrink-0 items-center gap-1 text-xs md:flex md:gap-2"
     >
       <span>Tip:</span>
       {#each currentTip as part}
@@ -2414,7 +2420,7 @@
     {#if recentSearches.length > 0}
       <div
         bind:this={chipsContainerEl}
-        class="relative flex max-w-[900px] flex-wrap items-center justify-center gap-2"
+        class="home-recents relative flex max-w-[900px] shrink-0 flex-wrap items-center justify-center gap-2"
       >
         {#each recentSearches.slice(0, 8) as search, i}
           {@const chip = chipColors[i % chipColors.length]}
@@ -2439,7 +2445,10 @@
       </div>
     {/if}
 
-    <div bind:this={statsRowEl} class="flex flex-col items-center gap-3 md:flex-row md:gap-4">
+    <div
+      bind:this={statsRowEl}
+      class="home-stats flex shrink-0 flex-col items-center gap-3 md:flex-row md:gap-4"
+    >
       <div class="home-stat-pill text-hister-indigo">
         <History class="size-3.5 md:size-4" />
         <span class="font-outfit text-xl font-extrabold">{displayHistoryCount}</span>
@@ -2501,11 +2510,53 @@
 <style>
   .home-search {
     position: relative;
+    min-height: 3rem;
     overflow: hidden;
     background: var(--card-surface);
     box-shadow:
       0 1px 0 color-mix(in srgb, white 7%, transparent) inset,
       4px 4px 0 var(--brutal-shadow);
+  }
+
+  .home-search:focus-within {
+    border-color: var(--hister-indigo);
+    box-shadow:
+      0 1px 0 color-mix(in srgb, white 7%, transparent) inset,
+      4px 4px 0 var(--hister-indigo);
+  }
+
+  .home-title,
+  .home-subtitle,
+  .home-underline {
+    flex-shrink: 0;
+  }
+
+  @media (min-width: 48rem) and (max-height: 48rem) {
+    .home-shell {
+      gap: clamp(0.75rem, 2vh, 1.25rem);
+      padding-top: clamp(1rem, 3vh, 2rem);
+      padding-bottom: clamp(1rem, 3vh, 2rem);
+    }
+
+    .home-title {
+      font-size: clamp(3.5rem, 14vh, 6rem);
+    }
+  }
+
+  @media (min-width: 48rem) and (max-height: 36rem) {
+    .home-shell {
+      gap: 0.5rem;
+      padding-top: 0.75rem;
+      padding-bottom: 0.75rem;
+    }
+
+    .home-title {
+      font-size: 3rem;
+    }
+
+    .home-tip {
+      display: none;
+    }
   }
 
   .home-stat-pill {

@@ -337,7 +337,7 @@
           title={formatTimestamp(added)}
         >
           <span>added {formatTimestamp(added)}</span>
-          {#if updated}
+          {#if updated && updated !== added}
             <span class="text-text-brand-muted">·</span>
             <span title={formatTimestamp(updated)}>updated {formatTimestamp(updated)}</span>
           {/if}

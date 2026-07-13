@@ -34,6 +34,19 @@ func TestEnglishAnalyzerKeepStopwords(t *testing.T) {
 	}
 }
 
+func TestProcessedFieldIsNotStoredOrIndexed(t *testing.T) {
+	fieldMapping := createMapping("default", false).FieldMappingForPath("processed")
+	if fieldMapping.Store {
+		t.Error("processed field is stored")
+	}
+	if fieldMapping.Index {
+		t.Error("processed field is indexed")
+	}
+	if fieldMapping.DocValues {
+		t.Error("processed field has doc values")
+	}
+}
+
 func TestLanguageIndexesAreReindexSourcesWhenDetectionIsDisabled(t *testing.T) {
 	dir := t.TempDir()
 	idx, err := initializeIndexer(dir, true, false)

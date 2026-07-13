@@ -43,8 +43,8 @@ type Document struct {
 	// SkipIndexing can be set by extractors to mark the document to exclude from indexing. Useful when populating ExtraDocuments
 	SkipIndexing       bool `json:"-"`
 	SkipSensitiveCheck bool `json:"skip_sensitive_check"`
+	Processed          bool `json:"processed"`
 	faviconURL         string
-	processed          bool
 }
 
 var (
@@ -114,7 +114,7 @@ func (d *Document) DownloadFavicon(userAgent string) error {
 }
 
 func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error) error {
-	if d.processed {
+	if d.Processed {
 		return nil
 	}
 	if ld == nil {
@@ -208,7 +208,7 @@ func (d *Document) processFile(ld LanguageDetector) error {
 // finalizeDocument sets the document language and marks it as processed.
 func (d *Document) finalizeDocument(ld LanguageDetector) {
 	d.Language = ld.DetectLanguage(d.Text)
-	d.processed = true
+	d.Processed = true
 }
 
 // SetSkipSensitiveCheck controls whether sensitive content checks are skipped
@@ -219,7 +219,7 @@ func (d *Document) SetSkipSensitiveCheck(v bool) {
 
 // IsProcessed reports whether the document has already been processed.
 func (d *Document) IsProcessed() bool {
-	return d.processed
+	return d.Processed
 }
 
 // SetFaviconURL sets the favicon URL discovered during extraction.

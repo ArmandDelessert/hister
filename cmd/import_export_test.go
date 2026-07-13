@@ -88,9 +88,10 @@ func TestImportJSONFileUsesConfiguredBatchSize(t *testing.T) {
 		}
 		var req struct {
 			Ops []struct {
-				Op       string         `json:"op"`
-				Label    string         `json:"label"`
-				Metadata map[string]any `json:"metadata"`
+				Op        string         `json:"op"`
+				Label     string         `json:"label"`
+				Metadata  map[string]any `json:"metadata"`
+				Processed bool           `json:"processed"`
 			} `json:"ops"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -100,6 +101,11 @@ func TestImportJSONFileUsesConfiguredBatchSize(t *testing.T) {
 		if len(batchSizes) == 1 && len(req.Ops) > 0 {
 			receivedLabel = req.Ops[0].Label
 			receivedMetadata = req.Ops[0].Metadata
+		}
+		for _, op := range req.Ops {
+			if !op.Processed {
+				t.Error("imported JSON document was not marked as processed")
+			}
 		}
 		results := make([]map[string]any, len(req.Ops))
 		for i, op := range req.Ops {

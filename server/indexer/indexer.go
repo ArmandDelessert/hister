@@ -1771,6 +1771,12 @@ func createMapping(lang string, keepStopwords bool) mapping.IndexMapping {
 	docMapping.AddFieldMappingsAt("html", noIdxMap)
 	docMapping.AddFieldMappingsAt("html_key", um)
 	docMapping.AddFieldMappingsAt("metadata", noIdxMap)
+	noStoreMap := bleve.NewBooleanFieldMapping()
+	noStoreMap.Store = false
+	noStoreMap.Index = false
+	noStoreMap.IncludeInAll = false
+	noStoreMap.DocValues = false
+	docMapping.AddFieldMappingsAt("processed", noStoreMap)
 	numMap := bleve.NewNumericFieldMapping()
 	numMap.Store = true
 	docMapping.AddFieldMappingsAt("added", numMap)

@@ -130,8 +130,8 @@ var importCmd = &cobra.Command{
 command.
 
 JSON files are read line by line; each line starting with '{' is parsed as a
-document and submitted to the running server. Content is re-processed
-server-side from the stored HTML.
+document and submitted to the running server without reprocessing its stored
+content.
 
 An input file may be a plain JSON file or a 7z-compressed archive (.7z)
 containing a single JSON file.
@@ -316,6 +316,7 @@ func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, en
 			errCount++
 			continue
 		}
+		d.Processed = true
 		if (startDate != 0 && d.Added < startDate) || (endDate != 0 && d.Added > endDate) {
 			log.Debug().Str("url", d.URL).Int64("added", d.Added).Msg("Skipping document outside of date range")
 			skipped++

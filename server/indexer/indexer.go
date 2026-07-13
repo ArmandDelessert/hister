@@ -126,7 +126,7 @@ type FacetsResult struct {
 	DateHistogram []RangeCount         `json:"date_histogram,omitempty"`
 }
 
-// dateFacetBuckets drives the "added" histogram. Each entry is a non-
+// dateFacetBuckets drives the "updated" histogram. Each entry is a non-
 // overlapping slice of time ending at the previous bucket's boundary; the
 // final "older" bucket is appended implicitly. Order matters, the loop
 // walks most-recent -> oldest so each range's upper bound is the prior
@@ -173,7 +173,7 @@ func addFacets(req *bleve.SearchRequest, sizes map[string]int) {
 	}
 	req.AddFacet("visits", vf)
 	now := time.Now()
-	dh := bleve.NewFacetRequest("added", len(dateFacetBuckets)+1)
+	dh := bleve.NewFacetRequest("updated", len(dateFacetBuckets)+1)
 	var prev *float64
 	for _, b := range dateFacetBuckets {
 		ts := float64(now.Add(-b.age).Unix())
@@ -181,7 +181,7 @@ func addFacets(req *bleve.SearchRequest, sizes map[string]int) {
 		prev = &ts
 	}
 	dh.AddNumericRange("older", nil, prev)
-	req.AddFacet("added", dh)
+	req.AddFacet("updated", dh)
 }
 
 func extractTermFacet(f *search.FacetResult) TermFacet {
@@ -230,7 +230,7 @@ func extractFacets(facets search.FacetResults) *FacetsResult {
 		}
 		fr.Terms["visits"] = TermFacet{Terms: terms}
 	}
-	if f := facets["added"]; f != nil {
+	if f := facets["updated"]; f != nil {
 		for _, nr := range f.NumericRanges {
 			fr.DateHistogram = append(fr.DateHistogram, RangeCount{Name: nr.Name, Count: nr.Count})
 		}
@@ -273,6 +273,7 @@ type storedDocumentState struct {
 	addCount    uint
 	found       bool
 	label       string
+	added       int64
 }
 
 type MultiBatch struct {
@@ -284,7 +285,7 @@ type MultiBatch struct {
 
 var (
 	i *indexer
-	// allFields      []string       = []string{"url", "title", "text", "favicon", "html", "domain", "added", "type", "user_id"}
+	// allFields      []string       = []string{"url", "title", "text", "favicon", "html", "domain", "added", "updated", "type", "user_id"}
 	allFields      []string       = []string{"*"}
 	ErrEmptyFilter                = errors.New("delete query must not be empty")
 	bleveConfig    map[string]any = map[string]any{
@@ -544,7 +545,8 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 				}
 				log.Debug().Str("URL", d.URL).Msg("Indexing")
 				d.SetSkipSensitiveCheck(skipSensitiveChecks)
-				origDate := d.Added
+				origAdded := d.Added
+				origUpdated := d.Updated
 				if err := d.Process(tmpIdx.langDetector, extractor.Extract); err != nil {
 					if errors.Is(err, document.ErrSensitiveContent) {
 						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, sensitive content")
@@ -566,7 +568,12 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 					log.Info().Str("URL", d.URL).Msg("Dropping URL that has since been added to skip rules.")
 					continue
 				}
-				d.Added = origDate
+				d.Added = origAdded
+				if origUpdated == 0 {
+					d.Updated = origAdded
+				} else {
+					d.Updated = origUpdated
+				}
 				if err := b.Add(d); err != nil {
 					return abortReindex(err)
 				}
@@ -784,6 +791,7 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 	}
 	if !d.SkipIndexing {
 		state := i.getStoredDocumentState(d.ID())
+		applySubmissionTimestamps(d, state)
 		if incrementAddCount {
 			if state.found {
 				d.AddCount = state.addCount + 1
@@ -811,6 +819,22 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 		}
 	}
 	return nil
+}
+
+func applySubmissionTimestamps(d *document.Document, state storedDocumentState) {
+	now := time.Now().Unix()
+	if state.found && state.added != 0 {
+		d.Added = state.added
+	} else if d.Added == 0 {
+		d.Added = now
+	}
+	if d.Updated == 0 {
+		if state.found {
+			d.Updated = now
+		} else {
+			d.Updated = d.Added
+		}
+	}
 }
 
 func (i *indexer) save(d *document.Document) error {
@@ -865,7 +889,7 @@ func (i *indexer) getStoredDocumentState(id string) storedDocumentState {
 	var state storedDocumentState
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
-	req.Fields = []string{"html_key", "favicon_key", "language", "add_count", "label"}
+	req.Fields = []string{"html_key", "favicon_key", "language", "add_count", "label", "added"}
 	req.Size = len(i.indexers) + 1 // at most one entry per index
 	res, err := i.idx.Search(req)
 	if err != nil {
@@ -891,6 +915,12 @@ func (i *indexer) getStoredDocumentState(id string) storedDocumentState {
 		}
 		if state.label == "" {
 			state.label, _ = h.Fields["label"].(string)
+		}
+		if n, ok := h.Fields["added"].(float64); ok {
+			added := int64(n)
+			if state.added == 0 || added < state.added {
+				state.added = added
+			}
 		}
 		if k, ok := h.Fields["html_key"].(string); ok && k != "" {
 			if _, dup := seenHTML[k]; !dup {
@@ -985,11 +1015,11 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 		q = query.NewMatchAllQuery()
 	}
 	req := bleve.NewSearchRequest(q)
-	req.Fields = []string{"url", "title", "added", "add_count", "favicon_key", "favicon"}
+	req.Fields = []string{"url", "title", "added", "updated", "add_count", "favicon_key", "favicon"}
 	req.Size = limit
 	req.SortByCustom(search.SortOrder{
 		&search.SortField{
-			Field: "added",
+			Field: "updated",
 			Desc:  true,
 		},
 	})
@@ -1008,7 +1038,14 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 		d := &document.Document{
 			Title: h.Fields["title"].(string),
 			URL:   h.Fields["url"].(string),
-			Added: int64(h.Fields["added"].(float64)),
+		}
+		if n, ok := h.Fields["added"].(float64); ok {
+			d.Added = int64(n)
+		}
+		if n, ok := h.Fields["updated"].(float64); ok {
+			d.Updated = int64(n)
+		} else {
+			d.Updated = d.Added
 		}
 		if n, ok := h.Fields["add_count"].(float64); ok {
 			d.AddCount = uint(n)
@@ -1121,6 +1158,7 @@ func (b *MultiBatch) add(d *document.Document, incrementAddCount bool) error {
 	}
 	if !d.SkipIndexing {
 		state := b.indexer.getStoredDocumentState(d.ID())
+		applySubmissionTimestamps(d, state)
 		if incrementAddCount {
 			if state.found {
 				d.AddCount = state.addCount + 1
@@ -1313,12 +1351,12 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	case "domain":
 		req.SortBy([]string{"domain", "_id"})
 	case "date":
-		req.SortBy([]string{"-added", "_id"})
+		req.SortBy([]string{"-updated", "_id"})
 	case "visits":
-		req.SortBy([]string{"-add_count", "-added", "_id"})
+		req.SortBy([]string{"-add_count", "-updated", "_id"})
 	default:
 		sortByScore = true
-		req.SortBy([]string{"-_score", "-added", "_id"})
+		req.SortBy([]string{"-_score", "-updated", "_id"})
 	}
 
 	if q.PageKey != "" {
@@ -1611,6 +1649,11 @@ func (idx *indexer) resFromHit(h *search.DocumentMatch, include resultInclude) *
 	if t, ok := h.Fields["added"].(float64); ok {
 		d.Added = int64(t)
 	}
+	if t, ok := h.Fields["updated"].(float64); ok {
+		d.Updated = int64(t)
+	} else {
+		d.Updated = d.Added
+	}
 	if t, ok := h.Fields["type"].(float64); ok {
 		d.Type = types.DocType(t)
 	}
@@ -1663,7 +1706,7 @@ func (q *Query) create() query.Query {
 			*max = float64(q.DateTo)
 		}
 		dateQuery := bleve.NewNumericRangeQuery(min, max)
-		dateQuery.SetField("added")
+		dateQuery.SetField("updated")
 		sq = bleve.NewConjunctionQuery(sq, dateQuery)
 	}
 
@@ -1780,6 +1823,7 @@ func createMapping(lang string, keepStopwords bool) mapping.IndexMapping {
 	numMap := bleve.NewNumericFieldMapping()
 	numMap.Store = true
 	docMapping.AddFieldMappingsAt("added", numMap)
+	docMapping.AddFieldMappingsAt("updated", numMap)
 	docMapping.AddFieldMappingsAt("add_count", numMap)
 	docMapping.AddFieldMappingsAt("type", numMap)
 	docMapping.AddFieldMappingsAt("user_id", numMap)

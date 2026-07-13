@@ -97,13 +97,13 @@ func init() {
 					Name:        "date_from",
 					Type:        "string (YYYY-MM-DD)",
 					Required:    false,
-					Description: "Return only results indexed on or after this date",
+					Description: "Return only results updated on or after this date",
 				},
 				{
 					Name:        "date_to",
 					Type:        "string (YYYY-MM-DD)",
 					Required:    false,
-					Description: "Return only results indexed on or before this date",
+					Description: "Return only results updated on or before this date",
 				},
 				{
 					Name:        "include_html",
@@ -147,13 +147,13 @@ func init() {
 					Name:        "date_from",
 					Type:        "int64",
 					Required:    false,
-					Description: "Unix timestamp lower bound for indexed date",
+					Description: "Unix timestamp lower bound for updated date",
 				},
 				{
 					Name:        "date_to",
 					Type:        "int64",
 					Required:    false,
-					Description: "Unix timestamp upper bound for indexed date",
+					Description: "Unix timestamp upper bound for updated date",
 				},
 				{
 					Name:        "include_html",
@@ -486,13 +486,13 @@ func init() {
 					Name:        "date_from",
 					Type:        "integer",
 					Required:    false,
-					Description: "Unix timestamp lower bound for the added field",
+					Description: "Unix timestamp lower bound for the updated field",
 				},
 				{
 					Name:        "date_to",
 					Type:        "integer",
 					Required:    false,
-					Description: "Unix timestamp upper bound for the added field",
+					Description: "Unix timestamp upper bound for the updated field",
 				},
 				{
 					Name:        "size_{name}",

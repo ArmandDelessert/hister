@@ -1292,7 +1292,7 @@ func serveHistory(c *webContext) {
 					Title:   title,
 					Link:    d.URL,
 					GUID:    rssGUID{Value: d.URL, IsPermaLink: "true"},
-					PubDate: time.Unix(d.Added, 0).UTC().Format(time.RFC1123Z),
+					PubDate: time.Unix(d.Updated, 0).UTC().Format(time.RFC1123Z),
 				})
 			}
 		}
@@ -1565,6 +1565,7 @@ func servePreview(c *webContext) {
 		"content":  resp.Content,
 		"template": resp.Template,
 		"added":    doc.Added,
+		"updated":  doc.Updated,
 	}
 	if viewingVersionID > 0 {
 		payload["version_id"] = viewingVersionID

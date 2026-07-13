@@ -285,8 +285,8 @@ func init() {
 	importCmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
 	importCmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
 
-	exportCmd.Flags().String("start-date", "", "only export documents added on or after this date (YYYY-MM-DD)")
-	exportCmd.Flags().String("end-date", "", "only export documents added on or before this date (YYYY-MM-DD)")
+	exportCmd.Flags().String("start-date", "", "only export documents updated on or after this date (YYYY-MM-DD)")
+	exportCmd.Flags().String("end-date", "", "only export documents updated on or before this date (YYYY-MM-DD)")
 
 	createUserCmd.Flags().Bool("admin", false, "create user with admin privileges")
 
@@ -306,7 +306,7 @@ func init() {
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "don't add documents that contain sensitive content matched by config.SensitiveContentPatterns")
 
 	searchCmd.Flags().StringP("format", "f", "text", "output format: text, json, csv")
-	searchCmd.Flags().StringP("fields", "F", "", "comma-separated list of document fields to display (id, url, title, domain, score, added, language, type, text, favicon, favicon_key, user_id, html)")
+	searchCmd.Flags().StringP("fields", "F", "", "comma-separated list of document fields to display (id, url, title, domain, score, added, updated, language, type, text, favicon, favicon_key, user_id, html)")
 	searchCmd.Flags().IntP("limit", "L", 0, "maximum number of results to display (0 means no limit)")
 
 	cobra.OnInitialize(initialize)

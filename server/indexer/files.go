@@ -229,7 +229,7 @@ func IndexFile(path string, userID uint) error {
 
 	// Skip if already indexed with the same modification time
 	existing := GetByURLAndUser(fileURL, userID)
-	if existing != nil && existing.Added == info.ModTime().Unix() {
+	if existing != nil && existing.Updated == info.ModTime().Unix() {
 		return nil
 	}
 
@@ -241,9 +241,9 @@ func IndexFile(path string, userID uint) error {
 	}
 
 	doc := &document.Document{
-		URL:    fileURL,
-		Added:  info.ModTime().Unix(),
-		UserID: userID,
+		URL:     fileURL,
+		Updated: info.ModTime().Unix(),
+		UserID:  userID,
 	}
 
 	return indexFileContent(path, doc, content)

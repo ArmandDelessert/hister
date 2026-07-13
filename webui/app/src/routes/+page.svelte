@@ -98,6 +98,7 @@
     favicon?: string;
     favicon_key?: string;
     added?: number;
+    updated?: number;
     add_count?: number;
     label?: string;
     semanticScore?: number;
@@ -358,6 +359,7 @@
     favicon?: string;
     favicon_key?: string;
     added?: number;
+    updated?: number;
     add_count?: number;
     label?: string;
     semanticScore?: number;
@@ -419,6 +421,7 @@
           favicon: hit.document.favicon,
           favicon_key: hit.document.favicon_key,
           added: hit.document.added,
+          updated: hit.document.updated,
           add_count: hit.document.add_count,
           text: hit.document.text,
           semanticScore: hit.similarity,
@@ -2194,10 +2197,11 @@
                               class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
                               >pinned</Badge
                             >
-                          {:else if r.added}
+                          {:else if r.updated}
                             <span
                               class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
-                              title={formatTimestamp(r.added)}>{formatRelativeTime(r.added)}</span
+                              title={formatTimestamp(r.updated)}
+                              >{formatRelativeTime(r.updated)}</span
                             >
                           {/if}
                           {#if state.displayLabel}

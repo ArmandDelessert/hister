@@ -30,6 +30,7 @@ export interface SearchResult {
   favicon?: string;
   favicon_key?: string;
   added?: number;
+  updated?: number;
   add_count?: number;
   label?: string;
   pinned?: boolean;

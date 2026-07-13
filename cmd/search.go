@@ -22,6 +22,7 @@ func searchDocToMap(d *document.Document) map[string]any {
 		"domain":      d.Domain,
 		"score":       d.Score,
 		"added":       d.Added,
+		"updated":     d.Updated,
 		"language":    d.Language,
 		"type":        d.Type,
 		"text":        d.Text,
@@ -66,7 +67,7 @@ var searchCmd = &cobra.Command{
 		if fieldsRaw, _ := cmd.Flags().GetString("fields"); fieldsRaw != "" {
 			validFields := map[string]bool{
 				"id": true, "url": true, "title": true, "domain": true, "score": true,
-				"added": true, "language": true, "type": true, "text": true,
+				"added": true, "updated": true, "language": true, "type": true, "text": true,
 				"favicon": true, "favicon_key": true, "user_id": true, "html": true,
 			}
 			for f := range strings.SplitSeq(fieldsRaw, ",") {
@@ -75,7 +76,7 @@ var searchCmd = &cobra.Command{
 					continue
 				}
 				if !validFields[f] {
-					exit(1, "Unknown field: "+f+" (valid fields: id, url, title, domain, score, added, language, type, text, favicon, favicon_key, user_id, html)")
+					exit(1, "Unknown field: "+f+" (valid fields: id, url, title, domain, score, added, updated, language, type, text, favicon, favicon_key, user_id, html)")
 				}
 				fields = append(fields, f)
 				if f == "html" {
@@ -87,7 +88,7 @@ var searchCmd = &cobra.Command{
 		// CSV column order: use --fields if given, else a sensible default.
 		csvFields := fields
 		if format == "csv" && len(csvFields) == 0 {
-			csvFields = []string{"title", "url", "domain", "score", "added", "language", "text"}
+			csvFields = []string{"title", "url", "domain", "score", "added", "updated", "language", "text"}
 		}
 
 		// printDoc emits a single document in the requested format.

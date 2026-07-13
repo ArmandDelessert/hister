@@ -66,8 +66,8 @@ Search your personal browsing history and indexed documents.
 | ----------- | --------------- | -------- | ------- | --------------------------------------------------------------------------- |
 | `query`     | string          | yes      |         | Search query (see [Query Language](/docs/query-language))                   |
 | `limit`     | integer         | no       | 10      | Maximum results to return. Values below 1 or above 50 use the default.      |
-| `date_from` | string          | no       |         | Return only documents indexed on or after this date. Format: `YYYY-MM-DD`.  |
-| `date_to`   | string          | no       |         | Return only documents indexed on or before this date. Format: `YYYY-MM-DD`. |
+| `date_from` | string          | no       |         | Return only documents updated on or after this date. Format: `YYYY-MM-DD`.  |
+| `date_to`   | string          | no       |         | Return only documents updated on or before this date. Format: `YYYY-MM-DD`. |
 | `semantic`  | boolean         | no       | false   | Enable AI semantic search alongside keyword matching                        |
 | `fields`    | array of string | no       | `[]`    | Extra fields to include in each result. See below.                          |
 
@@ -75,7 +75,7 @@ Semantic search is used only when it is enabled and available on the Hister
 server. If the server does not have semantic search configured, `"semantic":
 true` falls back to normal keyword search.
 
-By default the response includes title, URL, date added, and a short text
+By default the response includes title, URL, added and updated dates, and a short text
 snippet per result. Pass `fields` to include additional data:
 
 | Field value | Description                                         |
@@ -109,7 +109,7 @@ Retrieve the stored preview for an indexed document by exact URL.
 | `url`       | string | yes      |         | Exact URL of the indexed document to preview    |
 | `extractor` | string | no       |         | Extractor name to use for rendering the preview |
 
-The response is a text block containing the document title, URL, indexing date,
+The response is a text block containing the document title, URL, added and updated dates,
 available preview metadata, and extracted content. Metadata can include author,
 published date, modified date, description, site name, type, language, image,
 JSON LD structured data, and embedded video URLs. If stored HTML is unavailable,

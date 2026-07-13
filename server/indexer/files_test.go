@@ -1,10 +1,13 @@
 package indexer
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
@@ -165,6 +168,143 @@ func TestAddDocumentIncrementsAddCount(t *testing.T) {
 	}
 	if latest.Documents[0].AddCount != 2 {
 		t.Fatalf("latest AddCount = %d, want 2", latest.Documents[0].AddCount)
+	}
+}
+
+func TestAddDocumentTimestamps(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	url := "https://example.com/timestamps"
+	if err := Add(&document.Document{
+		URL:   url,
+		Title: "Initial document",
+		Text:  "Initial document text",
+	}); err != nil {
+		t.Fatalf("initial Add failed: %v", err)
+	}
+
+	initial := GetByURLAndUser(url, 0)
+	if initial == nil {
+		t.Fatal("initial document not found")
+	}
+	if initial.Added == 0 {
+		t.Fatal("Added was not populated")
+	}
+	if initial.Updated == 0 {
+		t.Fatal("Updated was not populated")
+	}
+
+	if err := Add(&document.Document{
+		URL:       url,
+		Title:     "Updated document",
+		Text:      "Updated document text",
+		Added:     initial.Added + 10,
+		Updated:   initial.Updated + 20,
+		Processed: true,
+	}); err != nil {
+		t.Fatalf("second Add failed: %v", err)
+	}
+
+	updated := GetByURLAndUser(url, 0)
+	if updated == nil {
+		t.Fatal("updated document not found")
+	}
+	if updated.Added != initial.Added {
+		t.Fatalf("Added = %d, want %d", updated.Added, initial.Added)
+	}
+	if updated.Updated != initial.Updated+20 {
+		t.Fatalf("Updated = %d, want %d", updated.Updated, initial.Updated+20)
+	}
+}
+
+func TestUpdatedControlsDateSearch(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	docs := []*document.Document{
+		{
+			URL:       "https://example.com/recently-added",
+			Title:     "Recently added",
+			Text:      "Recently added document text",
+			Added:     200,
+			Updated:   250,
+			Processed: true,
+		},
+		{
+			URL:       "https://example.com/recently-updated",
+			Title:     "Recently updated",
+			Text:      "Recently updated document text",
+			Added:     100,
+			Updated:   300,
+			Processed: true,
+		},
+	}
+	for _, doc := range docs {
+		if err := Add(doc); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	res, err := Search(idxCfg, &Query{MatchAll: true, Sort: "date", DateFrom: 275})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(res.Documents) != 1 {
+		t.Fatalf("document count = %d, want 1", len(res.Documents))
+	}
+	if res.Documents[0].URL != docs[1].URL {
+		t.Fatalf("first document URL = %q, want %q", res.Documents[0].URL, docs[1].URL)
+	}
+
+	latest := GetLatestDocuments(10, "", 0)
+	if latest == nil || len(latest.Documents) != 2 {
+		t.Fatalf("latest documents = %#v, want two documents", latest)
+	}
+	if latest.Documents[0].URL != docs[1].URL {
+		t.Fatalf("latest document URL = %q, want %q", latest.Documents[0].URL, docs[1].URL)
+	}
+}
+
+func TestIndexFileUsesModificationTimeAsUpdated(t *testing.T) {
+	testDir := t.TempDir()
+	testFile := testutil.WriteFile(t, testDir, "timestamp.txt", []byte("document content with a source modification time"))
+	modTime := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(testFile, modTime, modTime); err != nil {
+		t.Fatalf("failed to set file modification time: %v", err)
+	}
+
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	if err := IndexFile(testFile, 0); err != nil {
+		t.Fatalf("IndexFile failed: %v", err)
+	}
+	doc := GetByURLAndUser(files.PathToFileURL(testFile), 0)
+	if doc == nil {
+		t.Fatal("indexed file not found")
+	}
+	if doc.Updated != modTime.Unix() {
+		t.Fatalf("Updated = %d, want %d", doc.Updated, modTime.Unix())
+	}
+	if doc.Added == 0 || doc.Added == doc.Updated {
+		t.Fatalf("Added = %d, want an indexing timestamp distinct from the file modification time", doc.Added)
+	}
+	if err := IndexFile(testFile, 0); err != nil {
+		t.Fatalf("second IndexFile failed: %v", err)
+	}
+	doc = GetByURLAndUser(files.PathToFileURL(testFile), 0)
+	if doc.AddCount != 1 {
+		t.Fatalf("AddCount = %d, want unchanged file to be skipped", doc.AddCount)
 	}
 }
 

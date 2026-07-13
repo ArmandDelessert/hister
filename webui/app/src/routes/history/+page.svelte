@@ -181,6 +181,10 @@
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 
+  function itemTimestamp(item: HistoryItem): number {
+    return item.updated ?? item.added ?? 0;
+  }
+
   const filteredItems = $derived.by(() => {
     let result = items;
     if (filter) {
@@ -190,7 +194,10 @@
       );
     }
     if (filterByDate) {
-      result = result.filter((item) => item.added && getDateKey(item.added) === filterByDate);
+      result = result.filter((item) => {
+        const timestamp = itemTimestamp(item);
+        return timestamp > 0 && getDateKey(timestamp) === filterByDate;
+      });
     }
     return result;
   });
@@ -201,8 +208,9 @@
     const g: { key: string; label: string; items: HistoryItem[] }[] = [];
     const seen = new Map<string, number>();
     for (const item of sourceItems) {
-      const key = getDateKey(item.added);
-      const label = formatDateLabel(item.added);
+      const timestamp = itemTimestamp(item);
+      const key = getDateKey(timestamp);
+      const label = formatDateLabel(timestamp);
       if (seen.has(key)) {
         g[seen.get(key)!].items.push(item);
       } else {
@@ -268,7 +276,8 @@
   function groupHasMore(group: { key: string; items: HistoryItem[] }): boolean {
     if (!hasMore || items.length === 0) return false;
     const oldestLoadedItem = items[items.length - 1];
-    return !!oldestLoadedItem.added && getDateKey(oldestLoadedItem.added) === group.key;
+    const timestamp = itemTimestamp(oldestLoadedItem);
+    return timestamp > 0 && getDateKey(timestamp) === group.key;
   }
 
   function groupCountLabel(group: { key: string; items: HistoryItem[] }): string {
@@ -342,7 +351,11 @@
   // Allow autoscroll only when no date filter is active, or when there are no
   // items from dates earlier than the selected date loaded yet.
   const canAutoLoad = $derived(
-    !filterByDate || !items.some((item) => item.added && getDateKey(item.added) < filterByDate),
+    !filterByDate ||
+      !items.some((item) => {
+        const timestamp = itemTimestamp(item);
+        return timestamp > 0 && getDateKey(timestamp) < filterByDate;
+      }),
   );
 
   let sentinel: HTMLDivElement | undefined = $state();
@@ -730,6 +743,7 @@
                   {#each group.items as item, ii}
                     {@const itemColor = color}
                     {@const flatIdx = groupOffset + ii}
+                    {@const timestamp = itemTimestamp(item)}
                     <article
                       data-result
                       class="history-row flex items-start gap-3 px-3 py-3 transition-all duration-150 md:items-center md:px-4"
@@ -755,11 +769,11 @@
                         <div
                           class="flex min-w-0 flex-col gap-1 md:flex-row md:items-center md:gap-2"
                         >
-                          {#if item.added}
+                          {#if timestamp}
                             <span
                               class="font-inter bg-muted-surface text-text-brand-secondary w-fit px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap"
-                              title={formatTimestamp(item.added)}
-                              >{formatRelativeTime(item.added)}</span
+                              title={formatTimestamp(timestamp)}
+                              >{formatRelativeTime(timestamp)}</span
                             >
                           {/if}
                           {#if (item.add_count ?? 0) > 1}

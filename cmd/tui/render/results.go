@@ -164,7 +164,7 @@ func Document(m *model.Model, d *document.Document, sel bool, contentW int) stri
 		domainBadgeW = lipgloss.Width(domainBadge)
 	}
 
-	relTime := relativeTime(d.Added)
+	relTime := relativeTime(d.Updated)
 	timeRendered := m.Styles.Time.Render(relTime)
 	timeW := 0
 	if relTime != "" {

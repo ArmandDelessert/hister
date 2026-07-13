@@ -38,6 +38,7 @@
   let templateData = $state<any>(null);
   let meta = $state<Record<string, any> | null>(null);
   let added = $state<number | null>(null);
+  let updated = $state<number | null>(null);
   let loading = $state(false);
   let versionCount = $state(0);
   let versions = $state<DocumentVersion[]>([]);
@@ -128,6 +129,7 @@
     if (versionId === null) {
       meta = null;
       added = null;
+      updated = null;
       title = hint;
       versions = [];
       versionCount = 0;
@@ -148,6 +150,7 @@
         // Always update metadata (server always returns current doc's metadata regardless of version).
         title = data.title || hint;
         added = data.added ?? null;
+        updated = data.updated ?? null;
         meta = data.meta ?? null;
         versionCount = data.version_count ?? 0;
         if (data.version_id) {
@@ -333,7 +336,11 @@
           class="font-inter inline-flex flex-wrap items-center gap-1.5 text-xs"
           title={formatTimestamp(added)}
         >
-          <span>indexed {formatTimestamp(added)}</span>
+          <span>added {formatTimestamp(added)}</span>
+          {#if updated}
+            <span class="text-text-brand-muted">·</span>
+            <span title={formatTimestamp(updated)}>updated {formatTimestamp(updated)}</span>
+          {/if}
           {#if versionCount > 0}
             <span class="text-text-brand-muted">·</span>
             <button

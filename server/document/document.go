@@ -32,6 +32,7 @@ type Document struct {
 	FaviconKey string         `json:"favicon_key"`
 	Score      float64        `json:"score"`
 	Added      int64          `json:"added"`
+	Updated    int64          `json:"updated"`
 	Type       types.DocType  `json:"type"`
 	Language   string         `json:"language"`
 	UserID     uint           `json:"user_id"`
@@ -138,7 +139,11 @@ func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error)
 		return errors.New("invalid URL: missing scheme/host")
 	}
 	d.normalizeWebURL(pu)
-	d.Added = time.Now().Unix()
+	now := time.Now().Unix()
+	if d.Added == 0 {
+		d.Added = now
+	}
+	d.Updated = now
 	d.Type = types.Web
 	d.Domain = pu.Hostname()
 	if d.HTML != "" {
@@ -198,8 +203,12 @@ func (d *Document) processFile(ld LanguageDetector) error {
 			d.Title = parent + "/" + base
 		}
 	}
+	now := time.Now().Unix()
 	if d.Added == 0 {
-		d.Added = time.Now().Unix()
+		d.Added = now
+	}
+	if d.Updated == 0 {
+		d.Updated = now
 	}
 	d.finalizeDocument(ld)
 	return nil

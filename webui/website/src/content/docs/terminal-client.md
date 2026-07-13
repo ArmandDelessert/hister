@@ -88,7 +88,7 @@ output file to write to standard output instead, which can be piped into other t
 hister export | gzip > backup.json.gz
 ```
 
-Use `--start-date` / `--end-date` (`YYYY-MM-DD`) to only export documents whose `added`
+Use `--start-date` / `--end-date` (`YYYY-MM-DD`) to only export documents whose `updated`
 timestamp falls within the given date range. The resulting file can be re-imported with
 `hister import` (see below).
 

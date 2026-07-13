@@ -27,7 +27,7 @@ Each document is written as a single JSON line. Lines not starting with '{' are
 structural markers ('[', ']', ',') and can be safely skipped by parsers.
 
 Use --start-date and --end-date (format: YYYY-MM-DD) to only export
-documents added within the given date range.
+documents updated within the given date range.
 
 Use '-' as OUTPUT_FILE to write to stdout.`,
 	Args: cobra.MinimumNArgs(1),

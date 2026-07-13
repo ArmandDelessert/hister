@@ -154,11 +154,11 @@ func mcpToolList(semanticSearchEnabled bool) []map[string]any {
 					},
 					"date_from": map[string]any{
 						"type":        "string",
-						"description": `Only return documents indexed on or after this date (ISO 8601, e.g. "2024-01-15").`,
+						"description": `Only return documents updated on or after this date (ISO 8601, e.g. "2024-01-15").`,
 					},
 					"date_to": map[string]any{
 						"type":        "string",
-						"description": `Only return documents indexed on or before this date (ISO 8601, e.g. "2024-06-30").`,
+						"description": `Only return documents updated on or before this date (ISO 8601, e.g. "2024-06-30").`,
 					},
 					"semantic": map[string]any{
 						"type":        "boolean",
@@ -185,7 +185,7 @@ func mcpToolList(semanticSearchEnabled bool) []map[string]any {
 		},
 		{
 			"name":        "get_preview",
-			"description": "Retrieve the full preview of an indexed document by URL. Returns the page title, extracted text content, indexing date, and all available metadata (author, description, publication date, language, content type, JSON-LD structured data, embedded videos, etc.).",
+			"description": "Retrieve the full preview of an indexed document by URL. Returns the page title, extracted text content, added and updated dates, and all available metadata (author, description, publication date, language, content type, JSON-LD structured data, embedded videos, etc.).",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -379,7 +379,7 @@ func mcpToolGetPreview(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 
 	mcpWriteResult(c, id, map[string]any{
 		"content": []mcpTextContent{
-			{Type: "text", Text: mcpFormatPreview(doc.Title, args.URL, doc.Added, doc.GetPreviewMeta(), content)},
+			{Type: "text", Text: mcpFormatPreview(doc.Title, args.URL, doc.Added, doc.Updated, doc.GetPreviewMeta(), content)},
 		},
 	})
 }
@@ -446,12 +446,13 @@ func mcpToolGetHistory(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 }
 
 // mcpFormatPreview renders a document preview as a human-readable text block
-// with title, URL, indexing date, all metadata fields, and extracted content.
-func mcpFormatPreview(title, url string, added int64, meta map[string]any, content string) string {
+// with title, URL, added and updated dates, all metadata fields, and extracted content.
+func mcpFormatPreview(title, url string, added, updated int64, meta map[string]any, content string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Title: %s\n", title)
 	fmt.Fprintf(&b, "URL: %s\n", url)
-	fmt.Fprintf(&b, "Indexed: %s\n", time.Unix(added, 0).Format("2006-01-02"))
+	fmt.Fprintf(&b, "Added: %s\n", time.Unix(added, 0).Format("2006-01-02"))
+	fmt.Fprintf(&b, "Updated: %s\n", time.Unix(updated, 0).Format("2006-01-02"))
 
 	if meta != nil {
 		for _, k := range []string{"author", "published", "modified", "description", "site_name", "type", "language", "image"} {
@@ -513,12 +514,12 @@ func mcpFormatIndexedHistory(res *indexer.Results) string {
 		fmt.Fprintf(&b, "next_page_key: %s\n", res.PageKey)
 	}
 	for n, d := range res.Documents {
-		added := time.Unix(d.Added, 0).Format("2006-01-02 15:04")
+		updated := time.Unix(d.Updated, 0).Format("2006-01-02 15:04")
 		title := d.Title
 		if title == "" {
 			title = d.URL
 		}
-		fmt.Fprintf(&b, "\n%d. %s\n   URL: %s\n   Indexed: %s\n", n+1, title, d.URL, added)
+		fmt.Fprintf(&b, "\n%d. %s\n   URL: %s\n   Updated: %s\n", n+1, title, d.URL, updated)
 		if d.AddCount > 0 {
 			fmt.Fprintf(&b, "   Indexed versions: %d\n", d.AddCount)
 		}
@@ -578,6 +579,10 @@ func mcpFormatResults(query string, res *indexer.Results, fields []string) strin
 func mcpFormatDocumentResult(b *strings.Builder, n int, d *document.Document, fieldSet map[string]bool, similarity float64, matchedChunk string) {
 	added := time.Unix(d.Added, 0).Format("2006-01-02")
 	fmt.Fprintf(b, "\n%d. %s\n   URL: %s\n   Added: %s\n", n, d.Title, d.URL, added)
+	if d.Updated != 0 {
+		updated := time.Unix(d.Updated, 0).Format("2006-01-02")
+		fmt.Fprintf(b, "   Updated: %s\n", updated)
+	}
 	if fieldSet["domain"] && d.Domain != "" {
 		fmt.Fprintf(b, "   Domain: %s\n", d.Domain)
 	}

@@ -459,6 +459,15 @@ func initExtractor() {
 	}
 }
 
+func initialAnalyzerFingerprint(indexerVersion int, detectLanguages, keepStopwords bool) string {
+	if indexerVersion == -1 {
+		return indexer.AnalyzerFingerprint(detectLanguages, keepStopwords)
+	}
+	// Existing indexes predate the keep_stopwords setting and always removed
+	// stop words. Language detection already existed and retains its setting.
+	return indexer.AnalyzerFingerprint(detectLanguages, false)
+}
+
 func initIndex() {
 	initDB()
 	initExtractor()
@@ -483,14 +492,12 @@ func initIndex() {
 		exit(1, "Failed to retrieve analyzer configuration fingerprint: "+err.Error())
 	}
 	if storedFingerprint == "" {
-		if v == -1 {
-			if err := model.SetAnalyzerFingerprint(activeFingerprint); err != nil {
-				exit(1, "Failed to store analyzer configuration fingerprint: "+err.Error())
-			}
-		} else {
-			log.Warn().Msg(cliWarningStyle.Render("The indexed analyzer configuration is unknown. Run `hister reindex` to record the active configuration."))
+		storedFingerprint = initialAnalyzerFingerprint(v, cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords)
+		if err := model.SetAnalyzerFingerprint(storedFingerprint); err != nil {
+			exit(1, "Failed to store analyzer configuration fingerprint: "+err.Error())
 		}
-	} else if storedFingerprint != activeFingerprint {
+	}
+	if storedFingerprint != activeFingerprint {
 		log.Warn().Msg(cliWarningStyle.Render("The analyzer configuration differs from the indexed configuration. Run `hister reindex` to update your index."))
 	}
 	log.Debug().Msg("Indexer initialization complete")

@@ -221,6 +221,59 @@ func TestAddDocumentTimestamps(t *testing.T) {
 	}
 }
 
+func TestInitBackfillsLegacyUpdatedTimestamp(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+
+	url := "https://example.com/legacy-updated"
+	id := document.GetDocID(0, url)
+	legacy := map[string]any{
+		"url":            url,
+		"title":          "Legacy document",
+		"text":           "Legacy document text",
+		"domain":         "example.com",
+		"added":          int64(1234),
+		"type":           int64(0),
+		"user_id":        int64(0),
+		"language":       "",
+		"add_count":      int64(1),
+		"metadata.topic": "compatibility",
+	}
+	idx := i.indexers[defaultIndexerName]
+	if err := idx.Index(id, legacy); err != nil {
+		t.Fatalf("failed to index legacy document: %v", err)
+	}
+	if err := idx.DeleteInternal([]byte(updatedBackfillKey)); err != nil {
+		t.Fatalf("failed to clear backfill marker: %v", err)
+	}
+	i.Close()
+
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to reopen indexer: %v", err)
+	}
+	defer i.Close()
+
+	doc := GetByURLAndUser(url, 0)
+	if doc == nil {
+		t.Fatal("backfilled document not found")
+	}
+	if doc.Updated != doc.Added || doc.Updated != 1234 {
+		t.Fatalf("timestamps are Added=%d Updated=%d, want both 1234", doc.Added, doc.Updated)
+	}
+	if doc.Metadata["topic"] != "compatibility" {
+		t.Fatalf("metadata topic = %#v, want compatibility", doc.Metadata["topic"])
+	}
+	marker, err := i.indexers[defaultIndexerName].GetInternal([]byte(updatedBackfillKey))
+	if err != nil {
+		t.Fatalf("failed to read backfill marker: %v", err)
+	}
+	if len(marker) == 0 {
+		t.Fatal("backfill marker was not stored")
+	}
+}
+
 func TestUpdatedControlsDateSearch(t *testing.T) {
 	idxCfg := testutil.Config(t)
 	if err := Init(idxCfg); err != nil {

@@ -62,6 +62,7 @@ type indexer struct {
 const (
 	defaultIndexerName = "index.db"
 	langIndexerName    = "index_%s.db"
+	updatedBackfillKey = "hister.updated_backfill_complete"
 )
 
 type Query struct {
@@ -409,8 +410,75 @@ func initializeIndexer(basePath string, detectLanguages, keepStopwords bool) (*i
 		i.idx.Add(langIdx)
 		i.indexers[fn] = langIdx
 	}
+	if err := i.backfillUpdatedTimestamps(); err != nil {
+		return nil, err
+	}
 	initialized = true
 	return i, nil
+}
+
+// backfillUpdatedTimestamps exists only for backward compatibility with
+// indexes created before Document.Updated was added. Remove this function and
+// its marker after support for those indexes is no longer needed.
+func (i *indexer) backfillUpdatedTimestamps() error {
+	for name, idx := range i.indexers {
+		marker, err := idx.GetInternal([]byte(updatedBackfillKey))
+		if err != nil {
+			return fmt.Errorf("read updated timestamp backfill marker for %s: %w", name, err)
+		}
+		if len(marker) > 0 {
+			continue
+		}
+
+		updatedExists := bleve.NewNumericRangeQuery(nil, nil)
+		updatedExists.SetField("updated")
+		missingUpdated := query.NewBooleanQuery(nil, nil, []query.Query{updatedExists})
+		req := bleve.NewSearchRequest(missingUpdated)
+		req.Fields = allFields
+		req.Size = 200
+		req.SortBy([]string{"_id"})
+
+		count := 0
+		var sortKey []string
+		for {
+			if len(sortKey) > 0 {
+				req.SetSearchAfter(sortKey)
+			}
+			res, err := idx.Search(req)
+			if err != nil {
+				return fmt.Errorf("find documents missing updated timestamp in %s: %w", name, err)
+			}
+			if len(res.Hits) == 0 {
+				break
+			}
+
+			batch := idx.NewBatch()
+			for _, hit := range res.Hits {
+				added, ok := hit.Fields["added"]
+				if !ok {
+					return fmt.Errorf("backfill updated timestamp for %s: document %s has no added timestamp", name, hit.ID)
+				}
+				fields := maps.Clone(hit.Fields)
+				fields["updated"] = added
+				if err := batch.Index(hit.ID, fields); err != nil {
+					return fmt.Errorf("backfill updated timestamp for %s: %w", name, err)
+				}
+			}
+			if err := idx.Batch(batch); err != nil {
+				return fmt.Errorf("save updated timestamp backfill for %s: %w", name, err)
+			}
+			count += len(res.Hits)
+			sortKey = res.Hits[len(res.Hits)-1].Sort
+		}
+
+		if err := idx.SetInternal([]byte(updatedBackfillKey), []byte("1")); err != nil {
+			return fmt.Errorf("save updated timestamp backfill marker for %s: %w", name, err)
+		}
+		if count > 0 {
+			log.Info().Str("index", name).Int("documents", count).Msg("Backfilled updated timestamps")
+		}
+	}
+	return nil
 }
 
 func openReindexSources(basePath string, current map[string]bleve.Index) (map[string]bleve.Index, func(), error) {

@@ -28,13 +28,17 @@ func Build(s string) query.Query {
 	if strings.TrimSpace(s) == "" {
 		return query.NewMatchNoneQuery()
 	}
-	if IsMatchAll(s) {
-		return query.NewMatchAllQuery()
-	}
 
 	qt, err := Tokenize(s)
 	if err != nil {
 		return createSimpleQuery(s)
+	}
+	if slices.ContainsFunc(qt, isNegatedStandaloneWildcard) {
+		return query.NewMatchNoneQuery()
+	}
+	qt = slices.DeleteFunc(qt, isMatchAllToken)
+	if len(qt) == 0 {
+		return query.NewMatchAllQuery()
 	}
 
 	qs := []query.Query{}
@@ -69,9 +73,36 @@ func Build(s string) query.Query {
 	return q
 }
 
-// IsMatchAll reports whether s is the bare wildcard query.
-func IsMatchAll(s string) bool {
-	return strings.TrimSpace(s) == "*"
+func isStandaloneWildcard(t Token) bool {
+	return t.Type == TokenWord && t.Value == "*"
+}
+
+func isMatchAllToken(t Token) bool {
+	if isStandaloneWildcard(t) {
+		return true
+	}
+	return t.Type == TokenAlternation && slices.ContainsFunc(t.Parts, isStandaloneWildcard)
+}
+
+func isNegatedStandaloneWildcard(t Token) bool {
+	return t.Type == TokenWord && t.Value == "-*"
+}
+
+// RemoveStandaloneWildcards returns text suitable for semantic embedding.
+func RemoveStandaloneWildcards(s string) string {
+	qt, err := Tokenize(s)
+	if err != nil {
+		return s
+	}
+	if slices.ContainsFunc(qt, isNegatedStandaloneWildcard) {
+		return ""
+	}
+	qt = slices.DeleteFunc(qt, isMatchAllToken)
+	parts := make([]string, len(qt))
+	for i, t := range qt {
+		parts[i] = t.Value
+	}
+	return strings.Join(parts, " ")
 }
 
 // anyFieldSpecific returns true when at least one token in qt is an explicit
@@ -266,6 +297,9 @@ func getTokenQuery(t Token) (query.Query, bool) {
 		if strings.HasPrefix(t.Value, "-") && len(t.Value) > 1 {
 			negated = true
 			t.Value = t.Value[1:]
+		}
+		if t.Value == "*" {
+			return query.NewMatchAllQuery(), negated
 		}
 		var field string
 		if v, ok := strings.CutPrefix(t.Value, "type:"); ok {

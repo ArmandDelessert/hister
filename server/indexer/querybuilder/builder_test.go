@@ -168,10 +168,78 @@ func Test_build_whitespace_only(t *testing.T) {
 }
 
 func Test_build_bare_wildcard_returns_match_all(t *testing.T) {
-	for _, input := range []string{"*", "  *  "} {
+	for _, input := range []string{"*", "  *  ", "* *"} {
 		if _, ok := Build(input).(*query.MatchAllQuery); !ok {
 			t.Fatalf("Build(%q): expected *query.MatchAllQuery, got %T", input, Build(input))
 		}
+	}
+}
+
+func Test_build_ignores_standalone_wildcard_terms(t *testing.T) {
+	for _, input := range []string{"* golang", "golang *", "* golang *"} {
+		bq := buildBoolQ(t, input)
+		clauses := mustClauses(t, bq)
+		if len(clauses) != 1 {
+			t.Fatalf("Build(%q): expected 1 must clause, got %d", input, len(clauses))
+		}
+		dq := asDisjunction(t, clauses[0])
+		if len(dq.Disjuncts) != 4 {
+			t.Fatalf("Build(%q): expected 4 disjuncts, got %d", input, len(dq.Disjuncts))
+		}
+		for _, d := range dq.Disjuncts {
+			if wq, ok := d.(*query.WildcardQuery); ok && wq.Wildcard == "*" {
+				t.Fatalf("Build(%q): contains an unbounded wildcard query", input)
+			}
+		}
+	}
+}
+
+func Test_build_negated_standalone_wildcard_returns_match_none(t *testing.T) {
+	for _, input := range []string{"-*", "golang -*"} {
+		if _, ok := Build(input).(*query.MatchNoneQuery); !ok {
+			t.Fatalf("Build(%q): expected *query.MatchNoneQuery, got %T", input, Build(input))
+		}
+	}
+}
+
+func Test_remove_standalone_wildcards(t *testing.T) {
+	tests := map[string]string{
+		"*":               "",
+		"* *":             "",
+		"* golang":        "golang",
+		"golang * docs":   "golang docs",
+		"golang*":         "golang*",
+		"title:*":         "title:*",
+		`"*"`:             "*",
+		"(golang|*)":      "",
+		"(golang|*) docs": "docs",
+		"-*":              "",
+		"golang -*":       "",
+	}
+	for input, want := range tests {
+		if got := RemoveStandaloneWildcards(input); got != want {
+			t.Errorf("RemoveStandaloneWildcards(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func Test_build_wildcard_alternative_returns_match_all(t *testing.T) {
+	for _, input := range []string{"(golang|*)", "(*|golang)"} {
+		if _, ok := Build(input).(*query.MatchAllQuery); !ok {
+			t.Fatalf("Build(%q): expected *query.MatchAllQuery, got %T", input, Build(input))
+		}
+	}
+}
+
+func Test_build_ignores_match_all_alternative_in_conjunction(t *testing.T) {
+	bq := buildBoolQ(t, "(golang|*) docs")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	dq := asDisjunction(t, clauses[0])
+	if len(dq.Disjuncts) != 4 {
+		t.Fatalf("expected 4 disjuncts, got %d", len(dq.Disjuncts))
 	}
 }
 

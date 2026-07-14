@@ -1,67 +1,96 @@
 ---
-date: '2026-02-13T10:59:19+01:00'
+date: '2026-07-14T00:00:00+02:00'
 draft: false
-title: 'Obtaining Hister'
+title: 'Installing Hister'
 ---
 
-This page documents how to obtain the Hister program, which serves both as a command-line/TUI client and as the server. For a complete first setup, see the [quickstart guide](quickstart). Setting up the browser extensions is covered in [Installing a Browser Extension](quickstart#installing-a-browser-extension).
+The `hister` program contains both the search server and the terminal client. For the fastest local setup, download a prebuilt binary and continue with the [quickstart guide](quickstart).
 
-If you are using a server already set up by someone else, and you aren't planning on using any of the client's features, then _you do not need to download this program_.
+If someone else already operates the Hister server you use and you only search through the web interface, you do not need to install this program.
 
-## Pre-built Binary
+## Prebuilt binary
 
-1. Download the binary for your platform: - For stable versions: [Releases](https://github.com/asciimoo/hister/releases) - For the latest development version: [Rolling Release (latest)](https://github.com/asciimoo/hister/releases/tag/rolling)
+1. Open the [latest stable release](https://github.com/asciimoo/hister/releases/latest).
 
-2. Make the binary executable:
+2. Download the file that matches your system:
+
+   | System  | Processor           | Filename ending     |
+   | ------- | ------------------- | ------------------- |
+   | Linux   | Intel or AMD 64 bit | `linux_amd64`       |
+   | Linux   | ARM 64 bit          | `linux_arm64`       |
+   | macOS   | Apple silicon       | `darwin_arm64`      |
+   | macOS   | Intel               | `darwin_amd64`      |
+   | Windows | Intel or AMD 64 bit | `windows_amd64.exe` |
+
+3. Rename the downloaded file to `hister` or `hister.exe`.
+
+4. On Linux or macOS, open a terminal in the download directory and make the file executable:
 
    ```bash
    chmod +x hister
    ```
 
-3. Optionally, move it to somewhere on your `PATH`; for example, `/usr/local/bin/` (system-wide) or `~/.local/bin/` (per-user).
+5. Start the server:
 
-## Building from Source
+   ```bash
+   ./hister
+   ```
 
-[Download a snapshot] of, or [clone] the source code (from [GitHub] or [Codeberg]).
-Then, follow the instructions in `INSTALL.md`.
+   On Windows, run `hister.exe` instead.
 
-[Download a snapshot]: https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives
-[clone]: https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository?search-overlay-input=how+to+clone+a+repo+shallowly&search-overlay-ask-ai=true
-[GitHub]: https://github.com/asciimoo/hister
-[Codeberg]: https://codeberg.org/asciimoo/hister
+6. Open <http://127.0.0.1:4433> in your browser, then continue with the [quickstart](quickstart) to install the browser extension and begin indexing.
+
+Release pages also contain a checksums file that can be used to verify the download. Development snapshots are available from the [rolling release](https://github.com/asciimoo/hister/releases/tag/rolling), but stable releases are recommended for new users.
+
+You may optionally move the binary to a directory on your `PATH`, such as `/usr/local/bin` or `~/.local/bin`.
+
+## Building from source
+
+Building Hister requires Go 1.26, npm, and a C compiler for CGO dependencies.
+
+```bash
+git clone https://github.com/asciimoo/hister.git
+cd hister
+./manage.sh build
+```
+
+The build produces a `hister` binary in the repository root. Source is also mirrored on [Codeberg](https://codeberg.org/asciimoo/hister).
+
+## Docker
+
+The official container is published at [GitHub Container Registry](https://github.com/asciimoo/hister/pkgs/container/hister). See the [Docker guide](docker) for a complete Compose setup, persistent storage, and reverse proxy examples.
 
 ## Nix
 
 ### Quick usage
 
-Run directly from the repository:
+Run Hister directly from the repository:
 
-```bash
+```nix
 nix run github:asciimoo/hister
 ```
 
-Add to your current shell session:
+Add Hister to the current shell:
 
-```bash
+```nix
 nix shell github:asciimoo/hister
 ```
 
-Install permanently to your user profile:
+Install it into your user profile:
 
-```bash
+```nix
 nix profile install github:asciimoo/hister
 ```
 
-### Flake Setup
+### Flake setup
 
-Add the input to your `flake.nix`:
+Add the input to `flake.nix`:
 
 ```nix
 {
   inputs.hister.url = "github:asciimoo/hister";
 
   outputs = { self, nixpkgs, hister, ... }: {
-    # For NixOS:
     nixosConfigurations.yourHostname = nixpkgs.lib.nixosSystem {
       modules = [
         ./configuration.nix
@@ -69,7 +98,6 @@ Add the input to your `flake.nix`:
       ];
     };
 
-    # For Home-Manager:
     homeConfigurations."yourUsername" = home-manager.lib.homeManagerConfiguration {
       modules = [
         ./home.nix
@@ -77,7 +105,6 @@ Add the input to your `flake.nix`:
       ];
     };
 
-    # For Darwin (macOS):
     darwinConfigurations."yourHostname" = darwin.lib.darwinSystem {
       modules = [
         ./configuration.nix
@@ -88,7 +115,7 @@ Add the input to your `flake.nix`:
 }
 ```
 
-### Service Configuration
+### Service configuration
 
 Enable and configure the service in your configuration file:
 
@@ -96,30 +123,13 @@ Enable and configure the service in your configuration file:
 services.hister = {
   enable = true;
 
-  # Optional: Set via Nix options (takes precedence over config file)
+  # Optional: Set via Nix options. These take precedence over the config file.
   # port = 4433;
-  # dataDir = "/var/lib/hister";  # NixOS Recommend: "/var/lib/hister"
-                                  # Home-Manager Recommend: "~/.local/share/hister"
-                                  # Darwin Recommend: "~/Library/Application Support/hister"
-
-  # Optional (NixOS only): open `port` in the system firewall.
-  # Setting `port` alone no longer mutates the firewall.
-  # openFirewall = true;
-
-  # Optional: Use existing YAML config file
+  # dataDir = "/var/lib/hister";
+  # openFirewall = true; # NixOS only
   # configPath = /path/to/config.yml;
-
-  # Optional: Inject secrets (e.g. HISTER__APP__ACCESS_TOKEN) via a
-  # systemd EnvironmentFile instead of placing them in the world-readable
-  # Nix store. Honored by the NixOS module and the Linux home-manager
-  # user service; ignored on launchd (Darwin).
   # environmentFile = "/run/secrets/hister.env";
 
-  # Optional: Inline configuration (rendered to YAML and passed via HISTER_CONFIG)
-  # Note: Only one of configPath or settings can be used.
-  # Accepts any key the server accepts — see the upstream `app`, `server`,
-  # `indexer`, `crawler`, `hotkeys`, `extractors`, and
-  # `sensitive_content_patterns` blocks.
   settings = {
     app = {
       search_url = "https://google.com/search?q={query}";
@@ -129,33 +139,13 @@ services.hister = {
       address = "127.0.0.1:4433";
       database = "db.sqlite3";
     };
-    hotkeys = {
-      "/" = "focus_search_input";
-      "enter" = "open_result";
-      "alt+enter" = "open_result_in_new_tab";
-      "alt+j" = "select_next_result";
-      "alt+k" = "select_previous_result";
-      "alt+o" = "open_query_in_search_engine";
-    };
   };
 };
 ```
 
-**Notes:**
+The NixOS module uses a hardened systemd service. The Linux Home Manager module uses a systemd user service, while the Darwin modules use a launchd agent. Use `environmentFile` for secrets on supported Linux services instead of placing them in the world readable Nix store.
 
-- The `port` and `dataDir` options override corresponding values in your config file
-- To manage settings through the config file only, leave `port` and `dataDir` unset
-- `services.hister.config` was renamed to `services.hister.settings` to align with the nixpkgs `services.*.settings` convention. The old name still works via `mkRenamedOptionModule` but emits a deprecation warning.
-- On NixOS the systemd unit ships with a hardened `serviceConfig` (`ProtectSystem=strict`, `NoNewPrivileges`, private `/tmp` and `/dev`, an `AF_INET{,6}`/`AF_UNIX` address-family filter, `@system-service` syscall filter, `MemoryDenyWriteExecute`, etc.). Binding a privileged port (`< 1024`) automatically adds `CAP_NET_BIND_SERVICE`.
-- On other systemd-based Linux distributions, see the sample unit at [`contrib/systemd/hister.service`](https://github.com/asciimoo/hister/blob/master/contrib/systemd/hister.service).
-- On macOS (both `darwinModules` and `homeModules`) the launchd agent uses `KeepAlive = { Crashed = true; SuccessfulExit = false; }` so fatal config errors that exit 0 are not hidden, plus `ProcessType = "Background"` and `RunAtLoad = true`.
-- The home-manager module now gates the systemd user unit on Linux and the launchd agent on Darwin, so a single `homeModules.hister` import works on either host.
-
-### Add to Packages (Without Service)
-
-If you don't want to use the module system, add the package directly:
-
-**System packages (NixOS/Darwin):**
+To install only the package without enabling a service:
 
 ```nix
 { inputs, pkgs, ... }: {
@@ -163,7 +153,7 @@ If you don't want to use the module system, add the package directly:
 }
 ```
 
-**User packages (Home-Manager):**
+For Home Manager:
 
 ```nix
 { inputs, pkgs, ... }: {
@@ -171,16 +161,12 @@ If you don't want to use the module system, add the package directly:
 }
 ```
 
-## Docker
-
-We publish a [Docker container](https://github.com/asciimoo/hister/pkgs/container/hister).
-
 ## Proxmox VE
 
-Hister is also available through the [Proxmox VE Community Scripts](https://community-scripts.org/scripts/hister) project for LXC based installs:
+Hister is available through the [Proxmox VE Community Scripts](https://community-scripts.org/scripts/hister) project for LXC installations:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/ct/hister.sh)"
 ```
 
-This installer is maintained by the community scripts project, not by the Hister project. Review the script before running it on your Proxmox host.
+This installer is maintained by the community scripts project, not by Hister. Review the script before running it on your Proxmox host.

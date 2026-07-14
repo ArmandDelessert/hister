@@ -53,21 +53,21 @@ This can be less reliable, because if your computer's IP address may occasionall
 
 1. Obtain the computer's hostname:
    - **Linux**, **macOS**: you can run the `hostname` command in the terminal, or find the hostname somewhere in system settings.
-   - **Windows**: TODO (note also that you may need to [enable network discovery](https://superuser.com/questions/1560557/can-access-shared-network-files-by-ip-but-not-by-host-name#answer-1560563) for your PC to announce its hostname).
+   - **Windows**: open **Settings**, then **System**, then **About**, and use the **Device name**. You can also run `hostname` in PowerShell. You may need to enable network discovery before other computers can resolve this name.
 
-2. Replace `localhost` in `base_url:` with the hostname \*suffixed by `.local`.
-   For example, let's use my laptop's hostname `zonai-goat`, though it can be something like `DESKTOP-D9JCP0Q`.
+2. Replace `localhost` in `base_url:` with the hostname. Linux and macOS commonly advertise the name with a `.local` suffix. On Windows, try the device name without a suffix first.
+   For example, if a laptop reports the hostname `my-laptop`, use:
 
    ```yaml
    server:
      address: '[::]:4433'
-     base_url: http://zonai-goat.local:4433
+     base_url: http://my-laptop.local:4433
    ```
 
 3. Restart the Hister server, then try accessing the Hister Web interface (preferably from another device!) at the address specified in the `base_url` field.
    If your browser reports being unable to connect to the server, check your firewall settings.
 
-   If the issue persists, try removing the `.local` part of the `base_url`, restart the server, and try again (don't forget to remove the `.local` part from your browser's address bar also!).
+   If the issue persists, add or remove the `.local` suffix, restart the server, and use the same address in your browser. A static local IP is the more reliable option when hostname discovery is unavailable.
 
 </details>
 

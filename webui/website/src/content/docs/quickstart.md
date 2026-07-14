@@ -8,15 +8,17 @@ title: 'Quickstart'
 import screenshot from "$lib/assets/landing_screenshot.png";
 </script>
 
-The simplest way to use Hister requires no configuration at all.
+The simplest way to use Hister requires no configuration. First [install the Hister binary](installing), then follow the steps below.
 
 ## Running the Server
 
 Open a terminal, and start the server:
 
 ```bash
-./hister listen # or just `./hister`
+./hister
 ```
+
+On Windows, run `.\hister.exe` in PowerShell instead.
 
 The server will start on http://127.0.0.1:4433 and thus be accessible only from the same machine.
 This is perfect for personal use on a single computer.
@@ -25,7 +27,7 @@ Just make sure not to close the terminal that the above command was run on, as d
 (The server can also be closed normally by pressing <kbd>Ctrl</kbd>+<kbd>C</kbd>.)
 It is fine to close and/or reopen the server at any time, but it **must** be running for the clients to be able to index any pages; you will get errors otherwise.
 
-More advanced setups are described in the "Advanced Server Setup" category; they are relevant for more technical users.
+More advanced setups are described in the "Advanced Server Setup" documentation.
 
 ## Installing a Browser Extension
 
@@ -59,5 +61,5 @@ If you can't access the Web interface at all, check that [the server is running]
 
 - [Import your existing browser history](importing-browser-history)
 - In the Web interface, set up ignoring and priority rules, as well as keyword aliases for efficient searching
-- Explore the [advanced search syntax](https://blevesearch.com/docs/Query-String-Query/)
+- Explore the [Hister query language](query-language)
 - Configure hotkeys and sensitive data patterns in your config file

@@ -86,6 +86,7 @@ easy to build on, and contributions are welcome.
 
 ---
 
-To get started, install [Hister](/docs/getting-started) and the
-browser extension, then open your Mastodon feed. The indexing happens
+To get started, install [Hister](/docs/installing) and follow the
+[quickstart guide](/docs/quickstart), install the browser extension, and open
+your Mastodon feed. The indexing happens
 automatically from that point on.

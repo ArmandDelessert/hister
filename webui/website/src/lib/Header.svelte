@@ -8,9 +8,9 @@
   let menuOpen = $state(false);
 
   const links = [
-    { href: '/datasets', label: 'DATASETS' },
-    { href: '/docs', label: 'DOCS' },
-    { href: '/posts', label: 'POSTS' },
+    { href: '/datasets', label: 'Datasets' },
+    { href: '/docs', label: 'Docs' },
+    { href: '/posts', label: 'Posts' },
   ];
 
   function isActive(href: string): boolean {
@@ -33,7 +33,7 @@
         <li>
           <a
             href={link.href}
-            class="font-space gap-4 px-8 py-8 font-semibold tracking-[1.5px] no-underline transition-colors hover:underline md:text-sm {isActive(
+            class="font-space gap-4 px-8 py-8 font-semibold tracking-[1.5px] uppercase no-underline transition-colors hover:underline md:text-sm {isActive(
               link.href,
             )
               ? 'text-[var(--text-primary)]'
@@ -84,7 +84,7 @@
         <li>
           <a
             href={link.href}
-            class="font-space px-6 py-4 text-[15px] font-semibold tracking-[1.5px] no-underline {isActive(
+            class="font-space px-6 py-4 text-[15px] font-semibold tracking-[1.5px] uppercase no-underline {isActive(
               link.href,
             )
               ? 'text-[var(--text-primary)]'

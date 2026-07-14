@@ -23,9 +23,10 @@
   <nav class="grid grid-cols-[1fr_auto_1fr] items-center px-6 py-4 md:px-12">
     <a
       href="/"
-      class="font-space justify-self-start text-[28px] font-extrabold tracking-[2px] text-[var(--text-primary)] uppercase no-underline"
+      class="group font-space flex items-center gap-1.5 justify-self-start text-[28px] font-extrabold tracking-[2px] text-[var(--text-primary)] uppercase no-underline md:gap-2"
     >
-      Hister
+      <img src="/logo.png" alt="" width="32" height="32" class="h-6 w-6 md:h-8 md:w-8" />
+      <span class="group-hover:underline">Hister</span>
     </a>
 
     <ul class="m-0 hidden list-none items-center p-0 md:flex">

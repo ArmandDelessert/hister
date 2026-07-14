@@ -2,7 +2,6 @@
   import Check from '@lucide/svelte/icons/check';
   import FileText from '@lucide/svelte/icons/file-text';
   import Globe2 from '@lucide/svelte/icons/globe-2';
-  import Lock from '@lucide/svelte/icons/lock';
   import Search from '@lucide/svelte/icons/search';
 
   const results = [
@@ -24,17 +23,6 @@
 </script>
 
 <div class="relative mx-auto min-w-0 w-full max-w-[760px] lg:mx-0">
-  <div
-    class="absolute -top-5 -left-4 z-20 border-[2px] border-brutal-border bg-hister-lime px-3 py-2 shadow-brutal sm:-left-7"
-  >
-    <span
-      class="font-fira flex items-center gap-2 text-[10px] font-bold tracking-[1px] text-[var(--text-primary)] uppercase"
-    >
-      <span class="h-2 w-2 bg-[var(--text-primary)]"></span>
-      Local index
-    </span>
-  </div>
-
   <div
     class="overflow-hidden border-[3px] border-brutal-border bg-brutal-card shadow-[10px_10px_0_var(--brutal-shadow)]"
   >
@@ -134,13 +122,6 @@
         </aside>
       </div>
     </div>
-  </div>
-
-  <div
-    class="absolute -right-3 -bottom-5 z-20 flex items-center gap-2 border-[2px] border-brutal-border bg-hister-coral px-3 py-2 text-[#1f1f1f] shadow-brutal sm:-right-6"
-  >
-    <Lock size={14} />
-    <span class="font-fira text-[10px] font-bold tracking-[1px] uppercase">Yours to search</span>
   </div>
 </div>
 

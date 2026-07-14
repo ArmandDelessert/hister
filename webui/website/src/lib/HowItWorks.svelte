@@ -13,7 +13,6 @@
   const steps = [
     {
       label: 'Collect',
-      title: 'Bring in what matters',
       description:
         'Save newly visited pages with the browser extension, watch local folders, import your history, or crawl a site.',
       icon: Archive,
@@ -25,7 +24,6 @@
     },
     {
       label: 'Index',
-      title: 'Keep the useful content',
       description:
         'Hister extracts the parts that matter and indexes their full text on the server you choose.',
       icon: FolderSearch,
@@ -37,7 +35,6 @@
     },
     {
       label: 'Find',
-      title: 'Recall it your way',
       description:
         'Search from the web, terminal, command line, or let an AI assistant retrieve it through MCP.',
       icon: Search,
@@ -87,27 +84,24 @@
               <StepIcon size={26} strokeWidth={2.3} />
             </div>
             <p
-              class="font-fira text-[11px] font-bold tracking-[2px] text-[var(--text-secondary)] uppercase"
+              class="font-fira text-base font-bold tracking-[2px] text-[var(--text-secondary)] uppercase"
             >
               {step.label}
             </p>
           </div>
-          <h3
-            class="font-space mt-8 text-2xl leading-tight font-black tracking-[-0.02em] text-[var(--text-primary)] uppercase md:text-3xl"
-          >
-            {step.title}
-          </h3>
-          <p class="mt-6 text-sm leading-[1.7] text-[var(--text-secondary)] md:text-base">
+          <p class="mt-8 text-sm leading-[1.7] text-[var(--text-secondary)] md:text-base">
             {step.description}
           </p>
 
           <div class="mt-auto grid grid-cols-2 gap-2 pt-8">
             {#each step.items as item}
               {@const ItemIcon = item.icon}
-              <div class="border-[2px] border-brutal-border bg-white p-3">
-                <ItemIcon size={16} class="mb-3 text-[var(--text-primary)]" />
+              <div
+                class="flex flex-col items-center border-[2px] border-brutal-border bg-white p-4 text-center"
+              >
+                <ItemIcon size={32} class="mb-4 text-[var(--text-primary)]" />
                 <span
-                  class="font-fira block text-[9px] font-bold leading-tight tracking-[0.7px] text-[var(--text-secondary)] uppercase"
+                  class="font-fira block text-[11px] font-bold leading-tight tracking-[0.7px] text-[var(--text-secondary)] uppercase"
                   >{item.label}</span
                 >
               </div>
@@ -153,16 +147,6 @@
     transition:
       translate 220ms ease,
       box-shadow 220ms ease;
-  }
-
-  .step-card::after {
-    content: '';
-    position: absolute;
-    right: 18px;
-    bottom: 18px;
-    width: 8px;
-    height: 8px;
-    background: var(--step-accent);
   }
 
   .step-card:hover {

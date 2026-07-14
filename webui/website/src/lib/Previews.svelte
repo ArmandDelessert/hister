@@ -99,16 +99,6 @@
             />
           </BrowserFrame>
         </div>
-        <div
-          class="absolute right-5 -bottom-2 z-20 hidden border-[2px] border-brutal-border bg-white px-3 py-2 shadow-brutal sm:block lg:bottom-1"
-        >
-          <span
-            class="font-fira flex items-center gap-2 text-[10px] font-bold tracking-[1px] text-[var(--text-primary)] uppercase"
-          >
-            <span class="h-2 w-2 bg-hister-lime"></span>
-            Result and preview, side by side
-          </span>
-        </div>
       </div>
     </div>
   </div>

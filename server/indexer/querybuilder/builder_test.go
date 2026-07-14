@@ -167,6 +167,14 @@ func Test_build_whitespace_only(t *testing.T) {
 	}
 }
 
+func Test_build_bare_wildcard_returns_match_all(t *testing.T) {
+	for _, input := range []string{"*", "  *  "} {
+		if _, ok := Build(input).(*query.MatchAllQuery); !ok {
+			t.Fatalf("Build(%q): expected *query.MatchAllQuery, got %T", input, Build(input))
+		}
+	}
+}
+
 func Test_build_simple_word_returns_boolean_query(t *testing.T) {
 	bq := buildBoolQ(t, "golang")
 	clauses := mustClauses(t, bq)

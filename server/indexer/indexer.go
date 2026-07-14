@@ -1479,7 +1479,8 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	}
 
 	// Run semantic search if enabled and the embedding infrastructure is available.
-	if q.SemanticEnabled && i.embedder != nil && i.vectorStore != nil && q.Text != "" {
+	if q.SemanticEnabled && i.embedder != nil && i.vectorStore != nil &&
+		strings.TrimSpace(q.Text) != "" && !querybuilder.IsMatchAll(q.Text) {
 		r.SemanticEnabled = true
 		vec, err := i.embedder.EmbedQuery(context.Background(), q.Text)
 		if err != nil {

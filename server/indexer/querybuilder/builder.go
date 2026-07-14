@@ -28,6 +28,9 @@ func Build(s string) query.Query {
 	if strings.TrimSpace(s) == "" {
 		return query.NewMatchNoneQuery()
 	}
+	if IsMatchAll(s) {
+		return query.NewMatchAllQuery()
+	}
 
 	qt, err := Tokenize(s)
 	if err != nil {
@@ -64,6 +67,11 @@ func Build(s string) query.Query {
 		q.AddShould(uq)
 	}
 	return q
+}
+
+// IsMatchAll reports whether s is the bare wildcard query.
+func IsMatchAll(s string) bool {
+	return strings.TrimSpace(s) == "*"
 }
 
 // anyFieldSpecific returns true when at least one token in qt is an explicit

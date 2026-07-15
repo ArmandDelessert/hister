@@ -9,6 +9,7 @@
   import { onMount, untrack } from 'svelte';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
   import { base } from '$app/paths';
+  import { page } from '$app/state';
   import { formatTimestamp, formatRelativeTime, KeyHandler, scrollTo } from '$lib/search';
   import type { HistoryItem } from '$lib/types';
   import { Button } from '@hister/components/ui/button';
@@ -23,12 +24,13 @@
   const historyPageSize = 100;
   const historyFilterRequestDelay = 150;
   const historyDisplayTextLimit = 500;
+  const initialFilter = page.url.searchParams.get('filter') ?? '';
 
   let items: HistoryItem[] = $state([]);
   let loading = $state(true);
   let error = $state('');
-  let filter = $state('');
-  let serverFilter = $state('');
+  let filter = $state(initialFilter);
+  let serverFilter = $state(initialFilter.trim());
   let pageKey = $state('');
   let openedLastID = $state(0);
   let activeGroup = $state('');
@@ -80,9 +82,27 @@
 
   // --- History state helpers ---
 
-  function pushHistoryPageHistory() {
-    history.pushState({ type: 'history' }, '', base + '/history');
+  function buildHistoryPageUrl(filterValue: string = filter): string {
+    const params = new URLSearchParams();
+    const normalizedFilter = filterValue.trim();
+    if (normalizedFilter) params.set('filter', normalizedFilter);
+    const query = params.toString();
+    return `${base}/history${query ? `?${query}` : ''}`;
   }
+
+  function pushHistoryPageHistory() {
+    history.pushState({ type: 'history' }, '', buildHistoryPageUrl());
+  }
+
+  function replaceHistoryPageHistory(filterValue: string) {
+    history.replaceState({ type: 'history' }, '', buildHistoryPageUrl(filterValue));
+  }
+
+  $effect(() => {
+    const currentFilter = filter;
+    if (skipUrl.value || previewFullscreen) return;
+    replaceHistoryPageHistory(currentFilter);
+  });
 
   $effect(() => {
     const mq = window.matchMedia('(min-width: 1280px)');
@@ -145,6 +165,9 @@
       return;
     }
     previewFullscreen = false;
+    withSkipUrl(skipUrl, () => {
+      filter = new URLSearchParams(window.location.search).get('filter') ?? '';
+    });
   }
 
   $effect(() => {

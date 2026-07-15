@@ -1067,6 +1067,10 @@ func Save(d *document.Document) error {
 }
 
 func GetLatestDocuments(limit int, latest string, userID uint) *Results {
+	return GetLatestDocumentsFiltered(limit, latest, userID, "")
+}
+
+func GetLatestDocumentsFiltered(limit int, latest string, userID uint, filter string) *Results {
 	if i == nil {
 		return nil
 	}
@@ -1081,6 +1085,20 @@ func GetLatestDocuments(limit int, latest string, userID uint) *Results {
 		q = bleve.NewDisjunctionQuery(userQuery, globalQuery)
 	} else {
 		q = query.NewMatchAllQuery()
+	}
+	if filter = strings.TrimSpace(filter); filter != "" {
+		pattern := "(?i).*" + regexp.QuoteMeta(filter) + ".*"
+		urlQuery := bleve.NewRegexpQuery(pattern)
+		urlQuery.SetField("url")
+		titlePhraseQuery := bleve.NewMatchPhraseQuery(filter)
+		titlePhraseQuery.SetField("title")
+		filterQueries := []query.Query{urlQuery, titlePhraseQuery}
+		if !strings.ContainsAny(filter, " \t\r\n") {
+			titleRegexpQuery := bleve.NewRegexpQuery(pattern)
+			titleRegexpQuery.SetField("title")
+			filterQueries = append(filterQueries, titleRegexpQuery)
+		}
+		q = bleve.NewConjunctionQuery(q, bleve.NewDisjunctionQuery(filterQueries...))
 	}
 	req := bleve.NewSearchRequest(q)
 	req.Fields = []string{"url", "title", "added", "updated", "add_count", "favicon_key", "favicon"}

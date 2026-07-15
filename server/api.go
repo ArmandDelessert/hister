@@ -565,6 +565,12 @@ func init() {
 					Description: "Pagination cursor: URL of the last indexed document from a previous response",
 				},
 				{
+					Name:        "filter",
+					Type:        "string",
+					Required:    false,
+					Description: "Case insensitive title or URL filter applied before pagination",
+				},
+				{
 					Name:        "format",
 					Type:        "string",
 					Required:    false,

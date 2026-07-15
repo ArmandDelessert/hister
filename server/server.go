@@ -1219,6 +1219,7 @@ func serveHistory(c *webContext) {
 		return
 	}
 	rssFormat := c.Request.URL.Query().Get("format") == "rss"
+	filter := strings.TrimSpace(c.Request.URL.Query().Get("filter"))
 	if c.Request.URL.Query().Get("opened") == "true" {
 		var lastID uint
 		if v := c.Request.URL.Query().Get("last_id"); v != "" {
@@ -1226,7 +1227,7 @@ func serveHistory(c *webContext) {
 				lastID = uint(parsed)
 			}
 		}
-		items, err := model.GetLatestHistoryItems(c.UserID, 100, lastID)
+		items, err := model.GetLatestHistoryItemsFiltered(c.UserID, 100, lastID, filter)
 		if err != nil {
 			serve500(c)
 			return
@@ -1278,7 +1279,7 @@ func serveHistory(c *webContext) {
 		c.JSON(&openedResponse{Documents: docs, LastID: nextLastID})
 		return
 	}
-	ds := indexer.GetLatestDocuments(100, c.Request.URL.Query().Get("last"), c.UserID)
+	ds := indexer.GetLatestDocumentsFiltered(100, c.Request.URL.Query().Get("last"), c.UserID, filter)
 	if rssFormat {
 		var rssItems []rssItem
 		if ds != nil {

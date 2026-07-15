@@ -20,10 +20,15 @@
   import { StatusMessage, PreviewPanel, ResultFavicon } from '$lib/components';
   import { CalendarDays, Clock, Eye, ListFilter, Rss, Search, Trash2, X } from '@lucide/svelte';
 
+  const historyPageSize = 100;
+  const historyFilterRequestDelay = 150;
+  const historyDisplayTextLimit = 500;
+
   let items: HistoryItem[] = $state([]);
   let loading = $state(true);
   let error = $state('');
   let filter = $state('');
+  let serverFilter = $state('');
   let pageKey = $state('');
   let openedLastID = $state(0);
   let activeGroup = $state('');
@@ -33,7 +38,15 @@
       ? localStorage.getItem('historyOpenedOnly') === 'true'
       : false,
   );
-  const historyPageSize = 100;
+  let historyRequestController: AbortController | undefined;
+  let historyRequestID = 0;
+
+  interface HistoryGroup {
+    key: string;
+    label: string;
+    items: HistoryItem[];
+    offset: number;
+  }
 
   // Keyboard navigation
   let keyHandler: KeyHandler | undefined;
@@ -185,68 +198,59 @@
     return item.updated ?? item.added ?? 0;
   }
 
-  const filteredItems = $derived.by(() => {
-    let result = items;
-    if (filter) {
-      const f = filter.toLowerCase();
-      result = result.filter(
-        (item) => item.title.toLowerCase().includes(f) || item.url.toLowerCase().includes(f),
-      );
-    }
-    if (filterByDate) {
-      result = result.filter((item) => {
-        const timestamp = itemTimestamp(item);
-        return timestamp > 0 && getDateKey(timestamp) === filterByDate;
-      });
-    }
-    return result;
+  $effect(() => {
+    const nextFilter = filter.trim();
+    if (nextFilter === serverFilter) return;
+    const timer = window.setTimeout(() => {
+      serverFilter = nextFilter;
+    }, historyFilterRequestDelay);
+    return () => window.clearTimeout(timer);
   });
 
-  function groupByDate(
-    sourceItems: HistoryItem[],
-  ): { key: string; label: string; items: HistoryItem[] }[] {
-    const g: { key: string; label: string; items: HistoryItem[] }[] = [];
+  const filteredItems = $derived.by(() => {
+    if (!filterByDate) return items;
+
+    return items.filter((item) => {
+      const timestamp = itemTimestamp(item);
+      return timestamp > 0 && getDateKey(timestamp) === filterByDate;
+    });
+  });
+
+  function groupByDate(sourceItems: HistoryItem[]): HistoryGroup[] {
+    const result: HistoryGroup[] = [];
     const seen = new Map<string, number>();
     for (const item of sourceItems) {
       const timestamp = itemTimestamp(item);
       const key = getDateKey(timestamp);
-      const label = formatDateLabel(timestamp);
       if (seen.has(key)) {
-        g[seen.get(key)!].items.push(item);
+        result[seen.get(key)!].items.push(item);
       } else {
-        seen.set(key, g.length);
-        g.push({ key, label, items: [item] });
+        seen.set(key, result.length);
+        result.push({ key, label: formatDateLabel(timestamp), items: [item], offset: 0 });
       }
     }
-    return g;
+    let offset = 0;
+    for (const group of result) {
+      group.offset = offset;
+      offset += group.items.length;
+    }
+    return result;
   }
 
-  const allGroups = $derived.by(() => {
-    let baseItems = items;
-    if (filter) {
-      const f = filter.toLowerCase();
-      baseItems = baseItems.filter(
-        (item) => item.title.toLowerCase().includes(f) || item.url.toLowerCase().includes(f),
-      );
-    }
-    return groupByDate(baseItems);
-  });
+  const allGroups = $derived.by(() => groupByDate(items));
 
-  const groups = $derived.by(() => groupByDate(filteredItems));
+  const groups = $derived.by(() => (filterByDate ? groupByDate(filteredItems) : allGroups));
 
   function getGroupColor(idx: number): string {
     return groupColors[idx % groupColors.length];
   }
 
+  const globalGroupColors = $derived.by(
+    () => new Map(allGroups.map((group, idx) => [group.key, getGroupColor(idx)])),
+  );
+
   function getGlobalGroupColor(key: string): string {
-    let idx = 0;
-    for (const i in allGroups) {
-      if (allGroups[i].key == key) {
-        idx = i;
-        break;
-      }
-    }
-    return groupColors[idx % groupColors.length];
+    return globalGroupColors.get(key) ?? groupColors[0];
   }
 
   function scrollToGroup(key: string) {
@@ -269,84 +273,115 @@
     filter = '';
   }
 
-  function groupCount(group: { key: string; items: HistoryItem[] }): number {
+  function displayText(value: string): string {
+    if (value.length <= historyDisplayTextLimit) return value;
+    return value.slice(0, historyDisplayTextLimit) + '\u2026';
+  }
+
+  function groupCount(group: HistoryGroup): number {
     return group.items.length;
   }
 
-  function groupHasMore(group: { key: string; items: HistoryItem[] }): boolean {
+  function groupHasMore(group: HistoryGroup): boolean {
     if (!hasMore || items.length === 0) return false;
     const oldestLoadedItem = items[items.length - 1];
     const timestamp = itemTimestamp(oldestLoadedItem);
     return timestamp > 0 && getDateKey(timestamp) === group.key;
   }
 
-  function groupCountLabel(group: { key: string; items: HistoryItem[] }): string {
+  function groupCountLabel(group: HistoryGroup): string {
     return `${groupCount(group)}${groupHasMore(group) ? '+' : ''}`;
   }
 
-  async function loadItems(latest: string = '') {
+  async function loadItems(
+    latest: string = '',
+    requestedFilter: string = serverFilter,
+    requestedOpenedOnly: boolean = openedOnly,
+  ) {
+    historyRequestController?.abort();
+    const controller = new AbortController();
+    const requestID = ++historyRequestID;
+    historyRequestController = controller;
     loading = true;
+    error = '';
+    if (!latest) items = [];
     try {
       const cfg = await fetchConfig();
+      if (controller.signal.aborted) return;
       if (!cfg.historyEnabled) {
         window.location.href = base + '/';
         return;
       }
-      let url = '/history';
-      if (openedOnly) {
-        url += '?opened=true';
-        if (latest) {
-          url += '&last_id=' + encodeURIComponent(latest);
-        }
+      const params = new URLSearchParams();
+      if (requestedOpenedOnly) {
+        params.set('opened', 'true');
+        if (latest) params.set('last_id', latest);
       } else if (latest) {
-        url += '?last=' + encodeURIComponent(latest);
+        params.set('last', latest);
       }
+      if (requestedFilter) params.set('filter', requestedFilter);
+      const url = `/history${params.size > 0 ? `?${params.toString()}` : ''}`;
       const res = await apiFetch(url, {
         headers: { Accept: 'application/json' },
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error('Failed to load history');
       const resJSON = await res.json();
-      if (resJSON && resJSON.documents) {
+      if (controller.signal.aborted || requestID !== historyRequestID) return;
+      if (resJSON && Array.isArray(resJSON.documents)) {
         const loadedCount = resJSON.documents.length;
         if (!latest) {
           items = resJSON.documents;
         } else {
           items.push(...resJSON.documents);
         }
-        if (openedOnly) {
+        if (requestedOpenedOnly) {
           openedLastID = loadedCount >= historyPageSize ? (resJSON.last_id ?? 0) : 0;
+          pageKey = '';
         } else {
           pageKey = loadedCount >= historyPageSize ? (resJSON.page_key ?? '') : '';
+          openedLastID = 0;
         }
       } else {
+        if (!latest) items = [];
         pageKey = '';
         openedLastID = 0;
       }
     } catch (e) {
+      if (controller.signal.aborted) return;
       error = String(e);
     } finally {
-      loading = false;
+      if (requestID === historyRequestID) {
+        loading = false;
+        historyRequestController = undefined;
+      }
     }
   }
 
   $effect(() => {
-    openedOnly;
+    const requestedOpenedOnly = openedOnly;
+    const requestedFilter = serverFilter;
     openedLastID = 0;
     pageKey = '';
-    loadItems();
+    loadItems('', requestedFilter, requestedOpenedOnly);
   });
 
   async function loadMore() {
     if (loading || !hasMore) return;
     if (openedOnly) {
-      loadItems(String(openedLastID));
+      await loadItems(String(openedLastID), serverFilter, true);
     } else {
-      loadItems(pageKey);
+      await loadItems(pageKey, serverFilter, false);
     }
   }
 
   const hasMore = $derived((!openedOnly && pageKey !== '') || (openedOnly && openedLastID > 0));
-  const rssUrl = $derived(`api/history?${openedOnly ? 'opened=true&' : ''}format=rss`);
+  const rssUrl = $derived.by(() => {
+    const params = new URLSearchParams({ format: 'rss' });
+    if (openedOnly) params.set('opened', 'true');
+    if (serverFilter) params.set('filter', serverFilter);
+    return `api/history?${params.toString()}`;
+  });
 
   // Allow autoscroll only when no date filter is active, or when there are no
   // items from dates earlier than the selected date loaded yet.
@@ -371,7 +406,10 @@
   }
 
   $effect(() => {
-    if (!sentinel) return;
+    if (!sentinel) {
+      sentinelVisible = false;
+      return;
+    }
     const root = getScrollParent(sentinel.parentElement);
     const observer = new IntersectionObserver(
       (entries) => {
@@ -380,11 +418,24 @@
       { root, threshold: 0 },
     );
     observer.observe(sentinel);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      sentinelVisible = false;
+    };
   });
 
   $effect(() => {
-    if (sentinelVisible && !loading && hasMore && untrack(() => canAutoLoad)) {
+    const inputFilter = filter.trim();
+    if (
+      inputFilter ||
+      inputFilter !== serverFilter ||
+      !sentinel ||
+      !sentinelVisible ||
+      loading ||
+      !hasMore
+    )
+      return;
+    if (untrack(() => canAutoLoad)) {
       loadMore();
     }
   });
@@ -612,7 +663,7 @@
 
           <Separator class="bg-border-brand-muted h-[2px]" />
 
-          {#each allGroups as group, i}
+          {#each allGroups as group, i (group.key)}
             {@const color = getGroupColor(i)}
             {@const isActive = filterByDate === group.key}
             <Button
@@ -680,7 +731,7 @@
           >
             All
           </Button>
-          {#each allGroups as group, i}
+          {#each allGroups as group, i (group.key)}
             {@const color = getGroupColor(i)}
             {@const isActive = filterByDate === group.key}
             <Button
@@ -719,11 +770,8 @@
           <div
             class="mx-auto w-full max-w-5xl space-y-5 overflow-hidden px-3 py-3 md:space-y-7 md:px-6 md:py-5"
           >
-            {#each groups as group, gi}
+            {#each groups as group (group.key)}
               {@const color = getGlobalGroupColor(group.key)}
-              {@const groupOffset = groups
-                .slice(0, gi)
-                .reduce((acc: number, g) => acc + g.items.length, 0)}
               <section id="group-{encodeURIComponent(group.key)}" class="history-group">
                 <div class="history-group-header" style="--history-color: {getColorVar(color)};">
                   <div class="min-w-0">
@@ -740,9 +788,9 @@
                 </div>
 
                 <div class="history-stack">
-                  {#each group.items as item, ii}
+                  {#each group.items as item, ii (item)}
                     {@const itemColor = color}
-                    {@const flatIdx = groupOffset + ii}
+                    {@const flatIdx = group.offset + ii}
                     {@const timestamp = itemTimestamp(item)}
                     <article
                       data-result
@@ -765,7 +813,7 @@
                           rel="noopener"
                           onclick={() => (highlightIdx = flatIdx)}
                         >
-                          {(item.title || item.url).replace(/<[^>]*>/g, '')}
+                          {displayText(item.title || item.url).replace(/<[^>]*>/g, '')}
                         </a>
                         <div
                           class="flex min-w-0 flex-col gap-1 md:flex-row md:items-center md:gap-2"
@@ -786,7 +834,7 @@
                           {/if}
                           <span
                             class="history-url font-fira text-text-brand-muted line-clamp-1 min-w-0 flex-1 text-xs md:text-sm"
-                            title={item.url}>{item.url}</span
+                            title={item.url}>{displayText(item.url)}</span
                           >
                         </div>
                       </div>

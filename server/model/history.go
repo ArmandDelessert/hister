@@ -169,6 +169,10 @@ func GetURLsByQuery(userID uint, q string) ([]*URLCount, error) {
 }
 
 func GetLatestHistoryItems(userID uint, limit int, lastID uint) ([]*HistoryItem, error) {
+	return GetLatestHistoryItemsFiltered(userID, limit, lastID, "")
+}
+
+func GetLatestHistoryItemsFiltered(userID uint, limit int, lastID uint, filter string) ([]*HistoryItem, error) {
 	var hs []*HistoryItem
 	q := DB.Select("history_links.id as id, links.url as url, links.title as title, histories.query as query, history_links.updated_at as updated_at").
 		Table("history_links").
@@ -176,6 +180,11 @@ func GetLatestHistoryItems(userID uint, limit int, lastID uint) ([]*HistoryItem,
 		Joins("JOIN histories ON history_links.history_id = histories.id").
 		Where("histories.user_id = ?", userID).
 		Order("history_links.updated_at DESC")
+	if filter = strings.TrimSpace(filter); filter != "" {
+		filter = strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(filter))
+		pattern := "%" + filter + "%"
+		q = q.Where("(LOWER(links.title) LIKE ? ESCAPE '!' OR LOWER(links.url) LIKE ? ESCAPE '!')", pattern, pattern)
+	}
 	if lastID > 0 {
 		q = q.Where("history_links.id < ?", lastID)
 	}

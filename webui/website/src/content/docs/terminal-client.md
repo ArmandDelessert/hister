@@ -41,6 +41,15 @@ To manually index a specific URL:
 ./hister index https://example.com
 ```
 
+To index URLs from a file, put one URL on each line and use `--url-list`:
+
+```bash
+hister index --url-list urls.txt
+```
+
+Empty lines are ignored. If positional URLs are also supplied, Hister ignores
+them and indexes only the URLs from the file.
+
 By default, Hister fetches the page using a plain HTTP request. For JavaScript-heavy pages
 you can switch to a headless Chrome backend with `--backend`:
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/server/crawler"
@@ -27,6 +29,13 @@ var indexCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		resolvedArgs, err := resolveIndexURLs(cmd, args)
+		if err != nil {
+			exit(1, err.Error())
+			return
+		}
+		args = resolvedArgs
+
 		global, _ := cmd.Flags().GetBool("global")
 		clientOpts := targetUserIDClientOptions(cmd, global)
 		if allowSensitive, _ := cmd.Flags().GetBool("allow-sensitive"); allowSensitive {
@@ -255,7 +264,45 @@ func validateIndexArgs(cmd *cobra.Command, args []string) error {
 	if jobID != "" {
 		return nil
 	}
+	urlList, err := cmd.Flags().GetString("url-list")
+	if err != nil {
+		return err
+	}
+	if urlList != "" {
+		return nil
+	}
 	return cobra.MinimumNArgs(1)(cmd, args)
+}
+
+func resolveIndexURLs(cmd *cobra.Command, args []string) ([]string, error) {
+	urlList, err := cmd.Flags().GetString("url-list")
+	if err != nil {
+		return nil, err
+	}
+	if urlList == "" {
+		return args, nil
+	}
+
+	contents, err := os.ReadFile(urlList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read URL list %q: %w", urlList, err)
+	}
+	urls := parseURLList(string(contents))
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("URL list %q contains no URLs", urlList)
+	}
+	return urls, nil
+}
+
+func parseURLList(contents string) []string {
+	lines := strings.Split(contents, "\n")
+	urls := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if u := strings.TrimSpace(line); u != "" {
+			urls = append(urls, u)
+		}
+	}
+	return urls
 }
 
 func init() {
@@ -270,6 +317,7 @@ func init() {
 	indexCmd.Flags().StringArray("exclude-pattern", nil, "Regexp pattern; matching URLs are skipped (repeatable)")
 	indexCmd.Flags().Bool("global", false, "Make indexed documents available for all users (only for admins in multiuser mode)")
 	indexCmd.Flags().Uint("user-id", 0, "Index documents under the given user ID (only for admins in multiuser mode)")
+	indexCmd.Flags().String("url-list", "", "File containing one URL per line; replaces positional URLs when set")
 	indexCmd.Flags().String("job-id", "", "Persistent crawl job ID; use with --recursive to start a new job or alone to resume an existing one")
 	indexCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
 	indexCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")

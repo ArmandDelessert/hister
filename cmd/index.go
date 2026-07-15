@@ -15,10 +15,10 @@ import (
 )
 
 var indexCmd = &cobra.Command{
-	Use:   "index URL [URL...]",
-	Short: "Index URL [URL...]",
-	Long:  "Index one or more URLs",
-	Args:  cobra.MinimumNArgs(0),
+	Use:   "index [URL...]",
+	Short: "Index URLs or resume a persistent crawl job",
+	Long:  "Index one or more URLs, or resume a persistent crawl job by its job ID",
+	Args:  validateIndexArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		recursive, _ := cmd.Flags().GetBool("recursive")
 		jobID, _ := cmd.Flags().GetString("job-id")
@@ -165,6 +165,7 @@ var indexCmd = &cobra.Command{
 			}
 			if existingJob == nil {
 				exit(1, "Crawl job not found: "+jobID+". Use --recursive to start a new job.")
+				return
 			}
 
 			validatorRules, err := crawler.UnmarshalValidatorRules(existingJob.ValidatorRules)
@@ -241,6 +242,20 @@ var indexCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+func validateIndexArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return nil
+	}
+	jobID, err := cmd.Flags().GetString("job-id")
+	if err != nil {
+		return err
+	}
+	if jobID != "" {
+		return nil
+	}
+	return cobra.MinimumNArgs(1)(cmd, args)
 }
 
 func init() {

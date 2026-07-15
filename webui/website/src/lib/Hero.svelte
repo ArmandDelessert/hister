@@ -11,19 +11,19 @@
     {
       icon: Code2,
       title: 'Free software',
-      copy: 'Auditable, adaptable, AGPLv3.',
+      copy: 'AGPLv3',
       iconClass: 'bg-hister-cyan text-white',
     },
     {
       icon: Server,
       title: 'Self hosted',
-      copy: 'Run it on your own machine or server.',
+      copy: 'Run it on your own machine or server',
       iconClass: 'bg-hister-amber text-[var(--text-primary)]',
     },
     {
       icon: Lock,
       title: 'Privacy focused',
-      copy: 'No telemetry and no mandatory cloud.',
+      copy: 'No telemetry, no external requests ',
       iconClass: 'bg-hister-lime text-[var(--text-primary)]',
     },
   ];

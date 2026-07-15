@@ -5,7 +5,20 @@
   import Lock from '@lucide/svelte/icons/lock';
   import Server from '@lucide/svelte/icons/server';
   import { Button } from '@hister/components';
+  import { onMount } from 'svelte';
   import HeroSearchDemo from '$lib/HeroSearchDemo.svelte';
+
+  const chromeExtensionURL =
+    'https://chromewebstore.google.com/detail/hister/cciilamhchpmbdnniabclekddabkifhb';
+  const firefoxExtensionURL = 'https://addons.mozilla.org/en-US/firefox/addon/hister/';
+
+  let extensionDownloadURL = chromeExtensionURL;
+
+  onMount(() => {
+    if (/(Firefox|FxiOS)\//i.test(navigator.userAgent)) {
+      extensionDownloadURL = firefoxExtensionURL;
+    }
+  });
 
   const trustItems = [
     {
@@ -52,17 +65,19 @@
 
       <div class="mt-9 flex w-full flex-col gap-4 sm:w-auto sm:flex-row">
         <Button
-          href="https://demo.hister.org/"
+          href="/docs/quickstart"
           class="font-space brutal-press-lg h-auto justify-center rounded-none border-[3px] border-brutal-border bg-[#59598f] px-8 py-4 text-[15px] font-bold tracking-[1.3px] text-white uppercase no-underline"
         >
-          Try the live demo
+          Get started
           <ArrowRight size={18} />
         </Button>
         <Button
-          href="/docs/quickstart"
+          href={extensionDownloadURL}
+          target="_blank"
+          rel="noopener noreferrer"
           class="bg-brutal-card font-space brutal-press-lg h-auto justify-center rounded-none border-[3px] border-brutal-border px-8 py-4 text-[15px] font-bold tracking-[1.3px] text-[var(--text-primary)] uppercase no-underline hover:bg-[var(--text-primary)] hover:text-white"
         >
-          Get started
+          Download extension
           <ArrowRight size={18} />
         </Button>
       </div>

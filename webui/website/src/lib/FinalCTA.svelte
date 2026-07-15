@@ -1,5 +1,4 @@
 <script lang="ts">
-  import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import Download from '@lucide/svelte/icons/download';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { Button } from '@hister/components';
@@ -81,32 +80,26 @@
         preview alongside search results.
       </p>
 
-      <div class="mt-9 flex flex-col gap-4 sm:flex-row">
-        <Button
-          href="/docs/installing"
-          class="font-space brutal-press-lg h-auto justify-center rounded-none border-[3px] border-brutal-border bg-[var(--text-primary)] px-8 py-4 text-[15px] font-bold tracking-[1.3px] text-white uppercase no-underline"
-        >
-          Choose how to install
-          <ArrowRight size={18} />
-        </Button>
+      <div class="mt-9 flex flex-col flex-wrap justify-center gap-4 sm:flex-row">
         <Button
           href="https://github.com/asciimoo/hister/releases/latest"
           target="_blank"
           rel="noopener noreferrer"
-          class="bg-brutal-card font-space brutal-press-lg h-auto justify-center rounded-none border-[3px] border-brutal-border px-8 py-4 text-[15px] font-bold tracking-[1.3px] text-[var(--text-primary)] uppercase no-underline hover:bg-[var(--text-primary)] hover:text-white"
+          class="font-space brutal-press-lg h-auto justify-center rounded-none border-[3px] border-brutal-border bg-[var(--text-primary)] px-8 py-4 text-[15px] font-bold tracking-[1.3px] text-white uppercase no-underline"
         >
           Download Hister
           <Download size={18} />
         </Button>
+        <Button
+          href="https://demo.hister.org/"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="bg-brutal-card font-space brutal-press-lg h-auto justify-center rounded-none border-[3px] border-brutal-border px-8 py-4 text-[15px] font-bold tracking-[1.3px] text-[var(--text-primary)] uppercase no-underline hover:bg-[var(--text-primary)] hover:text-white"
+        >
+          Try the live demo
+          <ExternalLink size={18} />
+        </Button>
       </div>
-
-      <a
-        href="https://demo.hister.org/"
-        class="font-fira mt-6 flex max-w-full flex-wrap items-center gap-2 text-xs leading-relaxed font-bold text-[#1f1f1f] underline decoration-2 underline-offset-4 hover:no-underline"
-      >
-        Want to look around first? Try the live demo
-        <ExternalLink size={13} />
-      </a>
     </div>
   </div>
 </section>

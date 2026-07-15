@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
@@ -73,6 +74,47 @@ func CreateCrawlJob(id, startURL, validatorRules, label string) error {
 	}).Error
 }
 
+// CreateNamedCrawlJobWithURLs atomically creates a crawl job and its initial
+// URL queue. The base ID is used when available, followed by -2, -3, and so on
+// when another job already uses that ID.
+func CreateNamedCrawlJobWithURLs(baseID, startURL, validatorRules, label string, urls []string) (string, error) {
+	if len(urls) == 0 {
+		return "", errors.New("crawl job requires at least one URL")
+	}
+
+	var jobID string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		for suffix := 1; ; suffix++ {
+			id := baseID
+			if suffix > 1 {
+				id = fmt.Sprintf("%s-%d", baseID, suffix)
+			}
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&CrawlJob{
+				ID:             id,
+				StartURL:       startURL,
+				ValidatorRules: validatorRules,
+				Label:          label,
+				Status:         CrawlJobRunning,
+			})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			if err := insertCrawlURLs(tx, id, urls, 0); err != nil {
+				return err
+			}
+			jobID = id
+			return nil
+		}
+	})
+	if err != nil {
+		return "", err
+	}
+	return jobID, nil
+}
+
 // GetCrawlJob returns the job with the given ID, or (nil, nil) when not found.
 func GetCrawlJob(id string) (*CrawlJob, error) {
 	var job CrawlJob
@@ -113,6 +155,10 @@ func InsertCrawlURLIfNotExists(jobID, rawURL string, depth int) error {
 // BulkInsertCrawlURLs inserts all URLs for the given job in a single
 // transaction, silently skipping any that are already present.
 func BulkInsertCrawlURLs(jobID string, urls []string, depth int) error {
+	return insertCrawlURLs(DB, jobID, urls, depth)
+}
+
+func insertCrawlURLs(db *gorm.DB, jobID string, urls []string, depth int) error {
 	if len(urls) == 0 {
 		return nil
 	}
@@ -127,7 +173,7 @@ func BulkInsertCrawlURLs(jobID string, urls []string, depth int) error {
 	}
 	// CreateInBatches wraps each batch in its own transaction and generates a
 	// single multi-row INSERT per batch, keeping the statement size bounded.
-	return DB.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(records, 500).Error
+	return db.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(records, 500).Error
 }
 
 // MarkDoneAndEnqueueLinks marks a crawl URL as done and inserts all discovered

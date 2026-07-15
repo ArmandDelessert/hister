@@ -48,7 +48,18 @@ hister index --url-list urls.txt
 ```
 
 Empty lines are ignored. If positional URLs are also supplied, Hister ignores
-them and indexes only the URLs from the file.
+them and indexes only the URLs from the file. Before indexing starts, Hister
+creates a persistent crawl job and adds the complete list to its queue. The job
+uses the file name as its ID. If that ID already exists, Hister appends `-2`,
+`-3`, and so on. Resume an interrupted list with its generated job ID:
+
+```bash
+hister index --job-id urls.txt
+```
+
+By default, only the listed URLs are indexed. Add `--recursive` to follow links
+from every URL in the file. The `--url-list` and `--job-id` flags cannot be used
+together.
 
 By default, Hister fetches the page using a plain HTTP request. For JavaScript-heavy pages
 you can switch to a headless Chrome backend with `--backend`:

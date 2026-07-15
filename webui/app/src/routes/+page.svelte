@@ -2110,16 +2110,18 @@
                     style="--result-color: var(--{color});"
                   >
                     <div class="w-0 min-w-0 flex-1 space-y-0.5">
-                      <div class="flex min-w-0 items-center gap-1.5">
+                      <div class="flex min-w-0 items-start gap-1.5">
                         <ResultFavicon
                           favicon={r.favicon}
                           faviconKey={r.favicon_key}
                           pinned={r.isPinned}
+                          class="mt-0.5"
                         />
                         <a
                           data-result-link={r.url}
                           href={fileResultUrl(r.url)}
-                          class="result-title font-outfit text-md min-w-0 flex-1 font-semibold hover:underline md:text-xl"
+                          class="result-title font-outfit text-md line-clamp-3 min-w-0 flex-1 font-semibold hover:underline md:text-xl"
+                          title={r.title || '*title*'}
                           target={config.openResultsOnNewTab ? '_blank' : undefined}
                           onclick={() => {
                             sendHistoryBeacon(r.url, r.title || '*title*', query);
@@ -2250,7 +2252,7 @@
                       </div>
                       {#if r.text}
                         <p
-                          class="result-snippet font-inter text-text-brand-secondary text-sm leading-[1.45] md:text-base"
+                          class="result-snippet font-inter text-text-brand-secondary line-clamp-3 text-sm leading-[1.45] md:text-base"
                         >
                           {@html r.text}
                         </p>

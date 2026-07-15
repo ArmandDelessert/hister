@@ -50,7 +50,7 @@
           {...props}
           variant="ghost"
           size="icon-sm"
-          class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
+          class="text-text-brand-muted hover:text-text-brand shrink-0 self-start cursor-pointer"
         >
           <MoreVertical class="size-4" />
         </Button>

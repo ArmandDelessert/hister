@@ -746,7 +746,7 @@
                     {@const timestamp = itemTimestamp(item)}
                     <article
                       data-result
-                      class="history-row flex items-start gap-3 px-3 py-3 transition-all duration-150 md:items-center md:px-4"
+                      class="history-row flex items-start gap-3 px-3 py-3 transition-all duration-150 md:px-4"
                       class:history-row-active={flatIdx === highlightIdx}
                       style="--history-color: {getColorVar(itemColor)};"
                     >
@@ -759,7 +759,8 @@
                         <a
                           data-result-link={item.url}
                           href={item.url}
-                          class="history-title font-outfit text-hister-cyan block text-base font-bold no-underline hover:underline md:text-lg"
+                          class="history-title font-outfit text-hister-cyan line-clamp-2 text-base font-bold no-underline hover:underline md:text-lg"
+                          title={item.title || item.url}
                           target="_blank"
                           rel="noopener"
                           onclick={() => (highlightIdx = flatIdx)}
@@ -784,12 +785,12 @@
                             >
                           {/if}
                           <span
-                            class="history-url font-fira text-text-brand-muted block text-xs md:text-sm"
+                            class="history-url font-fira text-text-brand-muted line-clamp-1 min-w-0 flex-1 text-xs md:text-sm"
                             title={item.url}>{item.url}</span
                           >
                         </div>
                       </div>
-                      <nav class="flex shrink-0 items-center gap-1">
+                      <nav class="flex shrink-0 self-start items-center gap-1">
                         {#if !disablePreviews}
                           <Button
                             variant="ghost"

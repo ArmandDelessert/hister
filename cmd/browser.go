@@ -325,6 +325,24 @@ func importDB(databases []DBToImport, cmd *cobra.Command) {
 	if !job.created {
 		exit(1, "No URLs found to import")
 	}
+	storedJob, err := model.GetCrawlJob(job.id)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load browser import crawl job")
+		return
+	}
+	if storedJob == nil {
+		log.Error().Str("job_id", job.id).Msg("Browser import crawl job not found")
+		return
+	}
+	hasURLs, err := crawlJobHasURLsToCrawl(storedJob)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load browser import crawl job queue")
+		return
+	}
+	if !hasURLs {
+		fmt.Println("No URLs to crawl for job:", job.id)
+		return
+	}
 
 	fmt.Println(cliBoldStyle.Render("IMPORTING"))
 	fmt.Println("Starting crawl job:", job.id)

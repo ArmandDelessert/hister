@@ -140,6 +140,15 @@ var indexCmd = &cobra.Command{
 				fmt.Println("Starting crawl job:", jobID)
 			} else {
 				// Resume existing job.
+				hasURLs, err := crawlJobHasURLsToCrawl(existingJob)
+				if err != nil {
+					exit(1, "Failed to load crawl job queue: "+err.Error())
+					return
+				}
+				if !hasURLs {
+					fmt.Println("No URLs to crawl for job:", jobID)
+					return
+				}
 				startURL = existingJob.StartURL
 				validatorRules, err = crawler.UnmarshalValidatorRules(existingJob.ValidatorRules)
 				if err != nil {
@@ -168,6 +177,15 @@ var indexCmd = &cobra.Command{
 			}
 			if existingJob == nil {
 				exit(1, "Crawl job not found: "+jobID+". Use --recursive to start a new job.")
+				return
+			}
+			hasURLs, err := crawlJobHasURLsToCrawl(existingJob)
+			if err != nil {
+				exit(1, "Failed to load crawl job queue: "+err.Error())
+				return
+			}
+			if !hasURLs {
+				fmt.Println("No URLs to crawl for job:", jobID)
 				return
 			}
 
@@ -223,6 +241,17 @@ var indexCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+func crawlJobHasURLsToCrawl(job *model.CrawlJob) (bool, error) {
+	if job.Status == model.CrawlJobCompleted {
+		return false, nil
+	}
+	stats, err := model.GetCrawlJobStats(job.ID)
+	if err != nil {
+		return false, err
+	}
+	return stats.Pending+stats.InProgress > 0, nil
 }
 
 func validateIndexArgs(cmd *cobra.Command, args []string) error {

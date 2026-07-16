@@ -41,7 +41,7 @@ var crawlListCmd = &cobra.Command{
 			}
 			fmt.Printf("%s  %-12s  %s\n",
 				cliInfoStyle.Render(j.ID),
-				j.Status,
+				crawlJobStatusLabel(j.Status),
 				j.StartURL,
 			)
 			fmt.Printf("  pending: %d  done: %d  failed: %d  skipped: %d  created: %s\n",
@@ -119,7 +119,7 @@ func showCrawlJob(jobID string) {
 
 	fmt.Println(cliBoldStyle.Render("CRAWL JOB"))
 	fmt.Printf("id: %s\n", cliInfoStyle.Render(job.ID))
-	fmt.Printf("status: %s\n", job.Status)
+	fmt.Printf("status: %s\n", crawlJobStatusLabel(job.Status))
 	fmt.Printf("start_url: %s\n", job.StartURL)
 	fmt.Printf("label: %s\n", job.Label)
 	fmt.Printf("created: %s\n", job.CreatedAt.Format("2006-01-02 15:04:05"))
@@ -146,6 +146,13 @@ func showCrawlJob(jobID string) {
 		}
 		fmt.Println(string(rulesJSON))
 	}
+}
+
+func crawlJobStatusLabel(status string) string {
+	if status == model.CrawlJobRunning {
+		return "unfinished"
+	}
+	return status
 }
 
 func showCrawlJobQueue(jobID string, countOnly bool) {

@@ -583,7 +583,7 @@ TUI keyboard shortcuts are configured in `tui.yaml` under the `hotkeys` section.
 The `crawler` section configures the web crawler used by `hister index`, `hister index --recursive`,
 and `hister import-browser`. All three commands share the same backend and request settings.
 Every recursive crawl runs as a persistent job so it can be interrupted and resumed
-without losing progress. See [Terminal Client](terminal-client) for usage details.
+without losing progress. See [Website Crawler](crawler) for usage details.
 
 | Key               | Type              | Default | Description                                                                |
 | ----------------- | ----------------- | ------- | -------------------------------------------------------------------------- |

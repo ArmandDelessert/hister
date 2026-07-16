@@ -467,7 +467,7 @@ func printBrowserImportJob(idx int, job *model.CrawlJob) {
 	if err != nil {
 		log.Warn().Err(err).Str("job_id", job.ID).Msg("failed to get job stats")
 	}
-	fmt.Printf("%d  %s  %s\n", idx, job.ID, job.Status)
+	fmt.Printf("%d  %s  %s\n", idx, job.ID, crawlJobStatusLabel(job.Status))
 	fmt.Printf("   pending: %d  done: %d  failed: %d  skipped: %d  created: %s\n",
 		stats.Pending, stats.Done, stats.Failed, stats.Skipped,
 		job.CreatedAt.Format("2006-01-02 15:04:05"),

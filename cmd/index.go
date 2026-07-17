@@ -20,7 +20,7 @@ import (
 var indexCmd = &cobra.Command{
 	Use:   "index [URL...]",
 	Short: "Index URLs or resume a persistent crawl job",
-	Long:  "Index one or more URLs, or resume a persistent crawl job by its job ID",
+	Long:  "Index one or more URLs. Use --recursive to crawl linked pages, --url-list to create a persistent job from a file, or --job-id to resume a persistent job.",
 	Args:  validateIndexArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		recursive, _ := cmd.Flags().GetBool("recursive")
@@ -379,7 +379,7 @@ func init() {
 	indexCmd.Flags().Int("delay", 0, "Delay in seconds between requests (0 = no delay; overrides config)")
 	indexCmd.Flags().Int("timeout", 0, "Request timeout in seconds (0 = 5s default; overrides config)")
 	indexCmd.Flags().String("user-agent", "", "User-agent string for requests (overrides config)")
-	indexCmd.Flags().Bool("allow-sensitive", false, "Skip sensitive content checks allowing sensitive content being indexed.")
+	indexCmd.Flags().Bool("allow-sensitive", false, "Skip sensitive content checks, allowing matching documents to be indexed")
 }
 
 func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.Option) error {

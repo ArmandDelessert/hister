@@ -23,8 +23,7 @@ import (
 var browserImportCmd = &cobra.Command{
 	Use:   "import-browser [BROWSER_TYPE] [DB_PATH]",
 	Short: "Import Chrome, Firefox or auto-detect browsing history",
-	Long: `
-Import browsing history from a supported browser.
+	Long: `Import browsing history from a supported browser.
 
 Usage:
   import-browser                        - auto-detect all installed browsers
@@ -32,7 +31,7 @@ Usage:
   import-browser DB_PATH                - auto-detect browser type
   import-browser BROWSER_TYPE DB_PATH   - import a browser type with a specific database path
 
-Supported for browser types for auto-detecting: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox, Ladybird
+Browser types supported for automatic detection: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox, ladybird
 
 The Firefox URL database is usually located at ~/.mozilla/firefox/*.default/places.sqlite
 The Chrome/Chromium URL database is usually located at ~/.config/chromium/Default/History

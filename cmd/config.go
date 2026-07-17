@@ -13,6 +13,7 @@ import (
 var createConfigCmd = &cobra.Command{
 	Use:   "create-config [FILENAME]",
 	Short: "Create default configuration file",
+	Long:  "Write the default configuration to FILENAME, or print it to standard output when no filename is given.",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(_ *cobra.Command, args []string) {
 		dcfg := config.CreateDefaultConfig()

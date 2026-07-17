@@ -47,8 +47,8 @@ func searchFilterMap(m map[string]any, fields []string) map[string]any {
 
 var searchCmd = &cobra.Command{
 	Use:   "search [search terms]",
-	Short: "Command line search interface",
-	Long:  "Command line search interface.\nRun it without arguments to use the TUI interface or pass search terms as arguments to get results on the STDOUT.",
+	Short: "Search indexed documents",
+	Long:  "Search indexed documents using the running server.\nRun without search terms to open the terminal interface, or provide terms to print results to standard output.",
 	Args:  cobra.MinimumNArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {

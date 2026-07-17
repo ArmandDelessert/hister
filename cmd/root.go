@@ -136,8 +136,8 @@ var rootCmd = &cobra.Command{
 
 var listenCmd = &cobra.Command{
 	Use:   "listen",
-	Short: "Start server",
-	Long:  ``,
+	Short: "Start the Hister HTTP server",
+	Long:  `Start the Hister HTTP server and watch configured directories for file changes.`,
 	PreRun: func(cmd *cobra.Command, _ []string) {
 		if public, _ := cmd.Flags().GetBool("public"); public {
 			cfg.App.Public = true
@@ -239,7 +239,7 @@ func init() {
 	rootCmd.PersistentFlags().StringP("search-url", "s", dcfg.App.SearchURL, "set default search engine url")
 	rootCmd.PersistentFlags().StringP("server-url", "u", dcfg.Server.BaseURL, "hister server URL")
 	rootCmd.PersistentFlags().StringP("token", "t", "", "access token (overrides config access_token)")
-	rootCmd.PersistentFlags().Int("client-timeout", 0, "HTTP client timeout in seconds for server communication (0 = no timeout; default if unset: 10s)")
+	rootCmd.PersistentFlags().Int("client-timeout", 0, "HTTP client timeout in seconds (default 10; explicitly set 0 to disable the timeout)")
 
 	rootCmd.AddCommand(listenCmd)
 	rootCmd.AddCommand(createConfigCmd)
@@ -269,12 +269,12 @@ func init() {
 
 	listURLsCmd.Flags().Bool("offline", false, "connect to the indexer directly without using the HTTP API (server should be stopped)")
 
-	browserImportCmd.Flags().IntP("min-visit", "m", 1, "only import URLs that were opened at least 'min-visit' times")
+	browserImportCmd.Flags().IntP("min-visit", "m", 1, "only import URLs visited at least this many times")
 	browserImportCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
 
 	crawlQueueCmd.Flags().BoolP("count", "c", false, "only print the number of queued URLs")
 
-	importCmd.Flags().IntP("min-visit", "m", 1, "only import URLs that were opened at least 'min-visit' times")
+	importCmd.Flags().IntP("min-visit", "m", 1, "only import URLs visited at least this many times")
 	importCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
 	importCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
 	importCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
@@ -303,7 +303,7 @@ func init() {
 
 	importCmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
 
-	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "don't add documents that contain sensitive content matched by config.SensitiveContentPatterns")
+	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "skip sensitive content checks during reindexing, allowing matching documents to be indexed")
 
 	searchCmd.Flags().StringP("format", "f", "text", "output format: text, json, csv")
 	searchCmd.Flags().StringP("fields", "F", "", "comma-separated list of document fields to display (id, url, title, domain, score, added, updated, language, type, text, favicon, favicon_key, user_id, html)")

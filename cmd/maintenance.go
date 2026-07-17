@@ -10,8 +10,8 @@ import (
 
 var reindexCmd = &cobra.Command{
 	Use:   "reindex",
-	Short: "Reindex",
-	Long:  `Recreate index`,
+	Short: "Rebuild the search index",
+	Long:  `Rebuild the search index from all stored documents using the running server.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		skipSensitive := false
 		if b, err := cmd.Flags().GetBool("exclude-sensitive"); err == nil {

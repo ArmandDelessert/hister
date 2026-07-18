@@ -268,6 +268,7 @@ func init() {
 	listenCmd.Flags().Bool("public", false, "allow unauthenticated access to public search interfaces")
 
 	listURLsCmd.Flags().Bool("offline", false, "connect to the indexer directly without using the HTTP API (server should be stopped)")
+	listFilesCmd.Flags().Bool("relative", false, "print paths relative to each configured indexing directory")
 
 	browserImportCmd.Flags().IntP("min-visit", "m", 1, "only import URLs visited at least this many times")
 	browserImportCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
@@ -296,6 +297,7 @@ func init() {
 
 	deleteCmd.Flags().Bool("dry", false, "display the number of documents that would be deleted without actually deleting them")
 	deleteCmd.Flags().BoolP("verbose", "v", false, "list all URLs that would be deleted before performing the deletion. Can be used with --dry")
+	deleteCmd.Flags().BoolP("yes", "y", false, "delete without prompting for confirmation")
 
 	deleteUserCmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
 
@@ -308,6 +310,7 @@ func init() {
 	searchCmd.Flags().StringP("format", "f", "text", "output format: text, json, csv")
 	searchCmd.Flags().StringP("fields", "F", "", "comma-separated list of document fields to display (id, url, title, domain, score, added, updated, language, type, text, favicon, favicon_key, user_id, html)")
 	searchCmd.Flags().IntP("limit", "L", 0, "maximum number of results to display (0 means no limit)")
+	searchCmd.Flags().String("sort", "relevance", "result order: relevance, date, domain, or visits")
 
 	cobra.OnInitialize(initialize)
 

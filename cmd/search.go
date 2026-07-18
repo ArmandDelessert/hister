@@ -60,6 +60,14 @@ var searchCmd = &cobra.Command{
 		qs := strings.Join(args, " ")
 		format, _ := cmd.Flags().GetString("format")
 		limit, _ := cmd.Flags().GetInt("limit")
+		sortMode, _ := cmd.Flags().GetString("sort")
+		switch sortMode {
+		case "relevance":
+			sortMode = ""
+		case "date", "domain", "visits":
+		default:
+			exit(1, "Unknown sort order: "+sortMode+" (valid values: relevance, date, domain, visits)")
+		}
 
 		// Parse and validate --fields.
 		var fields []string
@@ -145,7 +153,7 @@ var searchCmd = &cobra.Command{
 			done    bool
 		)
 		for !done {
-			res, err := c.Search(&indexer.Query{Text: qs, IncludeHTML: includeHTML, PageKey: pageKey})
+			res, err := c.Search(&indexer.Query{Text: qs, IncludeHTML: includeHTML, PageKey: pageKey, Sort: sortMode})
 			if err != nil {
 				exit(1, "Search failed: "+err.Error())
 			}

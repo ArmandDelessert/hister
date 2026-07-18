@@ -54,10 +54,11 @@ var listFilesCmd = &cobra.Command{
 	Use:   "list-files",
 	Short: "List all watched files for indexing",
 	Long:  `List all files that match the configured directory watch patterns`,
-	Run: func(_ *cobra.Command, _ []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		if len(cfg.Indexer.Directories) == 0 {
 			exit(1, "No directories configured for watching")
 		}
+		relative, _ := cmd.Flags().GetBool("relative")
 		for _, dir := range cfg.Indexer.Directories {
 			expanded := files.ExpandHome(dir.Path)
 			err := filepath.WalkDir(expanded, func(path string, d fs.DirEntry, err error) error {
@@ -72,7 +73,16 @@ var listFilesCmd = &cobra.Command{
 					return nil
 				}
 				if dir.IsMatching(d.Name()) {
-					fmt.Println(path)
+					outputPath := path
+					if relative {
+						var relErr error
+						outputPath, relErr = filepath.Rel(expanded, path)
+						if relErr != nil {
+							log.Warn().Err(relErr).Str("path", path).Msg("Failed to make path relative")
+							outputPath = path
+						}
+					}
+					fmt.Println(outputPath)
 				}
 				return nil
 			})
@@ -102,11 +112,10 @@ Non-admin users are restricted to their own documents by the server.`,
 		c := newClient()
 		dry, _ := cmd.Flags().GetBool("dry")
 		verbose, _ := cmd.Flags().GetBool("verbose")
+		yes, _ := cmd.Flags().GetBool("yes")
+		var total uint64
 		if verbose {
-			var (
-				pageKey string
-				total   uint64
-			)
+			var pageKey string
 			for {
 				res, err := c.Search(&indexer.Query{Text: args[0], PageKey: pageKey, Sort: "domain"})
 				if err != nil {
@@ -125,17 +134,25 @@ Non-admin users are restricted to their own documents by the server.`,
 			}
 			if dry {
 				fmt.Printf("%d document(s) would be deleted\n", total)
-			} else {
-				fmt.Printf("Deleting %d document(s)\n", total)
+				return
 			}
-			return
-		}
-		if dry {
+		} else {
 			res, err := c.Search(&indexer.Query{Text: args[0]})
 			if err != nil {
 				exit(1, "Failed to search: "+err.Error())
 			}
-			fmt.Printf("%d document(s) would be deleted\n", res.Total)
+			total = res.Total
+			if dry {
+				fmt.Printf("%d document(s) would be deleted\n", total)
+				return
+			}
+		}
+		if total == 0 {
+			fmt.Println("No documents matched the query")
+			return
+		}
+		if !yes && !yesNoPrompt(fmt.Sprintf("Delete %d document(s)?", total), false) {
+			fmt.Println("Deletion cancelled")
 			return
 		}
 		if err := c.DeleteDocuments(args[0]); err != nil {

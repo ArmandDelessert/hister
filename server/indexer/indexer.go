@@ -1829,7 +1829,7 @@ func (q *Query) create() query.Query {
 
 func createMapping(lang string, keepStopwords bool) mapping.IndexMapping {
 	im := bleve.NewIndexMapping()
-	textAnalyzer := lang
+	textAnalyzer := analyzerForLanguage(lang)
 	addDefaultAnalyzer := func() {
 		if err := im.AddCustomAnalyzer("default", map[string]any{
 			"type":         custom.Name,
@@ -1846,15 +1846,16 @@ func createMapping(lang string, keepStopwords bool) mapping.IndexMapping {
 		addDefaultAnalyzer()
 		textAnalyzer = "default"
 	} else if keepStopwords {
-		if im.AnalyzerNamed(lang) == nil {
+		if im.AnalyzerNamed(textAnalyzer) == nil {
 			log.Warn().Str("language", lang).Msg("Language analyzer unavailable, using default analyzer")
 			addDefaultAnalyzer()
 			textAnalyzer = "default"
 		} else {
-			textAnalyzer = lang + "_keep_stopwords"
+			languageAnalyzer := textAnalyzer
+			textAnalyzer = languageAnalyzer + "_keep_stopwords"
 			if err := im.AddCustomAnalyzer(textAnalyzer, map[string]any{
 				"type":     keepStopwordsAnalyzerType,
-				"language": lang,
+				"language": languageAnalyzer,
 			}); err != nil {
 				panic(err)
 			}

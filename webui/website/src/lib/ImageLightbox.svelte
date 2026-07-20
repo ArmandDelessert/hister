@@ -1,5 +1,8 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
+  import { focusTrap } from '$lib/focus-trap';
+
+  let { contentKey }: { contentKey?: string } = $props();
 
   let openSrc = $state<string | null>(null);
   let openAlt = $state('');
@@ -8,47 +11,87 @@
     openSrc = null;
   }
 
+  function isPreviewImage(target: EventTarget | null): target is HTMLImageElement {
+    return (
+      target instanceof HTMLImageElement &&
+      Boolean(target.closest('.content')) &&
+      !target.closest('a')
+    );
+  }
+
+  function open(img: HTMLImageElement) {
+    openSrc = img.src;
+    openAlt = img.alt;
+  }
+
   $effect(() => {
+    void contentKey;
+
     function handleClick(e: MouseEvent) {
-      const target = e.target as Element;
-      if (
-        target.tagName === 'IMG' &&
-        target.closest('.content') &&
-        target.parentElement?.tagName !== 'A'
-      ) {
-        const img = target as HTMLImageElement;
-        openSrc = img.src;
-        openAlt = img.alt;
+      if (isPreviewImage(e.target)) {
+        open(e.target);
       }
     }
+
+    function handleImageKeydown(e: KeyboardEvent) {
+      if ((e.key === 'Enter' || e.key === ' ') && isPreviewImage(e.target)) {
+        e.preventDefault();
+        open(e.target);
+      }
+    }
+
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>('.content img')).filter(
+      (img) => !img.closest('a'),
+    );
+    const originalAttributes = images.map((img) => ({
+      img,
+      role: img.getAttribute('role'),
+      tabindex: img.getAttribute('tabindex'),
+      label: img.getAttribute('aria-label'),
+    }));
+
+    for (const img of images) {
+      img.setAttribute('role', 'button');
+      img.setAttribute('tabindex', '0');
+      img.setAttribute('aria-label', `Open image preview: ${img.alt || 'image'}`);
+    }
+
     document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
+    document.addEventListener('keydown', handleImageKeydown);
+
+    return () => {
+      document.removeEventListener('click', handleClick);
+      document.removeEventListener('keydown', handleImageKeydown);
+      for (const { img, role, tabindex, label } of originalAttributes) {
+        if (role === null) img.removeAttribute('role');
+        else img.setAttribute('role', role);
+        if (tabindex === null) img.removeAttribute('tabindex');
+        else img.setAttribute('tabindex', tabindex);
+        if (label === null) img.removeAttribute('aria-label');
+        else img.setAttribute('aria-label', label);
+      }
+    };
   });
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') close();
-  }
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 {#if openSrc}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 md:p-10"
-    onclick={close}
+    onclick={(e) => {
+      if (e.target === e.currentTarget) close();
+    }}
     onkeydown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') close();
+      if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) close();
     }}
   >
     <div
+      use:focusTrap={{ onEscape: close }}
       role="dialog"
       aria-modal="true"
       aria-label="Image preview"
       tabindex="-1"
       class="relative flex max-h-full max-w-full items-center justify-center"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
     >
       <img
         src={openSrc}

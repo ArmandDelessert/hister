@@ -5,6 +5,7 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import X from '@lucide/svelte/icons/x';
   import Seo from '$lib/Seo.svelte';
+  import { focusTrap } from '$lib/focus-trap';
   import type { Dataset } from './+page.ts';
 
   let { data } = $props();
@@ -129,6 +130,10 @@
     selectedLicense = '';
     selectedAuthor = '';
   }
+
+  function closeSubmitModal() {
+    submitModalOpen = false;
+  }
 </script>
 
 <Seo
@@ -148,6 +153,7 @@
     <p class="font-inter mt-3 max-w-[70em] text-base text-(--text-secondary)">
       Public datasets you can import into Hister to extend your local index. <button
         onclick={() => (submitModalOpen = true)}
+        aria-haspopup="dialog"
         class="font-space border-brutal-border brutal-press cursor-pointer border-[2px] bg-(--hister-cyan) px-4 py-2.5 text-[12px] font-bold tracking-[1px] text-white uppercase"
         >Submit new dataset</button
       >
@@ -161,6 +167,8 @@
       <!-- Mobile toggle -->
       <button
         onclick={() => (mobileFiltersOpen = !mobileFiltersOpen)}
+        aria-expanded={mobileFiltersOpen}
+        aria-controls="dataset-filters"
         class="font-space border-brutal-border mb-4 flex w-full cursor-pointer items-center justify-between border-[3px] bg-brutal-card px-4 py-3 text-[12px] font-bold tracking-[1.5px] text-(--text-primary) uppercase lg:hidden"
       >
         <span class="flex items-center gap-2">
@@ -182,20 +190,24 @@
 
       <!-- Filter panel -->
       <div
+        id="dataset-filters"
         class="border-brutal-border flex flex-col gap-6 border-[3px] bg-brutal-card p-5 lg:sticky lg:top-6 {mobileFiltersOpen
           ? 'block'
           : 'hidden lg:flex'}"
       >
         <!-- Search -->
         <div class="flex flex-col gap-2">
-          <span class="font-space font-bold tracking-[1.5px] text-(--text-secondary) uppercase"
-            >Search</span
+          <label
+            for="dataset-search"
+            class="font-space font-bold tracking-[1.5px] text-(--text-secondary) uppercase"
+            >Search</label
           >
           <div class="border-brutal-border relative flex items-center border-[2px]">
             <span class="pointer-events-none absolute left-3 text-(--text-secondary)">
               <Search size={14} />
             </span>
             <input
+              id="dataset-search"
               type="text"
               placeholder="Name or description..."
               bind:value={searchQuery}
@@ -226,6 +238,7 @@
                 <li>
                   <button
                     onclick={() => toggleTag(tag)}
+                    aria-pressed={active}
                     class="font-inter flex w-full cursor-pointer items-center justify-between gap-2 px-2 py-1.5 text-sm transition-colors {active
                       ? 'bg-(--text-primary) text-white'
                       : count === 0
@@ -258,6 +271,7 @@
                 <li>
                   <button
                     onclick={() => (selectedLicense = active ? '' : license)}
+                    aria-pressed={active}
                     class="font-inter flex w-full cursor-pointer items-center justify-between gap-2 px-2 py-1.5 text-sm transition-colors {active
                       ? 'bg-(--text-primary) text-white'
                       : count === 0
@@ -290,6 +304,7 @@
                 <li>
                   <button
                     onclick={() => (selectedAuthor = active ? '' : author)}
+                    aria-pressed={active}
                     class="font-inter flex w-full cursor-pointer items-center justify-between gap-2 px-2 py-1.5 text-sm transition-colors {active
                       ? 'bg-(--text-primary) text-white'
                       : count === 0
@@ -326,7 +341,7 @@
     <div class="min-w-0 flex-1">
       <!-- Result count bar -->
       <div class="mb-6 flex items-center justify-between gap-4">
-        <p class="font-inter text-sm text-(--text-secondary)">
+        <p aria-live="polite" class="font-inter text-sm text-(--text-secondary)">
           <span class="font-bold text-(--text-primary)">{filtered.length}</span>
           of {data.datasets.length} dataset{data.datasets.length !== 1 ? 's' : ''}
         </p>
@@ -395,6 +410,7 @@
                     {#each dataset.tags as tag}
                       <button
                         onclick={() => toggleTag(tag)}
+                        aria-pressed={selectedTags.includes(tag)}
                         class="font-space cursor-pointer border-[1.5px] px-2 py-0.5 text-[10px] font-semibold tracking-[0.5px] uppercase transition-all {selectedTags.includes(
                           tag,
                         )
@@ -441,30 +457,27 @@
   </div>
 </div>
 
-<svelte:window
-  onkeydown={(e) => {
-    if (e.key === 'Escape' && submitModalOpen) submitModalOpen = false;
-  }}
-/>
-
 <!-- Submit dataset modal -->
 {#if submitModalOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 md:p-10"
-    onclick={() => (submitModalOpen = false)}
+    onclick={(e) => {
+      if (e.target === e.currentTarget) closeSubmitModal();
+    }}
     onkeydown={(e) => {
-      if (e.key === 'Escape') submitModalOpen = false;
+      if (e.target === e.currentTarget && e.key === 'Escape') closeSubmitModal();
     }}
   >
     <div
+      id="submit-dataset-dialog"
+      use:focusTrap={{ onEscape: closeSubmitModal }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="submit-modal-title"
+      aria-describedby="submit-modal-description"
       tabindex="-1"
       class="border-brutal-border relative my-auto w-full max-w-2xl border-[3px] bg-brutal-card shadow-[8px_8px_0_var(--brutal-border)]"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
     >
       <!-- Header -->
       <div class="border-brutal-border flex items-center justify-between border-b-[3px] px-6 py-4">
@@ -475,7 +488,7 @@
           Submit a New Dataset
         </h2>
         <button
-          onclick={() => (submitModalOpen = false)}
+          onclick={closeSubmitModal}
           aria-label="Close"
           class="cursor-pointer text-(--text-secondary) transition-colors hover:text-(--text-primary)"
         >
@@ -494,7 +507,10 @@
           <GitPullRequest size={14} class="shrink-0" />
           Open a Pull Request
         </a>
-        <p class="font-inter text-sm leading-relaxed text-(--text-secondary)">
+        <p
+          id="submit-modal-description"
+          class="font-inter text-sm leading-relaxed text-(--text-secondary)"
+        >
           To add your dataset to this page, open a pull request on
           <a
             href="https://github.com/asciimoo/hister"

@@ -35,4 +35,4 @@
   </div>
 </article>
 
-<ImageLightbox />
+<ImageLightbox contentKey={data.slug} />

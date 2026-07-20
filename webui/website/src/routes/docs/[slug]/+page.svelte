@@ -61,7 +61,7 @@
 
     <!-- Prev / Next -->
     <Separator class="bg-brutal-border mt-12 h-0.75" />
-    <nav class="flex items-center justify-between gap-4 pt-8">
+    <nav aria-label="Documentation pagination" class="flex items-center justify-between gap-4 pt-8">
       {#if data.prev}
         <Button
           variant="ghost"
@@ -105,7 +105,7 @@
   <!-- TOC Sidebar (xl only) -->
   {#if toc.length > 0}
     <aside class="hidden w-48 shrink-0 xl:block">
-      <nav class="sticky top-24 flex flex-col gap-0.5">
+      <nav aria-label="On this page" class="sticky top-24 flex flex-col gap-0.5">
         <span
           class="font-space mb-3 text-[10px] font-bold tracking-[2px] text-(--text-secondary) uppercase"
           >On This Page</span
@@ -114,6 +114,7 @@
           <Button
             variant="ghost"
             href="#{entry.id}"
+            aria-current={activeId === entry.id ? 'location' : undefined}
             class="font-inter h-auto justify-start rounded-none border-l-2 py-1 text-left text-[13px] whitespace-normal no-underline transition-colors
               {entry.level === 3 ? 'pl-5' : 'pl-3'}
               {activeId === entry.id
@@ -128,4 +129,4 @@
   {/if}
 </div>
 
-<ImageLightbox />
+<ImageLightbox contentKey={data.slug} />

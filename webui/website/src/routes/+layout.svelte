@@ -9,14 +9,24 @@
   afterNavigate(() => {
     const hash = window.location.hash;
     if (hash) {
-      document.querySelector(hash)?.scrollIntoView({ behavior: 'smooth' });
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      document.querySelector(hash)?.scrollIntoView({
+        behavior: reduceMotion ? 'auto' : 'smooth',
+      });
     }
   });
 </script>
 
+<a
+  href="#main-content"
+  class="sr-only fixed top-4 left-4 z-50 border-[3px] border-brutal-border bg-brutal-card px-4 py-3 font-bold text-(--text-primary) shadow-brutal focus:not-sr-only"
+>
+  Skip to main content
+</a>
+
 <div class="bg-brutal-bg flex min-h-screen flex-col">
   <Header />
-  <main class="flex-1">
+  <main id="main-content" tabindex="-1" class="flex-1 outline-none">
     {@render children()}
   </main>
   <Footer />

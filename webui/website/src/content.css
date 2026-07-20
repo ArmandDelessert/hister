@@ -18,7 +18,7 @@
 .content h4,
 .content h5,
 .content h6 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 800;
   letter-spacing: -0.025em;
   margin-top: 2em;
@@ -130,7 +130,7 @@
 }
 
 .content th {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 700;
   text-align: left;
   padding: 0.75rem 1rem;

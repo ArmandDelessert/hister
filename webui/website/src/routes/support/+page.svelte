@@ -45,11 +45,11 @@
 <section class="border-brutal-border border-t-[3px] bg-[var(--text-primary)] px-6 py-10">
   <div class="mx-auto flex max-w-5xl flex-col items-center gap-8">
     <Heart size={256} class="fill-[var(--hister-rose)] text-[var(--hister-rose)]" />
-    <h2
+    <h1
       class="font-outfit text-center text-4xl leading-[0.95] font-black tracking-[-1.5px] text-white uppercase md:text-6xl"
     >
       Join Us in Redefining Search
-    </h2>
+    </h1>
     <p class="font-inter max-w-[50em] text-center text-lg leading-relaxed text-white/65">
       Whether through code, suggestions or sponsorship, every contribution helps make private,
       powerful search available to everyone.

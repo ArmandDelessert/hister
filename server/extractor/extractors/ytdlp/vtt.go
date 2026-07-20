@@ -56,9 +56,6 @@ func downloadSubtitleForLang(e *YtdlpExtractor, info *videoInfo, lang string) st
 	}
 	defer os.RemoveAll(dir) //nolint:errcheck // best-effort cleanup
 
-	ctx, cancel := context.WithTimeout(context.Background(), e.timeout())
-	defer cancel()
-
 	outTpl := filepath.Join(dir, "sub")
 	args := []string{
 		"--skip-download",
@@ -76,9 +73,15 @@ func downloadSubtitleForLang(e *YtdlpExtractor, info *videoInfo, lang string) st
 	args = append(args, e.cookieArgs()...)
 	args = append(args, info.WebpageURL)
 
-	// #nosec G204 -- binary path and args are admin-configured, not user input.
-	cmd := exec.CommandContext(ctx, e.binary(), args...)
-	if err := cmd.Run(); err != nil {
+	err = e.runJob(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), e.timeout())
+		defer cancel()
+
+		// #nosec G204 -- binary path and args are admin-configured, not user input.
+		cmd := exec.CommandContext(ctx, e.binary(), args...)
+		return cmd.Run()
+	})
+	if err != nil {
 		return ""
 	}
 

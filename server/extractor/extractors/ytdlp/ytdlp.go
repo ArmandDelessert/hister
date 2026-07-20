@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,15 +24,17 @@ import (
 )
 
 const (
-	cacheTTL     = 10 * time.Minute
-	maxCacheSize = 500
-	maxThumbSize = 5 << 20 // 5 MB
+	cacheTTL                 = 10 * time.Minute
+	maxCacheSize             = 500
+	maxThumbSize             = 5 << 20 // 5 MB
+	defaultMaxConcurrentJobs = 2
 )
 
 // YtdlpExtractor extracts video metadata using yt-dlp.
 type YtdlpExtractor struct {
-	cfg   *config.Extractor
-	cache sync.Map // URL -> *cachedInfo
+	cfg      *config.Extractor
+	cache    sync.Map // URL -> *cachedInfo
+	jobSlots chan struct{}
 }
 
 func (e *YtdlpExtractor) Name() string {
@@ -48,10 +51,11 @@ func (e *YtdlpExtractor) GetConfig() *config.Extractor {
 		return &config.Extractor{
 			Enable: false,
 			Options: map[string]any{
-				"binary":          "yt-dlp",
-				"timeout":         15,
-				"fetch_subtitles": false,
-				"sub_language":    "auto",
+				"binary":              "yt-dlp",
+				"timeout":             15,
+				"max_concurrent_jobs": defaultMaxConcurrentJobs,
+				"fetch_subtitles":     false,
+				"sub_language":        "auto",
 			},
 		}
 	}
@@ -61,14 +65,56 @@ func (e *YtdlpExtractor) GetConfig() *config.Extractor {
 func (e *YtdlpExtractor) SetConfig(c *config.Extractor) error {
 	for k := range c.Options {
 		switch k {
-		case "binary", "timeout", "fetch_subtitles", "sub_language",
+		case "binary", "timeout", "max_concurrent_jobs", "fetch_subtitles", "sub_language",
 			"cookies_file", "cookies_from_browser", "extra_args":
 		default:
 			return fmt.Errorf("unknown option %q", k)
 		}
 	}
+	maxJobs, err := maxConcurrentJobs(c.Options)
+	if err != nil {
+		return err
+	}
+	var jobSlots chan struct{}
+	if maxJobs > 0 {
+		jobSlots = make(chan struct{}, maxJobs)
+	}
 	e.cfg = c
+	e.jobSlots = jobSlots
 	return nil
+}
+
+func maxConcurrentJobs(options map[string]any) (int, error) {
+	value, ok := options["max_concurrent_jobs"]
+	if !ok {
+		return defaultMaxConcurrentJobs, nil
+	}
+	var jobs int
+	switch value := value.(type) {
+	case int:
+		jobs = value
+	case float64:
+		jobs = int(value)
+		if float64(jobs) != value {
+			return 0, errors.New("max_concurrent_jobs must be an integer")
+		}
+	default:
+		return 0, errors.New("max_concurrent_jobs must be an integer")
+	}
+	if jobs < 0 {
+		return 0, errors.New("max_concurrent_jobs must not be negative")
+	}
+	return jobs, nil
+}
+
+func (e *YtdlpExtractor) runJob(job func() error) error {
+	jobSlots := e.jobSlots
+	if jobSlots == nil {
+		return job()
+	}
+	jobSlots <- struct{}{}
+	defer func() { <-jobSlots }()
+	return job()
 }
 
 func (e *YtdlpExtractor) binary() string {
@@ -192,9 +238,6 @@ func (e *YtdlpExtractor) pruneCache() {
 }
 
 func (e *YtdlpExtractor) fetchInfo(videoURL string) (*videoInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), e.timeout())
-	defer cancel()
-
 	args := []string{
 		"--dump-json",
 		"--no-download",
@@ -211,12 +254,20 @@ func (e *YtdlpExtractor) fetchInfo(videoURL string) (*videoInfo, error) {
 	}
 	args = append(args, videoURL)
 
-	// #nosec G204 -- binary path and args are admin-configured, not user input.
-	cmd := exec.CommandContext(ctx, e.binary(), args...)
+	var out []byte
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	log.Debug().Str("args", strings.Join(cmd.Args, " ")).Msg("yt-dlp executing")
-	out, err := cmd.Output()
+	err := e.runJob(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), e.timeout())
+		defer cancel()
+
+		// #nosec G204 -- binary path and args are admin-configured, not user input.
+		cmd := exec.CommandContext(ctx, e.binary(), args...)
+		cmd.Stderr = &stderr
+		log.Debug().Str("args", strings.Join(cmd.Args, " ")).Msg("yt-dlp executing")
+		var err error
+		out, err = cmd.Output()
+		return err
+	})
 	log.Debug().Str("stdout", strings.TrimSpace(string(out))).Str("stderr", strings.TrimSpace(stderr.String())).Msg("yt-dlp output")
 	if err != nil {
 		if s := stderr.String(); s != "" {

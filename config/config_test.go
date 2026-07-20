@@ -267,15 +267,17 @@ func TestEnvExtractorOptionTypes(t *testing.T) {
 		enableKey = "HISTER__EXTRACTORS__ytdlp__ENABLE"
 		subsKey   = "HISTER__EXTRACTORS__ytdlp__OPTIONS__FETCH_SUBTITLES"
 		toKey     = "HISTER__EXTRACTORS__ytdlp__OPTIONS__TIMEOUT"
+		jobsKey   = "HISTER__EXTRACTORS__ytdlp__OPTIONS__MAX_CONCURRENT_JOBS"
 		langKey   = "HISTER__EXTRACTORS__ytdlp__OPTIONS__SUB_LANGUAGE"
 	)
-	for _, k := range []string{enableKey, subsKey, toKey, langKey} {
+	for _, k := range []string{enableKey, subsKey, toKey, jobsKey, langKey} {
 		old, had := os.LookupEnv(k)
 		t.Cleanup(func() { restoreEnv(k, old, had) })
 	}
 	_ = os.Setenv(enableKey, "true")
 	_ = os.Setenv(subsKey, "true")
 	_ = os.Setenv(toKey, "30")
+	_ = os.Setenv(jobsKey, "2")
 	_ = os.Setenv(langKey, "en")
 
 	cfg, err := parseConfig(nil)
@@ -294,6 +296,9 @@ func TestEnvExtractorOptionTypes(t *testing.T) {
 	}
 	if v, ok := ex.Options["timeout"].(int); !ok || v != 30 {
 		t.Errorf("timeout = %#v (%T), want int 30", ex.Options["timeout"], ex.Options["timeout"])
+	}
+	if v, ok := ex.Options["max_concurrent_jobs"].(int); !ok || v != 2 {
+		t.Errorf("max_concurrent_jobs = %#v (%T), want int 2", ex.Options["max_concurrent_jobs"], ex.Options["max_concurrent_jobs"])
 	}
 	if v, ok := ex.Options["sub_language"].(string); !ok || v != "en" {
 		t.Errorf("sub_language = %#v (%T), want string \"en\"", ex.Options["sub_language"], ex.Options["sub_language"])

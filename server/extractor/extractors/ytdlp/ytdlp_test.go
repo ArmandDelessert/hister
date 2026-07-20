@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
@@ -605,13 +606,17 @@ func TestConfig(t *testing.T) {
 	if cfg.Options["binary"] != "yt-dlp" {
 		t.Errorf("default binary = %v, want yt-dlp", cfg.Options["binary"])
 	}
+	if cfg.Options["max_concurrent_jobs"] != defaultMaxConcurrentJobs {
+		t.Errorf("default max_concurrent_jobs = %v, want %d", cfg.Options["max_concurrent_jobs"], defaultMaxConcurrentJobs)
+	}
 	err := e.SetConfig(&config.Extractor{
 		Enable: true,
 		Options: map[string]any{
-			"binary":          "/usr/local/bin/yt-dlp",
-			"timeout":         30,
-			"fetch_subtitles": true,
-			"sub_language":    "de",
+			"binary":              "/usr/local/bin/yt-dlp",
+			"timeout":             30,
+			"max_concurrent_jobs": 3,
+			"fetch_subtitles":     true,
+			"sub_language":        "de",
 		},
 	})
 	if err != nil {
@@ -624,5 +629,76 @@ func TestConfig(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("SetConfig with unknown option should return error")
+	}
+}
+
+func TestConcurrentJobLimit(t *testing.T) {
+	e := &YtdlpExtractor{}
+	if err := e.SetConfig(&config.Extractor{
+		Enable:  true,
+		Options: map[string]any{"max_concurrent_jobs": 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	done := make(chan struct{}, 3)
+	t.Cleanup(func() { close(release) })
+
+	for range 3 {
+		go func() {
+			if err := e.runJob(func() error {
+				started <- struct{}{}
+				<-release
+				return nil
+			}); err != nil {
+				t.Errorf("runJob() error = %v", err)
+			}
+			done <- struct{}{}
+		}()
+	}
+
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("job did not start")
+		}
+	}
+	select {
+	case <-started:
+		t.Fatal("third job started before a slot was released")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	release <- struct{}{}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("queued job did not start after a slot was released")
+	}
+
+	release <- struct{}{}
+	release <- struct{}{}
+	for range 3 {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("job did not finish")
+		}
+	}
+}
+
+func TestMaxConcurrentJobsValidation(t *testing.T) {
+	for _, value := range []any{-1, 1.5, "2"} {
+		e := &YtdlpExtractor{}
+		err := e.SetConfig(&config.Extractor{
+			Enable:  true,
+			Options: map[string]any{"max_concurrent_jobs": value},
+		})
+		if err == nil {
+			t.Errorf("SetConfig() accepted max_concurrent_jobs=%v", value)
+		}
 	}
 }

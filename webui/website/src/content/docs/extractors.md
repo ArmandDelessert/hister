@@ -330,6 +330,7 @@ video-platform substrings.
 | ---------------------- | --------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `binary`               | string          | `yt-dlp` | Path to the `yt-dlp` executable. Useful when the binary is not on `PATH` or you want to pin a specific version.                                                                                      |
 | `timeout`              | int             | `15`     | Seconds to wait for `yt-dlp` to finish before aborting the request.                                                                                                                                  |
+| `max_concurrent_jobs`  | int             | `2`      | Maximum number of `yt-dlp` processes running at once. Additional jobs wait for a slot. Set to `0` for no limit.                                                                                      |
 | `fetch_subtitles`      | bool            | `false`  | Download and append subtitles/auto-generated transcript to the indexed text and preview.                                                                                                             |
 | `sub_language`         | string          | `auto`   | Subtitle language code to request (e.g. `en`, `de`, `fr`). `auto` selects auto-generated captions. Only used when `fetch_subtitles` is `true`.                                                       |
 | `cookies_file`         | string          | -        | Path to a [Netscape-format cookies file](https://curl.se/docs/http-cookies.html). Passed to `yt-dlp` as `--cookies`. Useful for age-restricted or members-only content.                              |
@@ -345,6 +346,7 @@ extractors:
     options:
       binary: /usr/local/bin/yt-dlp
       timeout: 30
+      max_concurrent_jobs: 2
       fetch_subtitles: true
       sub_language: en
       cookies_from_browser: firefox

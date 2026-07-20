@@ -47,7 +47,7 @@ export default {
     }),
   ],
   kit: {
-    adapter: adapter({ pages: 'build', assets: 'build', fallback: undefined }),
+    adapter: adapter({ pages: 'build', assets: 'build', fallback: '404.html' }),
     prerender: { handleHttpError: 'warn', handleMissingId: 'ignore' },
   },
 };

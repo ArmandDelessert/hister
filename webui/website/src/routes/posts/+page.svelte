@@ -7,7 +7,6 @@
 
 <svelte:head>
   <title>Posts | Hister</title>
-  <link rel="alternate" type="application/rss+xml" title="Hister Posts" href="/posts/rss.xml" />
 </svelte:head>
 
 <section class="mx-auto max-w-4xl px-6 py-12 md:px-12">

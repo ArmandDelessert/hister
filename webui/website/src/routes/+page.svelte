@@ -5,21 +5,14 @@
   import WhyHister from '$lib/WhyHister.svelte';
   import Features from '$lib/Features.svelte';
   import FinalCTA from '$lib/FinalCTA.svelte';
+  import Seo from '$lib/Seo.svelte';
 </script>
 
-<svelte:head>
-  <title>Hister | Your Own Search Engine</title>
-  <meta
-    name="description"
-    content="Hister is a private, self hosted search engine for the pages you visit and the files you keep. Search from the web, terminal, command line, or MCP."
-  />
-  <meta property="og:title" content="Hister | Your Own Search Engine" />
-  <meta
-    property="og:description"
-    content="Turn the pages you visit and files you keep into a private search index you control."
-  />
-  <meta property="og:type" content="website" />
-</svelte:head>
+<Seo
+  title="Hister | Your Own Search Engine"
+  description="Hister is a private, self hosted search engine for the pages you visit and the files you keep. Search from the web, terminal, command line, or MCP."
+  path="/"
+/>
 
 <Hero />
 <FinalCTA />

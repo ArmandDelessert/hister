@@ -1,27 +1,20 @@
 <script lang="ts">
   import ImageLightbox from '$lib/ImageLightbox.svelte';
-  import { SITE_URL } from '$lib/config';
+  import Seo from '$lib/Seo.svelte';
 
   let { data } = $props();
 </script>
 
-<svelte:head>
-  <title>{data.meta.title} | Hister</title>
-  {#if data.meta.description}
-    <meta name="description" content={data.meta.description as string} />
-  {/if}
-  <meta property="og:title" content={data.meta.title as string} />
-  {#if data.meta.description}
-    <meta property="og:description" content={data.meta.description as string} />
-  {/if}
-  <meta property="og:type" content="article" />
-  <meta property="article:section" content="Post" />
-  {#if data.meta.image}
-    <meta property="og:image" content="{SITE_URL}/posts/{data.meta.image as string}" />
-    <meta property="twitter:image" content="{SITE_URL}/posts/{data.meta.image as string}" />
-    <meta name="twitter:card" content="summary_large_image" />
-  {/if}
-</svelte:head>
+<Seo
+  title={`${data.meta.title} | Hister`}
+  description={(data.meta.description as string) ?? `Read ${data.meta.title} on the Hister blog.`}
+  path={`/posts/${data.slug}`}
+  type="article"
+  image={data.meta.image ? `/posts/${data.meta.image as string}` : undefined}
+  imageAlt={data.meta.image ? `${data.meta.title} social image` : undefined}
+  publishedTime={data.publishedTime}
+  section="Post"
+/>
 
 <header class="w-full bg-(--text-primary) px-6 py-12 md:py-16">
   <div class="mx-auto max-w-3xl">

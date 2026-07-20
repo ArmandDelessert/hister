@@ -35,6 +35,7 @@ export async function load({
   return {
     content: post.default,
     meta: post.metadata ?? {},
+    slug: params.slug,
     prev,
     next,
   };

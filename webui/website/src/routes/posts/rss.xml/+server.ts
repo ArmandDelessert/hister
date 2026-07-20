@@ -40,7 +40,7 @@ export const GET: RequestHandler = () => {
 
   const items = posts
     .map((post) => {
-      const url = `${SITE_URL}/posts/${post.slug}/`;
+      const url = `${SITE_URL}/posts/${post.slug}`;
       const pubDate = new Date(post.date).toUTCString();
       return `
     <item>

@@ -3,6 +3,7 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { Button, Separator } from '@hister/components';
   import ImageLightbox from '$lib/ImageLightbox.svelte';
+  import Seo from '$lib/Seo.svelte';
 
   let { data } = $props();
 
@@ -46,9 +47,11 @@
   });
 </script>
 
-<svelte:head>
-  <title>{data.meta.title} | Hister Documentation</title>
-</svelte:head>
+<Seo
+  title={`${data.meta.title} | Hister Documentation`}
+  description={`Learn about ${data.meta.title} in the Hister documentation.`}
+  path={`/docs/${data.slug}`}
+/>
 
 <div class="flex gap-10">
   <article class="min-w-0 flex-1" data-doc-content>

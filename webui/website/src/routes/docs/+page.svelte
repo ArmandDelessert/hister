@@ -1,13 +1,16 @@
 <script lang="ts">
   import Globe from '@lucide/svelte/icons/globe';
   import * as Card from '@hister/components/ui/card';
+  import Seo from '$lib/Seo.svelte';
 
   let { data } = $props();
 </script>
 
-<svelte:head>
-  <title>Documentation | Hister</title>
-</svelte:head>
+<Seo
+  title="Documentation | Hister"
+  description="Learn how to install, configure, and use Hister across the web, terminal, browser extensions, API, and MCP."
+  path="/docs"
+/>
 
 <section class="mx-auto max-w-4xl px-6 py-12 md:px-12">
   <h1

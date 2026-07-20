@@ -34,6 +34,8 @@ export async function load({ params }: { params: { slug: string } }) {
   return {
     content: post.default,
     meta: post.metadata ?? {},
+    slug: params.slug,
     date: formattedDate,
+    publishedTime: dateStr,
   };
 }

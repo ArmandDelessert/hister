@@ -6,6 +6,7 @@
   import Database from '@lucide/svelte/icons/database';
   import Globe from '@lucide/svelte/icons/globe';
   import { Button } from '@hister/components';
+  import Seo from '$lib/Seo.svelte';
 
   const futurePlans = [
     {
@@ -35,13 +36,11 @@
   ];
 </script>
 
-<svelte:head>
-  <title>Support Hister. Help Build the Future of Search</title>
-  <meta
-    name="description"
-    content="Support Hister's mission to eliminate dependence on untrusted search services by contributing or sponsoring full-time development."
-  />
-</svelte:head>
+<Seo
+  title="Support Hister. Help Build the Future of Search"
+  description="Support Hister's mission to eliminate dependence on untrusted search services by contributing code or sponsoring ongoing development."
+  path="/support"
+/>
 
 <section class="border-brutal-border border-t-[3px] bg-[var(--text-primary)] px-6 py-10">
   <div class="mx-auto flex max-w-5xl flex-col items-center gap-8">

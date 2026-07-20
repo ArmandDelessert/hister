@@ -1,13 +1,16 @@
 <script lang="ts">
   import * as Card from '@hister/components/ui/card';
   import Rss from '@lucide/svelte/icons/rss';
+  import Seo from '$lib/Seo.svelte';
 
   let { data } = $props();
 </script>
 
-<svelte:head>
-  <title>Posts | Hister</title>
-</svelte:head>
+<Seo
+  title="Posts | Hister"
+  description="Read Hister news, guides, technical articles, and practical stories about private search and personal knowledge management."
+  path="/posts"
+/>
 
 <section class="mx-auto max-w-4xl px-6 py-12 md:px-12">
   <div class="mb-10 flex items-center justify-between">

@@ -4,6 +4,7 @@
   import Search from '@lucide/svelte/icons/search';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import X from '@lucide/svelte/icons/x';
+  import Seo from '$lib/Seo.svelte';
   import type { Dataset } from './+page.ts';
 
   let { data } = $props();
@@ -130,13 +131,11 @@
   }
 </script>
 
-<svelte:head>
-  <title>Datasets | Hister</title>
-  <meta
-    name="description"
-    content="Browse public datasets compatible with Hister. Filter by tag, license or author and download what you need."
-  />
-</svelte:head>
+<Seo
+  title="Datasets | Hister"
+  description="Browse public datasets compatible with Hister. Filter by tag, license or author and download what you need."
+  path="/datasets"
+/>
 
 <div class="mx-auto md:mx-0 max-w-screen-l px-6 py-12 md:px-12">
   <!-- Page header -->

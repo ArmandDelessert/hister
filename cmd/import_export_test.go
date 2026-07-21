@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/server/document"
 )
@@ -164,11 +166,51 @@ func TestImportJSONFileUsesConfiguredBatchSize(t *testing.T) {
 }
 
 func TestImportBatchSizeDefault(t *testing.T) {
-	batchSize, err := importCmd.Flags().GetInt("batch-size")
+	batchSize, err := importFileCmd.Flags().GetInt("batch-size")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if batchSize != 10 {
 		t.Fatalf("batch size default = %d, want 10", batchSize)
+	}
+}
+
+func TestImportCommandHierarchy(t *testing.T) {
+	tests := map[string]*cobra.Command{
+		"file":    importFileCmd,
+		"browser": importBrowserCmd,
+	}
+	for name, want := range tests {
+		got, _, err := importCmd.Find([]string{name})
+		if err != nil {
+			t.Fatalf("import %s command lookup failed: %v", name, err)
+		}
+		if got != want {
+			t.Fatalf("import %s command = %q, want %q", name, got.Name(), want.Name())
+		}
+	}
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "import-browser" {
+			t.Fatal("legacy import-browser command remains registered at the root")
+		}
+	}
+}
+
+func TestImportSubcommandFlagOwnership(t *testing.T) {
+	for _, name := range []string{"batch-size", "start-date", "end-date", "skip-existing", "global", "user-id"} {
+		if importFileCmd.Flags().Lookup(name) == nil {
+			t.Errorf("import file is missing --%s", name)
+		}
+		if importBrowserCmd.Flags().Lookup(name) != nil {
+			t.Errorf("import browser unexpectedly has --%s", name)
+		}
+	}
+	for _, name := range []string{"min-visit", "backend", "backend-option", "header", "cookie"} {
+		if importBrowserCmd.Flags().Lookup(name) == nil {
+			t.Errorf("import browser is missing --%s", name)
+		}
+		if importFileCmd.Flags().Lookup(name) != nil {
+			t.Errorf("import file unexpectedly has --%s", name)
+		}
 	}
 }

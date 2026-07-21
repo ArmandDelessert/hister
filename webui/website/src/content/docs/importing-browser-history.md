@@ -58,11 +58,11 @@ Examples for Chrome: (note that some parts _will_ be different for you!)
 
 ### Auto Detection
 
-Run `hister import-browser` with no arguments to auto-detect browser histories. Hister will find histories for Firefox, Firefox Developer Edition, Zen, Waterfox, Chrome, Chromium, Brave, Vivaldi, Edge, Opera and Ladybird if they are in the standard locations.
+Run `hister import browser` with no arguments to auto-detect browser histories. Hister will find histories for Firefox, Firefox Developer Edition, Zen, Waterfox, Chrome, Chromium, Brave, Vivaldi, Edge, Opera and Ladybird if they are in the standard locations.
 
 ### Manual
 
-Run `hister import-browser [arg1] [arg2]` to target a specific browser or database file:
+Run `hister import browser [arg1] [arg2]` to target a specific browser or database file:
 
 - `arg1` a browser or database
 - `arg2` a database: optional if browser is used in `arg1`, not needed if a database is specified in `arg1`
@@ -71,7 +71,7 @@ Run `hister import-browser [arg1] [arg2]` to target a specific browser or databa
 For example:
 
 ```bash
-hister import-browser firefox ~/.mozilla/firefox/abc123.default/places.sqlite
+hister import browser firefox ~/.mozilla/firefox/abc123.default/places.sqlite
 ```
 
 This will print a count of how many unique URLs have been detected, and ask for confirmation before proceeding.
@@ -81,7 +81,7 @@ Note that Hister doesn't print URLs it skips importing, which can happen if it i
 
 Browser history imports run through the persistent crawler. Hister creates a crawl job named `browser-import-YYYY-MM-DD`, adds the URLs from your browser database to that job, and fetches only those queued URLs. Links discovered on the fetched pages are not added to the import job.
 
-It is okay to interrupt the importing process. When you run `hister import-browser` again, Hister checks for existing `browser-import-*` jobs and asks whether you want to continue one of them instead of creating a new job. If you continue an existing job, already completed URLs stay completed, failed URLs remain available for inspection, and pending URLs continue from the stored queue.
+It is okay to interrupt the importing process. When you run `hister import browser` again, Hister checks for existing `browser-import-*` jobs and asks whether you want to continue one of them instead of creating a new job. If you continue an existing job, already completed URLs stay completed, failed URLs remain available for inspection, and pending URLs continue from the stored queue.
 
 You can list import jobs with:
 
@@ -115,24 +115,24 @@ hister crawl queue browser-import-YYYY-MM-DD --count
 
 ### Selecting a Scraping Backend
 
-By default, `hister import-browser` fetches pages with a plain HTTP client. For sites that
+By default, `hister import browser` fetches pages with a plain HTTP client. For sites that
 require JavaScript to render their content you can use a headless Chrome or Chromium instance
 instead:
 
 ```bash
-hister import-browser --backend chromedp
+hister import browser --backend chromedp
 ```
 
 If the Chromium binary is not found automatically, specify the path:
 
 ```bash
-hister import-browser --backend chromedp --backend-option exec_path=/usr/bin/chromium
+hister import browser --backend chromedp --backend-option exec_path=/usr/bin/chromium
 ```
 
 You can also pass extra request headers or cookies:
 
 ```bash
-hister import-browser --header "Accept-Language=en" --cookie "session=abc; Domain=example.com"
+hister import browser --header "Accept-Language=en" --cookie "session=abc; Domain=example.com"
 ```
 
 Cookies must be in `Set-Cookie` format: `name=value; Domain=example.com` (the `Domain` attribute is required). The `--header` and `--cookie` flags can be repeated and are merged with any values already defined in your config file.

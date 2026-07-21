@@ -246,7 +246,6 @@ func init() {
 	rootCmd.AddCommand(listURLsCmd)
 	rootCmd.AddCommand(listFilesCmd)
 	rootCmd.AddCommand(indexCmd)
-	rootCmd.AddCommand(browserImportCmd)
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(searchCmd)
@@ -263,6 +262,8 @@ func init() {
 	crawlCmd.AddCommand(crawlErrorsCmd)
 	crawlCmd.AddCommand(crawlQueueCmd)
 	crawlCmd.AddCommand(crawlDeleteCmd)
+	importCmd.AddCommand(importFileCmd)
+	importCmd.AddCommand(importBrowserCmd)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")
 	listenCmd.Flags().Bool("public", false, "allow unauthenticated access to public search interfaces")
@@ -270,21 +271,19 @@ func init() {
 	listURLsCmd.Flags().Bool("offline", false, "connect to the indexer directly without using the HTTP API (server should be stopped)")
 	listFilesCmd.Flags().Bool("relative", false, "print paths relative to each configured indexing directory")
 
-	browserImportCmd.Flags().IntP("min-visit", "m", 1, "only import URLs visited at least this many times")
-	browserImportCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
+	importBrowserCmd.Flags().IntP("min-visit", "m", 1, "only import URLs visited at least this many times")
+	importBrowserCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
+	importBrowserCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
+	importBrowserCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
+	importBrowserCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 
 	crawlQueueCmd.Flags().BoolP("count", "c", false, "only print the number of queued URLs")
 
-	importCmd.Flags().IntP("min-visit", "m", 1, "only import URLs visited at least this many times")
-	importCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
-	importCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
-	importCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
-	importCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
-	importCmd.Flags().String("start-date", "", "only import documents added on or after this date (YYYY-MM-DD)")
-	importCmd.Flags().String("end-date", "", "only import documents added on or before this date (YYYY-MM-DD)")
-	importCmd.Flags().Int("batch-size", defaultImportBatchSize, "number of documents submitted per bulk request (maximum 100)")
-	importCmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
-	importCmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
+	importFileCmd.Flags().String("start-date", "", "only import documents added on or after this date (YYYY-MM-DD)")
+	importFileCmd.Flags().String("end-date", "", "only import documents added on or before this date (YYYY-MM-DD)")
+	importFileCmd.Flags().Int("batch-size", defaultImportBatchSize, "number of documents submitted per bulk request (maximum 100)")
+	importFileCmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
+	importFileCmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
 
 	exportCmd.Flags().String("start-date", "", "only export documents updated on or after this date (YYYY-MM-DD)")
 	exportCmd.Flags().String("end-date", "", "only export documents updated on or before this date (YYYY-MM-DD)")
@@ -303,7 +302,7 @@ func init() {
 
 	showUserCmd.Flags().Bool("token", false, "display the user's access token")
 
-	importCmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
+	importFileCmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
 
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "skip sensitive content checks during reindexing, allowing matching documents to be indexed")
 

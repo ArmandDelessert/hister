@@ -40,5 +40,5 @@ However, if the Hister traffic is sent over a network, two _potential_ concerns 
 The Hister server never makes any requests itself; it expects clients to provide the (extracted) contents of the pages they want indexed, not just their URLs.
 In particular, this means that pages indexed via the browser extensions aren't affected by anti-bot checks... since they aren't performed by a bot!
 
-Indexing operations via the command-line tool (`hister index`, `hister import-browser`...), however, are clearly bot-like (they advertise themselves as such!) so they can end up being rejected.
+Indexing operations via the command-line tool (`hister index`, `hister import browser`...), however, are clearly bot-like (they advertise themselves as such!) so they can end up being rejected.
 The offending URLs can be visited manually from the browser afterwards.

@@ -43,7 +43,7 @@ Other directory rules still apply:
 
 ## Import Formats
 
-The `hister import` command accepts these file formats:
+The `hister import file` command accepts these file formats:
 
 | File type          | Extensions      | Behavior                                                                |
 | ------------------ | --------------- | ----------------------------------------------------------------------- |

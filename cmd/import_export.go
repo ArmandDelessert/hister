@@ -124,7 +124,15 @@ Use '-' as OUTPUT_FILE to write to stdout.`,
 }
 
 var importCmd = &cobra.Command{
-	Use:   "import INPUT_FILE_OR_DIR [INPUT_FILE_OR_DIR...]",
+	Use:   "import",
+	Short: "Import documents or browser history",
+	Long: `Import documents from files or browser history.
+
+Use one of the available subcommands to select the import source.`,
+}
+
+var importFileCmd = &cobra.Command{
+	Use:   "file INPUT_FILE_OR_DIR [INPUT_FILE_OR_DIR...]",
 	Short: "Import documents from export JSON or HTML files",
 	Long: `Import documents from one or more files previously created by the export
 command.

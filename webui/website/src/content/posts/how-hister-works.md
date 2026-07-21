@@ -145,13 +145,13 @@ The import command reads your browser's history database and indexes all those p
 **For Chrome:**
 
 ```bash
-hister import chrome ~/.config/google-chrome/Default/History
+hister import browser chrome ~/.config/google-chrome/Default/History
 ```
 
 **For Firefox:**
 
 ```bash
-hister import firefox ~/.mozilla/firefox/your-profile/places.sqlite
+hister import browser firefox ~/.mozilla/firefox/your-profile/places.sqlite
 ```
 
 Hister goes through your history and attempts to fetch and index each page. This process can take a while if you have thousands of pages, but it only needs to be done once. After this initial import, the browser extension handles everything automatically going forward.

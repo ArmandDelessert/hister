@@ -112,7 +112,7 @@ I simply copied the `places.sqlite` file from my Firefox profile and imported it
 
 ```bash
 docker exec -it hister
-# ./hister import firefox ./data/places.sqlite
+# ./hister import browser firefox ./data/places.sqlite
 ```
 
 **Note**: I use Hister with a Cloudflare Tunnel (may change in the future), so I set the `HISTER__SERVER__BASE_URL` to my tunnel URL (e.g. `https://hister.myinstance.net`) and generated a random access token for security + access policies.

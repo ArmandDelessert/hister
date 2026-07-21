@@ -20,16 +20,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var browserImportCmd = &cobra.Command{
-	Use:   "import-browser [BROWSER_TYPE] [DB_PATH]",
+var importBrowserCmd = &cobra.Command{
+	Use:   "browser [BROWSER_TYPE] [DB_PATH]",
 	Short: "Import Chrome, Firefox or auto-detect browsing history",
 	Long: `Import browsing history from a supported browser.
 
 Usage:
-  import-browser                        - auto-detect all installed browsers
-  import-browser BROWSER_TYPE           - auto-detect database path
-  import-browser DB_PATH                - auto-detect browser type
-  import-browser BROWSER_TYPE DB_PATH   - import a browser type with a specific database path
+  hister import browser                        auto-detect all installed browsers
+  hister import browser BROWSER_TYPE           auto-detect database path
+  hister import browser DB_PATH                auto-detect browser type
+  hister import browser BROWSER_TYPE DB_PATH   import a browser type with a specific database path
 
 Browser types supported for automatic detection: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox, ladybird
 

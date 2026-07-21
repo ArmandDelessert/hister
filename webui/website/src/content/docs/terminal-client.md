@@ -71,16 +71,16 @@ hister export | gzip > backup.json.gz
 
 Use `--start-date` / `--end-date` (`YYYY-MM-DD`) to only export documents whose `updated`
 timestamp falls within the given date range. The resulting file can be re-imported with
-`hister import` (see below).
+`hister import file` (see below).
 
 ### Importing Documents
 
-Use `hister import` to add documents from files on disk. It accepts an arbitrary
+Use `hister import file` to add documents from files on disk. It accepts an arbitrary
 number of files or directories, which are imported in order and reported as a
 combined total:
 
 ```bash
-hister import export.json page.html ~/Downloads/saved-pages
+hister import file export.json page.html ~/Downloads/saved-pages
 ```
 
 Three input formats are supported, detected by file extension:
@@ -100,10 +100,10 @@ directories are ignored.
 
 ```bash
 # Import a single saved web page
-hister import ~/Downloads/article.html
+hister import file ~/Downloads/article.html
 
 # Import all supported files directly inside a directory
-hister import ~/Downloads/saved-pages
+hister import file ~/Downloads/saved-pages
 ```
 
 Useful flags:
@@ -114,7 +114,7 @@ Useful flags:
 - `--batch-size` controls how many documents are submitted in each bulk request.
   The default is `10` and the maximum is `100`.
 
-> **Note:** `hister import` talks to a running Hister server, so make sure the server
+> **Note:** `hister import file` talks to a running Hister server, so make sure the server
 > is started before importing. To bulk-import browsing history instead, see
 > [Importing Browser History](importing-browser-history).
 

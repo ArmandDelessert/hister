@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -54,7 +54,8 @@ type indexer struct {
 	vectorStore       vectorstore.VectorStore
 	embedCtx          context.Context
 	embedCancel       context.CancelFunc
-	embedWg           sync.WaitGroup // tracks in-flight async embeddings
+	embeddingQueue    *embeddingQueue
+	embeddingWorkers  int
 	disablePreviews   bool
 	keepStopwords     bool
 }
@@ -270,6 +271,7 @@ type batchKeyChange struct {
 type storedDocumentState struct {
 	htmlKeys    []string
 	faviconKeys []string
+	texts       []string
 	indexNames  map[string]struct{}
 	addCount    uint
 	found       bool
@@ -277,10 +279,16 @@ type storedDocumentState struct {
 	added       int64
 }
 
+func (s storedDocumentState) embeddingTextChanged(text string) bool {
+	return !s.found || !slices.Contains(s.texts, text)
+}
+
 type MultiBatch struct {
 	indexer           *indexer
 	batches           map[string]*bleve.Batch
 	keyChanges        []batchKeyChange
+	embeddingIDs      map[string]struct{}
+	deletedIDs        map[string]struct{}
 	incrementAddCount bool
 }
 
@@ -328,8 +336,20 @@ func Init(cfg *config.Config) error {
 		} else if err := vs.Init(); err != nil {
 			log.Warn().Err(err).Msg("failed to init vector store, semantic search disabled")
 		} else {
+			workers := normalizeEmbeddingWorkerCount(cfg.SemanticSearch.MaxEmbeddingConcurrency)
+			embedCfg := cfg.SemanticSearch
+			embedCfg.MaxEmbeddingConcurrency = workers
 			i.vectorStore = vs
-			i.embedder = vectorstore.NewEmbedder(&cfg.SemanticSearch)
+			i.embedder = vectorstore.NewEmbedder(&embedCfg)
+			if err := i.startEmbeddingQueue(workers); err != nil {
+				i.vectorStore = nil
+				i.embedder = nil
+				if closeErr := vs.Close(); closeErr != nil {
+					log.Warn().Err(closeErr).Msg("failed to close vector store")
+				}
+				i.Close()
+				return fmt.Errorf("start embedding queue: %w", err)
+			}
 			log.Info().Msg("semantic search enabled")
 		}
 	}
@@ -517,13 +537,23 @@ func openReindexSources(basePath string, current map[string]bleve.Index) (map[st
 	return sources, closeExtraSources, nil
 }
 
-func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages, keepStopwords bool, dirs []*config.Directory) error {
+func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages, keepStopwords bool, dirs []*config.Directory) (retErr error) {
 	// TODO store new documents in both indexes while running reindex to guarantee not losing any data.
 	if !i.reindexInProgress.CompareAndSwap(false, true) {
 		return errors.New("Reindex is already running")
 	}
 	idx := i
-	defer idx.reindexInProgress.Store(false)
+	workers := idx.embeddingWorkers
+	queueStopped := false
+	oldIndexClosed := false
+	defer func() {
+		idx.reindexInProgress.Store(false)
+		if retErr != nil && queueStopped && !oldIndexClosed && idx.embeddingQueue == nil {
+			if err := idx.startEmbeddingQueue(workers); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("restart embedding queue: %w", err))
+			}
+		}
+	}()
 	tmpBasePath := filepath.Join(basePath, "reindex")
 	if _, err := os.Stat(tmpBasePath); err == nil {
 		if err := os.RemoveAll(tmpBasePath); err != nil {
@@ -545,6 +575,10 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 	// content-addressed files written during reindex are immediately usable
 	// after the rename step. No data directory rename is needed.
 	tmpIdx.data = idx.data
+	if idx.embeddingQueue != nil {
+		idx.stopEmbeddingQueue()
+		queueStopped = true
+	}
 
 	// Carry the vector store and embedder into the temporary indexer so that
 	// MultiBatch.Add() re-embeds every surviving document.  The vector store is
@@ -561,6 +595,9 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 		}
 	}
 	abortReindex := func(err error) error {
+		// The live indexer still owns the shared vector store when reindexing
+		// aborts. Do not let closing the temporary indexer close that store.
+		tmpIdx.vectorStore = nil
 		tmpIdx.Close()
 		if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
 			log.Warn().Err(rerr).Msg("failed to clean up temp index path")
@@ -658,6 +695,7 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 	closeExtraSources()
 	idx.vectorStore = nil // prevent Close() from closing the store we're still using
 	idx.Close()
+	oldIndexClosed = true
 	tmpIdx.vectorStore = nil // already referenced by vs; prevent double-close
 	tmpIdx.Close()
 	for n := range sourceIndexes {
@@ -687,6 +725,12 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 	if vs != nil && embedder != nil {
 		i.vectorStore = vs
 		i.embedder = embedder
+		if workers > 0 {
+			if err := i.startEmbeddingQueue(workers); err != nil {
+				return fmt.Errorf("restart embedding queue: %w", err)
+			}
+			queueStopped = false
+		}
 	}
 	if err := os.RemoveAll(tmpBasePath); err != nil {
 		return err
@@ -797,26 +841,29 @@ func documentEmbeddingContext(d *document.Document) vectorstore.DocumentContext 
 }
 
 // embedDocumentChunks creates metadata and body chunk embeddings and stores the
-// resulting vectors. Errors are logged but not propagated so that Bleve
-// indexing can still proceed.
-func embedDocumentChunks(ctx context.Context, idx *indexer, d *document.Document) {
+// resulting vectors. Errors are logged and returned so durable queue workers
+// can retry them. Synchronous callers may ignore the error and continue Bleve
+// indexing.
+func embedDocumentChunks(ctx context.Context, idx *indexer, d *document.Document) error {
 	start := time.Now()
 	chunks, err := idx.embedder.ChunkAndEmbed(ctx, d.Text, documentEmbeddingContext(d))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Debug().Str("url", d.URL).Msg("chunk embedding canceled")
-			return
+			return err
 		}
 		log.Warn().Err(err).Str("url", d.URL).Msg("chunk embedding failed, skipping vectors")
-		return
+		return err
 	}
 	if len(chunks) == 0 {
-		return
+		return nil
 	}
 	if err := idx.vectorStore.PutChunks(d.ID(), d.UserID, chunks); err != nil {
 		log.Warn().Err(err).Str("url", d.URL).Msg("vector store write failed")
+		return err
 	}
 	log.Debug().Str("url", d.URL).Int("chunks", len(chunks)).Dur("duration", time.Since(start)).Msg("embedded document chunks")
+	return nil
 }
 
 func Add(d *document.Document) error {
@@ -859,6 +906,7 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 	}
 	if !d.SkipIndexing {
 		state := i.getStoredDocumentState(d.ID())
+		needsEmbedding := i.embedder != nil && i.vectorStore != nil && state.embeddingTextChanged(d.Text)
 		applySubmissionTimestamps(d, state)
 		if incrementAddCount {
 			if state.found {
@@ -869,16 +917,16 @@ func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) erro
 		} else if d.AddCount < 1 {
 			d.AddCount = 1
 		}
-		if i.embedder != nil && i.vectorStore != nil {
-			i.embedWg.Go(func() {
-				embedDocumentChunks(i.embedCtx, i, d)
-			})
-		}
 		if d.Label == "" {
 			d.Label = state.label
 		}
 		if err := i.saveWithState(d, state); err != nil {
 			return err
+		}
+		if needsEmbedding {
+			if err := i.enqueueEmbedding(d.ID()); err != nil {
+				return fmt.Errorf("enqueue embedding: %w", err)
+			}
 		}
 	}
 	for _, extra := range d.ExtraDocuments {
@@ -958,6 +1006,9 @@ func (i *indexer) getStoredDocumentState(id string) storedDocumentState {
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
 	req.Fields = []string{"html_key", "favicon_key", "language", "add_count", "label", "added"}
+	if i.embedder != nil && i.vectorStore != nil {
+		req.Fields = append(req.Fields, "text")
+	}
 	req.Size = len(i.indexers) + 1 // at most one entry per index
 	res, err := i.idx.Search(req)
 	if err != nil {
@@ -965,6 +1016,7 @@ func (i *indexer) getStoredDocumentState(id string) storedDocumentState {
 	}
 	seenHTML := make(map[string]struct{})
 	seenFav := make(map[string]struct{})
+	seenText := make(map[string]struct{})
 	state.indexNames = make(map[string]struct{})
 	if len(res.Hits) < 1 {
 		return state
@@ -988,6 +1040,12 @@ func (i *indexer) getStoredDocumentState(id string) storedDocumentState {
 			added := int64(n)
 			if state.added == 0 || added < state.added {
 				state.added = added
+			}
+		}
+		if text, ok := h.Fields["text"].(string); ok {
+			if _, dup := seenText[text]; !dup {
+				state.texts = append(state.texts, text)
+				seenText[text] = struct{}{}
 			}
 		}
 		if k, ok := h.Fields["html_key"].(string); ok && k != "" {
@@ -1191,11 +1249,10 @@ func (i *indexer) addIndexer(name, lang string) error {
 }
 
 func (i *indexer) Close() {
+	i.stopEmbeddingQueue()
 	if i.embedCancel != nil {
 		i.embedCancel()
 	}
-	// Wait for any in-flight async embeddings before closing the vector store.
-	i.embedWg.Wait()
 	if i.vectorStore != nil {
 		if err := i.vectorStore.Close(); err != nil {
 			log.Warn().Err(err).Msg("failed to close vector store")
@@ -1221,6 +1278,8 @@ func newMultiBatch(idx *indexer) *MultiBatch {
 	return &MultiBatch{
 		indexer:           idx,
 		batches:           make(map[string]*bleve.Batch),
+		embeddingIDs:      make(map[string]struct{}),
+		deletedIDs:        make(map[string]struct{}),
 		incrementAddCount: false,
 	}
 }
@@ -1244,6 +1303,7 @@ func (b *MultiBatch) add(d *document.Document, incrementAddCount bool) error {
 	}
 	if !d.SkipIndexing {
 		state := b.indexer.getStoredDocumentState(d.ID())
+		needsEmbedding := b.indexer.embedder != nil && b.indexer.vectorStore != nil && state.embeddingTextChanged(d.Text)
 		applySubmissionTimestamps(d, state)
 		if incrementAddCount {
 			if state.found {
@@ -1257,8 +1317,13 @@ func (b *MultiBatch) add(d *document.Document, incrementAddCount bool) error {
 		if d.Label == "" {
 			d.Label = state.label
 		}
-		if b.indexer.embedder != nil && b.indexer.vectorStore != nil {
-			embedDocumentChunks(b.indexer.embedCtx, b.indexer, d)
+		delete(b.deletedIDs, d.ID())
+		if needsEmbedding {
+			if b.indexer.embeddingWorkers > 0 {
+				b.embeddingIDs[d.ID()] = struct{}{}
+			} else {
+				_ = embedDocumentChunks(b.indexer.embedCtx, b.indexer, d)
+			}
 		}
 		if err := b.indexer.prepareForStorage(d); err != nil {
 			return err
@@ -1294,6 +1359,8 @@ func (b *MultiBatch) add(d *document.Document, incrementAddCount bool) error {
 
 func (b *MultiBatch) Delete(id string) {
 	oldHTMLKeys, oldFaviconKeys := b.indexer.getDocKeysByID(id)
+	delete(b.embeddingIDs, id)
+	b.deletedIDs[id] = struct{}{}
 	for name, idx := range b.indexer.indexers {
 		b.getOrCreateBatch(name, idx).Delete(id)
 	}
@@ -1319,19 +1386,37 @@ func (b *MultiBatch) Save() error {
 			b.indexer.data.deleteIfOrphaned("favicon_key", faviconSubdir, kc.oldFaviconKey, b.indexer.countKeyRefs)
 		}
 	}
+	for id := range b.deletedIDs {
+		if err := b.indexer.cancelEmbedding(id); err != nil {
+			log.Warn().Err(err).Str("id", id).Msg("failed to cancel embedding job")
+		}
+		if b.indexer.vectorStore != nil {
+			if err := b.indexer.vectorStore.Delete(id); err != nil {
+				log.Warn().Err(err).Str("id", id).Msg("vector store delete failed")
+			}
+		}
+	}
+	for id := range b.embeddingIDs {
+		if err := b.indexer.enqueueEmbedding(id); err != nil {
+			return fmt.Errorf("enqueue embedding for %s: %w", id, err)
+		}
+	}
 	return nil
 }
 
 func Delete(id string) error {
 	htmlKeys, faviconKeys := i.getDocKeysByID(id)
-	if i.vectorStore != nil {
-		if err := i.vectorStore.Delete(id); err != nil {
-			log.Warn().Err(err).Str("id", id).Msg("vector store delete failed")
-		}
-	}
 	for _, idx := range i.indexers {
 		if err := idx.Delete(id); err != nil {
 			return err
+		}
+	}
+	if err := i.cancelEmbedding(id); err != nil {
+		log.Warn().Err(err).Str("id", id).Msg("failed to cancel embedding job")
+	}
+	if i.vectorStore != nil {
+		if err := i.vectorStore.Delete(id); err != nil {
+			log.Warn().Err(err).Str("id", id).Msg("vector store delete failed")
 		}
 	}
 	for _, k := range htmlKeys {
@@ -1380,13 +1465,6 @@ func DeleteByQuery(text string, userID *uint, onDelete func(url string, userID u
 		}
 		if err := batch.Save(); err != nil {
 			return count, err
-		}
-		if i.vectorStore != nil {
-			for _, h := range res.Hits {
-				if err := i.vectorStore.Delete(h.ID); err != nil {
-					log.Warn().Err(err).Str("id", h.ID).Msg("vector store delete failed")
-				}
-			}
 		}
 		if onDelete != nil {
 			for _, h := range res.Hits {
@@ -1550,7 +1628,7 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 						MatchedChunk: truncateText(dh.chunkText, semanticTextPreviewLen),
 					}
 					// For semantic-only hits, populate the document with a truncated text preview.
-					d := getByDocID(docID, resultIncludeText|resultIncludeHTML)
+					d := i.getByDocID(docID, resultIncludeText|resultIncludeHTML)
 					if d != nil {
 						if _, inKeyword := keywordURLs[d.URL]; !inKeyword {
 							d.Text = truncateText(d.Text, semanticTextPreviewLen)
@@ -1629,10 +1707,10 @@ func (i *indexer) getAddCountByDocID(id string) (uint, bool) {
 // GetByDocID returns the document with the given bleve document ID, or nil if
 // none exists. The ID is the uid-prefixed form produced by document.GetDocID.
 func GetByDocID(id string) *document.Document {
-	return getByDocID(id, resultIncludeAll)
+	return i.getByDocID(id, resultIncludeAll)
 }
 
-func getByDocID(id string, include resultInclude) *document.Document {
+func (i *indexer) getByDocID(id string, include resultInclude) *document.Document {
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
 	req.Fields = allFields

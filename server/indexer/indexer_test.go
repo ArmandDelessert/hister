@@ -51,6 +51,54 @@ func TestSearchSortsByMostVisited(t *testing.T) {
 	}
 }
 
+func TestSearchFiltersMetadataSourceByLatestUpdate(t *testing.T) {
+	idxCfg := testutil.Config(t)
+	if err := Init(idxCfg); err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	docs := []*document.Document{
+		{
+			URL:       "https://example.com/older-linkwarden",
+			Title:     "Older Linkwarden document",
+			Updated:   100,
+			Metadata:  map[string]any{"source": "linkwarden"},
+			Processed: true,
+		},
+		{
+			URL:       "https://example.com/newer-linkwarden",
+			Title:     "Newer Linkwarden document",
+			Updated:   200,
+			Metadata:  map[string]any{"source": "linkwarden"},
+			Processed: true,
+		},
+		{
+			URL:       "https://example.com/unrelated",
+			Title:     "Unrelated document",
+			Updated:   300,
+			Metadata:  map[string]any{"source": "other"},
+			Processed: true,
+		},
+	}
+	for _, doc := range docs {
+		if err := Add(doc); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	res, err := Search(idxCfg, &Query{Text: "metadata.source:linkwarden", Sort: "date", Limit: 1})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(res.Documents) != 1 {
+		t.Fatalf("Search returned %d documents, want 1", len(res.Documents))
+	}
+	if res.Documents[0].URL != docs[1].URL || res.Documents[0].Updated != 200 {
+		t.Fatalf("latest Linkwarden document = %#v, want %#v", res.Documents[0], docs[1])
+	}
+}
+
 func TestSearchFiltersByVisitCount(t *testing.T) {
 	idxCfg := testutil.Config(t)
 	if err := Init(idxCfg); err != nil {

@@ -264,6 +264,7 @@ func init() {
 	crawlCmd.AddCommand(crawlDeleteCmd)
 	importCmd.AddCommand(importFileCmd)
 	importCmd.AddCommand(importBrowserCmd)
+	importCmd.AddCommand(importLinkwardenCmd)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")
 	listenCmd.Flags().Bool("public", false, "allow unauthenticated access to public search interfaces")
@@ -279,11 +280,9 @@ func init() {
 
 	crawlQueueCmd.Flags().BoolP("count", "c", false, "only print the number of queued URLs")
 
-	importFileCmd.Flags().String("start-date", "", "only import documents added on or after this date (YYYY-MM-DD)")
-	importFileCmd.Flags().String("end-date", "", "only import documents added on or before this date (YYYY-MM-DD)")
-	importFileCmd.Flags().Int("batch-size", defaultImportBatchSize, "number of documents submitted per bulk request (maximum 100)")
-	importFileCmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
-	importFileCmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
+	addDocumentImportFlags(importFileCmd)
+	addDocumentImportFlags(importLinkwardenCmd)
+	importLinkwardenCmd.Flags().String("api-token", "", "Linkwarden API token (default: "+linkwardenTokenEnv+")")
 
 	exportCmd.Flags().String("start-date", "", "only export documents updated on or after this date (YYYY-MM-DD)")
 	exportCmd.Flags().String("end-date", "", "only export documents updated on or before this date (YYYY-MM-DD)")
@@ -301,8 +300,6 @@ func init() {
 	deleteUserCmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
 
 	showUserCmd.Flags().Bool("token", false, "display the user's access token")
-
-	importFileCmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
 
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "skip sensitive content checks during reindexing, allowing matching documents to be indexed")
 

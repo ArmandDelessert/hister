@@ -12,7 +12,7 @@ export const docsStructure: DocsCategory[] = [
   },
   {
     name: 'Using in the Terminal',
-    slugs: ['terminal-client', 'crawler', 'importing-browser-history'],
+    slugs: ['terminal-client', 'crawler', 'import'],
     color: 'lime',
   },
   {

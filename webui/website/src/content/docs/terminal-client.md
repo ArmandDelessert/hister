@@ -86,8 +86,8 @@ hister import file export.json page.html ~/Downloads/saved-pages
 Three input formats are supported, detected by file extension:
 
 - **JSON export files** files previously created by `hister export`. They are read
-  line by line and each document is submitted to the running server, where its content
-  is re-processed from the stored HTML.
+  line by line and each serialized document is restored without running content extraction
+  again.
 - **7z archives** (`.7z`) a 7z-compressed archive containing a single JSON export file.
 - **HTML files** (`.html` or `.htm`) a saved web page. The document URL is extracted
   from the HTML itself (the `<link rel="canonical">` tag, OpenGraph/Twitter `url` meta
@@ -115,8 +115,8 @@ Useful flags:
   The default is `10` and the maximum is `100`.
 
 > **Note:** `hister import file` talks to a running Hister server, so make sure the server
-> is started before importing. To bulk-import browsing history instead, see
-> [Importing Browser History](importing-browser-history).
+> is started before importing. See [Importing Documents](import) for file,
+> browser history, and Linkwarden import instructions.
 
 ## TUI (Terminal UI)
 

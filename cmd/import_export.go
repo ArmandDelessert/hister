@@ -125,8 +125,8 @@ Use '-' as OUTPUT_FILE to write to stdout.`,
 
 var importCmd = &cobra.Command{
 	Use:   "import",
-	Short: "Import documents or browser history",
-	Long: `Import documents from files or browser history.
+	Short: "Import documents from files, browsers, or services",
+	Long: `Import documents from files, browser history, or external services.
 
 Use one of the available subcommands to select the import source.`,
 }
@@ -193,14 +193,7 @@ documents whose "added" timestamp falls within the given date range.`,
 			errCount += e
 		}
 
-		msg := fmt.Sprintf("%s Imported %d document(s)", cliSuccessStyle.Render("✓"), imported)
-		if skipped > 0 {
-			msg += fmt.Sprintf(" (%d skipped)", skipped)
-		}
-		if errCount > 0 {
-			msg += fmt.Sprintf(" (%d errors)", errCount)
-		}
-		fmt.Println(msg)
+		printImportSummary(imported, skipped, errCount)
 	},
 }
 
@@ -208,6 +201,26 @@ const (
 	defaultImportBatchSize = 10
 	maxImportBatchSize     = 100
 )
+
+func addDocumentImportFlags(cmd *cobra.Command) {
+	cmd.Flags().String("start-date", "", "only import documents added on or after this date (YYYY-MM-DD)")
+	cmd.Flags().String("end-date", "", "only import documents added on or before this date (YYYY-MM-DD)")
+	cmd.Flags().Int("batch-size", defaultImportBatchSize, "number of documents submitted per bulk request (maximum 100)")
+	cmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
+	cmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
+	cmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
+}
+
+func printImportSummary(imported, skipped, errCount int) {
+	msg := fmt.Sprintf("%s Imported %d document(s)", cliSuccessStyle.Render("✓"), imported)
+	if skipped > 0 {
+		msg += fmt.Sprintf(" (%d skipped)", skipped)
+	}
+	if errCount > 0 {
+		msg += fmt.Sprintf(" (%d errors)", errCount)
+	}
+	fmt.Println(msg)
+}
 
 func isSupportedImportInput(inputFile string) bool {
 	switch strings.ToLower(filepath.Ext(inputFile)) {

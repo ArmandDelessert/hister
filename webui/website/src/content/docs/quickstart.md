@@ -59,7 +59,7 @@ If you can't access the Web interface at all, check that [the server is running]
 
 ## Next Steps
 
-- [Import your existing browser history](importing-browser-history)
+- [Import files, browser history, or Linkwarden bookmarks](import)
 - In the Web interface, set up ignoring and priority rules, as well as keyword aliases for efficient searching
 - Explore the [Hister query language](query-language)
 - Configure hotkeys and sensitive data patterns in your config file

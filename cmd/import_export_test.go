@@ -177,8 +177,9 @@ func TestImportBatchSizeDefault(t *testing.T) {
 
 func TestImportCommandHierarchy(t *testing.T) {
 	tests := map[string]*cobra.Command{
-		"file":    importFileCmd,
-		"browser": importBrowserCmd,
+		"file":       importFileCmd,
+		"browser":    importBrowserCmd,
+		"linkwarden": importLinkwardenCmd,
 	}
 	for name, want := range tests {
 		got, _, err := importCmd.Find([]string{name})
@@ -198,8 +199,10 @@ func TestImportCommandHierarchy(t *testing.T) {
 
 func TestImportSubcommandFlagOwnership(t *testing.T) {
 	for _, name := range []string{"batch-size", "start-date", "end-date", "skip-existing", "global", "user-id"} {
-		if importFileCmd.Flags().Lookup(name) == nil {
-			t.Errorf("import file is missing --%s", name)
+		for _, importCommand := range []*cobra.Command{importFileCmd, importLinkwardenCmd} {
+			if importCommand.Flags().Lookup(name) == nil {
+				t.Errorf("import %s is missing --%s", importCommand.Name(), name)
+			}
 		}
 		if importBrowserCmd.Flags().Lookup(name) != nil {
 			t.Errorf("import browser unexpectedly has --%s", name)
@@ -211,6 +214,20 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 		}
 		if importFileCmd.Flags().Lookup(name) != nil {
 			t.Errorf("import file unexpectedly has --%s", name)
+		}
+		if importLinkwardenCmd.Flags().Lookup(name) != nil {
+			t.Errorf("import linkwarden unexpectedly has --%s", name)
+		}
+	}
+	if importLinkwardenCmd.Flags().Lookup("api-token") == nil {
+		t.Error("import linkwarden is missing --api-token")
+	}
+	if importLinkwardenCmd.Flags().Lookup("source-token") != nil {
+		t.Error("import linkwarden still has the old --source-token flag")
+	}
+	for _, importCommand := range []*cobra.Command{importFileCmd, importBrowserCmd} {
+		if importCommand.Flags().Lookup("api-token") != nil {
+			t.Errorf("import %s unexpectedly has --api-token", importCommand.Name())
 		}
 	}
 }

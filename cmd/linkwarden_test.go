@@ -19,6 +19,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type linkwardenContentFetchFunc func(context.Context, string) (*document.Document, error)
+
+func (f linkwardenContentFetchFunc) Fetch(ctx context.Context, rawURL string) (*document.Document, error) {
+	return f(ctx, rawURL)
+}
+
 func TestImportLinkwardenPaginatesAndMapsDocuments(t *testing.T) {
 	var sourceCursors []string
 	sourceHTTPClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -120,7 +126,7 @@ func TestImportLinkwardenPaginatesAndMapsDocuments(t *testing.T) {
 	})}
 	target := client.New("http://hister.example", client.WithHTTPClient(targetHTTPClient))
 
-	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), linkwardenImportOptions{BatchSize: 2})
+	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, linkwardenImportOptions{BatchSize: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,6 +174,90 @@ func TestImportLinkwardenPaginatesAndMapsDocuments(t *testing.T) {
 	}
 	if receivedDocs[1].Metadata["linkwarden_type"] != "pdf" {
 		t.Errorf("PDF source type = %#v", receivedDocs[1].Metadata["linkwarden_type"])
+	}
+}
+
+func TestImportLinkwardenDownloadsMissingURLContent(t *testing.T) {
+	sourceHTTPClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return jsonHTTPResponse(req, http.StatusOK, `{
+			"data": {
+				"nextCursor": null,
+				"links": [{
+					"id": 15,
+					"name": "Saved title",
+					"type": "url",
+					"description": "Saved description",
+					"url": "https://example.com/article?utm_source=linkwarden#content",
+					"createdAt": "2024-01-02T03:04:05Z",
+					"updatedAt": "2024-02-03T04:05:06Z"
+				}]
+			}
+		}`), nil
+	})}
+	source, err := newLinkwardenClient("https://links.example", "token", sourceHTTPClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fetchCalls := 0
+	const downloadedHTML = `<html><head><title>Downloaded title</title></head><body><main><p>Downloaded body text.</p></main></body></html>`
+	contentFetcher := linkwardenContentFetchFunc(func(_ context.Context, rawURL string) (*document.Document, error) {
+		fetchCalls++
+		if rawURL != "https://example.com/article?utm_source=linkwarden#content" {
+			t.Errorf("download URL = %q, want original bookmark URL", rawURL)
+		}
+		return &document.Document{URL: rawURL, HTML: downloadedHTML}, nil
+	})
+
+	var received *document.Document
+	targetHTTPClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var body struct {
+			Ops []struct {
+				*document.Document
+			} `json:"ops"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			return nil, err
+		}
+		if len(body.Ops) != 1 {
+			return nil, fmt.Errorf("received %d batch operations, want one", len(body.Ops))
+		}
+		received = body.Ops[0].Document
+		return jsonHTTPResponse(req, http.StatusOK, `{"results":[{"status":201}]}`), nil
+	})}
+	target := client.New("http://hister.example", client.WithHTTPClient(targetHTTPClient))
+
+	stats, err := importLinkwarden(
+		context.Background(),
+		source,
+		target,
+		document.NewNullLanguageDetector(),
+		contentFetcher,
+		linkwardenImportOptions{BatchSize: 10},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats != (linkwardenImportStats{Imported: 1}) {
+		t.Fatalf("stats = %+v, want one imported document", stats)
+	}
+	if fetchCalls != 1 {
+		t.Fatalf("content fetch calls = %d, want one", fetchCalls)
+	}
+	if received == nil {
+		t.Fatal("no document was submitted")
+	}
+	if received.HTML != downloadedHTML {
+		t.Errorf("downloaded HTML was not preserved")
+	}
+	if !strings.Contains(received.Text, "Saved description") || !strings.Contains(received.Text, "Downloaded body text.") {
+		t.Errorf("document text = %q, want description and downloaded content", received.Text)
+	}
+	if received.Title != "Saved title" {
+		t.Errorf("document title = %q, want Linkwarden title", received.Title)
+	}
+	if received.Updated != mustUnixTime(t, "2024-02-03T04:05:06Z") {
+		t.Errorf("document updated = %d, want Linkwarden timestamp", received.Updated)
 	}
 }
 
@@ -251,7 +341,7 @@ func TestImportLinkwardenSkipsExistingNormalizedURL(t *testing.T) {
 	})}
 	target := client.New("http://hister.example", client.WithHTTPClient(targetHTTPClient))
 
-	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), linkwardenImportOptions{
+	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, linkwardenImportOptions{
 		BatchSize:    10,
 		SkipExisting: true,
 	})
@@ -272,7 +362,7 @@ func TestImportLinkwardenRejectsRepeatedCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := client.New("http://hister.example")
-	_, err = importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), linkwardenImportOptions{BatchSize: 10})
+	_, err = importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, linkwardenImportOptions{BatchSize: 10})
 	if err == nil || !strings.Contains(err.Error(), "repeated pagination cursor 7") {
 		t.Fatalf("import error = %v, want repeated cursor error", err)
 	}

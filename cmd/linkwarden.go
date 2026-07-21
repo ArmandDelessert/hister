@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/asciimoo/hister/client"
+	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/server/crawler"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer"
 
 	"github.com/rs/zerolog/log"
@@ -85,14 +88,68 @@ type linkwardenImportStats struct {
 	Errors   int
 }
 
+type linkwardenContentFetcher interface {
+	Fetch(context.Context, string) (*document.Document, error)
+}
+
+type linkwardenCrawlerContentFetcher struct {
+	cfg     *config.CrawlerConfig
+	crawler crawler.Crawler
+}
+
+func newLinkwardenCrawlerContentFetcher(cfg *config.CrawlerConfig) *linkwardenCrawlerContentFetcher {
+	return &linkwardenCrawlerContentFetcher{cfg: cfg}
+}
+
+func (f *linkwardenCrawlerContentFetcher) Fetch(ctx context.Context, rawURL string) (*document.Document, error) {
+	if f.crawler == nil {
+		cr, err := crawler.New(f.cfg, nil)
+		if err != nil {
+			return nil, fmt.Errorf("initialize linkwarden content crawler: %w", err)
+		}
+		f.crawler = cr
+	}
+	validator, err := crawler.NewValidator(&crawler.ValidatorRules{MaxLinks: 1})
+	if err != nil {
+		return nil, fmt.Errorf("initialize linkwarden content validator: %w", err)
+	}
+	documents, err := f.crawler.Crawl(ctx, rawURL, validator)
+	if err != nil {
+		return nil, fmt.Errorf("download linkwarden content: %w", err)
+	}
+	select {
+	case d, ok := <-documents:
+		if !ok {
+			return nil, errors.New("download linkwarden content: no response")
+		}
+		return d, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("download linkwarden content: %w", ctx.Err())
+	}
+}
+
+func (f *linkwardenCrawlerContentFetcher) Close() error {
+	if f.crawler == nil {
+		return nil
+	}
+	return f.crawler.Close()
+}
+
 var importLinkwardenCmd = &cobra.Command{
 	Use:   "linkwarden INSTANCE_URL",
 	Short: "Import bookmarks from Linkwarden",
 	Long: `Import bookmarks and their searchable content from a Linkwarden instance.
 
 Set the Linkwarden API token with HISTER_IMPORT_LINKWARDEN_TOKEN or --api-token.
+
+When a URL record has no extracted text, Hister downloads it using the configured
+crawler backend. Override the backend with --backend and --backend-option.
+
 The global --token flag remains the access token for the destination Hister server.`,
 	Args: cobra.ExactArgs(1),
+	PreRun: func(_ *cobra.Command, _ []string) {
+		initExtractor()
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		token := linkwardenAPIToken(cmd)
 		if token == "" {
@@ -125,8 +182,16 @@ The global --token flag remains the access token for the destination Hister serv
 		if cfg.Indexer.DetectLanguages {
 			languageDetector = document.NewLanguageDetector()
 		}
+		cfg.Crawler.UserAgent = UserAgent
+		applyCrawlerBackendFlags(cmd)
+		contentFetcher := newLinkwardenCrawlerContentFetcher(&cfg.Crawler)
+		defer func() {
+			if err := contentFetcher.Close(); err != nil {
+				log.Warn().Err(err).Msg("Linkwarden content crawler close error")
+			}
+		}()
 
-		stats, err := importLinkwarden(cmd.Context(), source, target, languageDetector, linkwardenImportOptions{
+		stats, err := importLinkwarden(cmd.Context(), source, target, languageDetector, contentFetcher, linkwardenImportOptions{
 			BatchSize:    batchSize,
 			SkipExisting: skipExisting,
 			StartDate:    dateRange.From,
@@ -267,6 +332,7 @@ func importLinkwarden(
 	source *linkwardenClient,
 	target *client.Client,
 	languageDetector document.LanguageDetector,
+	contentFetcher linkwardenContentFetcher,
 	options linkwardenImportOptions,
 ) (linkwardenImportStats, error) {
 	var stats linkwardenImportStats
@@ -323,6 +389,12 @@ func importLinkwarden(
 					continue
 				}
 			}
+			if linkwardenNeedsContentDownload(link) && contentFetcher != nil {
+				if err := downloadLinkwardenContent(ctx, contentFetcher, d, link, languageDetector); err != nil {
+					log.Warn().Err(err).Str("url", d.URL).Msg("Failed to download missing Linkwarden content, importing bookmark metadata only")
+					stats.Errors++
+				}
+			}
 
 			docs = append(docs, d)
 			if len(docs) == options.BatchSize {
@@ -341,6 +413,45 @@ func importLinkwarden(
 		seenCursors[*page.NextCursor] = struct{}{}
 		cursor = page.NextCursor
 	}
+}
+
+func linkwardenNeedsContentDownload(link linkwardenLink) bool {
+	return strings.TrimSpace(link.TextContent) == "" && (link.Type == "" || strings.EqualFold(link.Type, "url"))
+}
+
+func downloadLinkwardenContent(
+	ctx context.Context,
+	contentFetcher linkwardenContentFetcher,
+	d *document.Document,
+	link linkwardenLink,
+	languageDetector document.LanguageDetector,
+) error {
+	fetched, err := contentFetcher.Fetch(ctx, strings.TrimSpace(link.URL))
+	if err != nil {
+		return err
+	}
+	if err := fetched.Process(languageDetector, extractor.Extract); err != nil {
+		return fmt.Errorf("process downloaded linkwarden content: %w", err)
+	}
+	if strings.TrimSpace(fetched.Text) == "" {
+		return errors.New("downloaded linkwarden page has no extractable content")
+	}
+
+	d.HTML = fetched.HTML
+	d.Text = combineLinkwardenText(link.Description, fetched.Text)
+	if strings.TrimSpace(link.Name) == "" && fetched.Title != "" {
+		d.Title = fetched.Title
+	}
+	if d.Metadata == nil {
+		d.Metadata = make(map[string]any)
+	}
+	for key, value := range fetched.Metadata {
+		if _, exists := d.Metadata[key]; !exists {
+			d.Metadata[key] = value
+		}
+	}
+	d.Language = languageDetector.DetectLanguage(d.Text)
+	return nil
 }
 
 func linkwardenDocument(link linkwardenLink, languageDetector document.LanguageDetector) (*document.Document, error) {

@@ -144,23 +144,31 @@ When a previous result exists, the importer adds an `after:` filter to the Linkw
 
 Records without a URL are skipped because every Hister document requires a URL. Pagination and batch submission are automatic.
 
+If a Linkwarden URL record has no extracted text content, Hister downloads the page and extracts its contents before importing it. The configured crawler backend is used for these downloads. The crawler is initialized only when missing content is encountered and is reused for the rest of the import.
+
 The following options apply to Linkwarden imports:
 
-| Flag                      | Purpose                                                       |
-| ------------------------- | ------------------------------------------------------------- |
-| `--api-token TOKEN`       | Override `HISTER_IMPORT_LINKWARDEN_TOKEN` for this invocation |
-| `--skip-existing`         | Keep documents whose normalized URL already exists in Hister  |
-| `--batch-size N`          | Submit from 1 through 100 documents per request               |
-| `--start-date YYYY-MM-DD` | Import documents added on or after the date                   |
-| `--end-date YYYY-MM-DD`   | Import documents added on or before the date                  |
-| `--global`                | Import for all users when authenticated as an administrator   |
-| `--user-id ID`            | Import for one user when authenticated as an administrator    |
+| Flag                         | Purpose                                                       |
+| ---------------------------- | ------------------------------------------------------------- |
+| `--api-token TOKEN`          | Override `HISTER_IMPORT_LINKWARDEN_TOKEN` for this invocation |
+| `--backend BACKEND`          | Download missing content with `http`, `chromedp`, or `bidi`   |
+| `--backend-option KEY=VALUE` | Set an option for the selected crawler backend                |
+| `--header KEY=VALUE`         | Add a request header when downloading missing content         |
+| `--cookie COOKIE`            | Add a cookie when downloading missing content                 |
+| `--skip-existing`            | Keep documents whose normalized URL already exists in Hister  |
+| `--batch-size N`             | Submit from 1 through 100 documents per request               |
+| `--start-date YYYY-MM-DD`    | Import documents added on or after the date                   |
+| `--end-date YYYY-MM-DD`      | Import documents added on or before the date                  |
+| `--global`                   | Import for all users when authenticated as an administrator   |
+| `--user-id ID`               | Import for one user when authenticated as an administrator    |
 
 For example:
 
 ```bash
 hister import linkwarden https://links.example.com \
-  --skip-existing \
+	--backend chromedp \
+	--backend-option exec_path=/usr/bin/chromium \
+	--skip-existing \
   --start-date 2024-01-01 \
   --batch-size 25
 ```

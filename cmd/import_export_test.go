@@ -208,15 +208,20 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 			t.Errorf("import browser unexpectedly has --%s", name)
 		}
 	}
-	for _, name := range []string{"min-visit", "backend", "backend-option", "header", "cookie"} {
-		if importBrowserCmd.Flags().Lookup(name) == nil {
-			t.Errorf("import browser is missing --%s", name)
+	if importBrowserCmd.Flags().Lookup("min-visit") == nil {
+		t.Error("import browser is missing --min-visit")
+	}
+	if importLinkwardenCmd.Flags().Lookup("min-visit") != nil {
+		t.Error("import linkwarden unexpectedly has --min-visit")
+	}
+	for _, name := range []string{"backend", "backend-option", "header", "cookie"} {
+		for _, importCommand := range []*cobra.Command{importBrowserCmd, importLinkwardenCmd} {
+			if importCommand.Flags().Lookup(name) == nil {
+				t.Errorf("import %s is missing --%s", importCommand.Name(), name)
+			}
 		}
 		if importFileCmd.Flags().Lookup(name) != nil {
 			t.Errorf("import file unexpectedly has --%s", name)
-		}
-		if importLinkwardenCmd.Flags().Lookup(name) != nil {
-			t.Errorf("import linkwarden unexpectedly has --%s", name)
 		}
 	}
 	if importLinkwardenCmd.Flags().Lookup("api-token") == nil {

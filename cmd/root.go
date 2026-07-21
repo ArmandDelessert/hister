@@ -110,6 +110,13 @@ func applyCrawlerBackendFlags(cmd *cobra.Command) {
 	}
 }
 
+func addCrawlerBackendFlags(cmd *cobra.Command) {
+	cmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
+	cmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
+	cmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
+	cmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
+}
+
 func targetUserIDClientOptions(cmd *cobra.Command, global bool) []client.Option {
 	targetUserID, _ := cmd.Flags().GetUint("user-id")
 	userIDChanged := cmd.Flags().Changed("user-id")
@@ -273,15 +280,13 @@ func init() {
 	listFilesCmd.Flags().Bool("relative", false, "print paths relative to each configured indexing directory")
 
 	importBrowserCmd.Flags().IntP("min-visit", "m", 1, "only import URLs visited at least this many times")
-	importBrowserCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
-	importBrowserCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
-	importBrowserCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
-	importBrowserCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
+	addCrawlerBackendFlags(importBrowserCmd)
 
 	crawlQueueCmd.Flags().BoolP("count", "c", false, "only print the number of queued URLs")
 
 	addDocumentImportFlags(importFileCmd)
 	addDocumentImportFlags(importLinkwardenCmd)
+	addCrawlerBackendFlags(importLinkwardenCmd)
 	importLinkwardenCmd.Flags().String("api-token", "", "Linkwarden API token (default: "+linkwardenTokenEnv+")")
 
 	exportCmd.Flags().String("start-date", "", "only export documents updated on or after this date (YYYY-MM-DD)")

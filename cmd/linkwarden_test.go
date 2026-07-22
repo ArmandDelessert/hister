@@ -144,6 +144,9 @@ func TestImportLinkwardenPaginatesAndMapsDocuments(t *testing.T) {
 	}
 
 	article := receivedDocs[0]
+	if article.Label != "linkwarden" {
+		t.Errorf("article label = %q, want linkwarden", article.Label)
+	}
 	if article.URL != "https://example.com/article?keep=1" {
 		t.Errorf("article URL = %q, want normalized URL", article.URL)
 	}

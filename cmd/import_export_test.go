@@ -82,7 +82,7 @@ func TestIsSupportedImportInput(t *testing.T) {
 
 func TestImportJSONFileUsesConfiguredBatchSize(t *testing.T) {
 	var batchSizes []int
-	var receivedLabel string
+	var receivedLabels []string
 	var receivedMetadata map[string]any
 	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/api/batch" {
@@ -100,8 +100,10 @@ func TestImportJSONFileUsesConfiguredBatchSize(t *testing.T) {
 			return nil, fmt.Errorf("decode request: %w", err)
 		}
 		batchSizes = append(batchSizes, len(req.Ops))
+		for _, op := range req.Ops {
+			receivedLabels = append(receivedLabels, op.Label)
+		}
 		if len(batchSizes) == 1 && len(req.Ops) > 0 {
-			receivedLabel = req.Ops[0].Label
 			receivedMetadata = req.Ops[0].Metadata
 		}
 		for _, op := range req.Ops {
@@ -150,15 +152,31 @@ func TestImportJSONFileUsesConfiguredBatchSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imported, skipped, errCount := importJSONFile(client.New("http://hister.test", client.WithHTTPClient(httpClient)), inputFile, false, 0, 0, 10)
+	imported, skipped, errCount := importJSONFile(
+		client.New("http://hister.test", client.WithHTTPClient(httpClient)),
+		inputFile,
+		false,
+		0,
+		0,
+		10,
+		documentLabelOverride{},
+	)
 	if imported != 23 || skipped != 0 || errCount != 0 {
 		t.Fatalf("importJSONFile() = (%d, %d, %d), want (23, 0, 0)", imported, skipped, errCount)
 	}
 	if want := []int{10, 10, 3}; !reflect.DeepEqual(batchSizes, want) {
 		t.Fatalf("batch sizes = %v, want %v", batchSizes, want)
 	}
-	if receivedLabel != "reference" {
-		t.Fatalf("label = %q, want reference", receivedLabel)
+	if len(receivedLabels) != 23 {
+		t.Fatalf("received %d labels, want 23", len(receivedLabels))
+	}
+	if receivedLabels[0] != "reference" {
+		t.Fatalf("stored label = %q, want reference", receivedLabels[0])
+	}
+	for i, label := range receivedLabels[1:] {
+		if label != "import" {
+			t.Fatalf("label %d = %q, want import", i+1, label)
+		}
 	}
 	if receivedMetadata["source"] != "export" {
 		t.Fatalf("metadata source = %v, want export", receivedMetadata["source"])
@@ -172,6 +190,50 @@ func TestImportBatchSizeDefault(t *testing.T) {
 	}
 	if batchSize != 10 {
 		t.Fatalf("batch size default = %d, want 10", batchSize)
+	}
+}
+
+func TestDocumentLabelOverride(t *testing.T) {
+	d := &document.Document{Label: "exported"}
+	documentLabelOverride{}.apply(d, "import")
+	if d.Label != "exported" {
+		t.Fatalf("unset override changed label to %q", d.Label)
+	}
+
+	d.Label = ""
+	documentLabelOverride{}.apply(d, "import")
+	if d.Label != "import" {
+		t.Fatalf("fallback label = %q, want import", d.Label)
+	}
+
+	override := documentLabelOverride{value: "imported", set: true}
+	override.apply(d, "import")
+	if d.Label != "imported" {
+		t.Fatalf("label = %q, want imported", d.Label)
+	}
+	if got := (documentLabelOverride{}).resolve("stored", "browser"); got != "stored" {
+		t.Fatalf("resolved stored label = %q, want stored", got)
+	}
+	if got := (documentLabelOverride{}).resolve("", "browser"); got != "browser" {
+		t.Fatalf("resolved fallback label = %q, want browser", got)
+	}
+	if got := override.resolve("stored", "browser"); got != "imported" {
+		t.Fatalf("resolved override label = %q, want imported", got)
+	}
+}
+
+func TestDocumentLabelOverrideReadsInheritedFlag(t *testing.T) {
+	parent := &cobra.Command{Use: "import"}
+	child := &cobra.Command{Use: "source"}
+	parent.AddCommand(child)
+	parent.PersistentFlags().String("label", "", "")
+	if err := child.ParseFlags([]string{"--label", "reading"}); err != nil {
+		t.Fatal(err)
+	}
+
+	override := newDocumentLabelOverride(child)
+	if !override.set || override.value != "reading" {
+		t.Fatalf("label override = %+v, want explicitly set reading label", override)
 	}
 }
 
@@ -199,6 +261,14 @@ func TestImportCommandHierarchy(t *testing.T) {
 }
 
 func TestImportSubcommandFlagOwnership(t *testing.T) {
+	if importCmd.PersistentFlags().Lookup("label") == nil {
+		t.Fatal("import is missing --label")
+	}
+	for _, importCommand := range []*cobra.Command{importFileCmd, importBrowserCmd, importLinkwardenCmd, importKarakeepCmd} {
+		if importCommand.InheritedFlags().Lookup("label") == nil {
+			t.Errorf("import %s does not inherit --label", importCommand.Name())
+		}
+	}
 	for _, name := range []string{"batch-size", "start-date", "end-date", "skip-existing", "global", "user-id"} {
 		for _, importCommand := range []*cobra.Command{importFileCmd, importLinkwardenCmd, importKarakeepCmd} {
 			if importCommand.Flags().Lookup(name) == nil {

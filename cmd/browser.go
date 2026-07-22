@@ -76,10 +76,12 @@ type DBToImport struct {
 }
 
 type browserImportJob struct {
-	id       string
-	startURL string
-	created  bool
-	enqueued int
+	id            string
+	startURL      string
+	label         string
+	labelOverride documentLabelOverride
+	created       bool
+	enqueued      int
 }
 
 const browserImportJobPrefix = "browser-import-"
@@ -247,7 +249,11 @@ func importDB(databases []DBToImport, cmd *cobra.Command) {
 		log.Error().Err(err).Msg("Failed to select browser import crawl job")
 		return
 	}
-	job := &browserImportJob{id: jobID}
+	job := &browserImportJob{
+		id:            jobID,
+		labelOverride: newDocumentLabelOverride(cmd),
+	}
+	job.label = job.labelOverride.resolve("", "browser")
 	if resumeExisting {
 		if err := ensureBrowserImportJob(job, ""); err != nil {
 			log.Error().Err(err).Msg("Failed to resume browser import crawl job")
@@ -372,7 +378,7 @@ func importDB(databases []DBToImport, cmd *cobra.Command) {
 	}
 	validator.SetVisited(int(done + failed))
 
-	if err := crawlAndIndex(job.id, job.startURL, cr, validator, ""); err != nil {
+	if err := crawlAndIndex(job.id, job.startURL, cr, validator, job.label); err != nil {
 		log.Fatal().Err(err).Msg("Browser import crawl failed")
 	}
 }
@@ -391,7 +397,7 @@ func ensureBrowserImportJob(job *browserImportJob, startURL string) error {
 		return fmt.Errorf("load crawl job: %w", err)
 	}
 	if existing == nil {
-		if err := model.CreateCrawlJob(job.id, startURL, rulesJSON, ""); err != nil {
+		if err := model.CreateCrawlJob(job.id, startURL, rulesJSON, job.label); err != nil {
 			return fmt.Errorf("create crawl job: %w", err)
 		}
 		job.startURL = startURL
@@ -405,6 +411,7 @@ func ensureBrowserImportJob(job *browserImportJob, startURL string) error {
 	if !existingRules.NoDepth {
 		return fmt.Errorf("crawl job %q already exists and is not a browser import job", job.id)
 	}
+	job.label = job.labelOverride.resolve(existing.Label, "browser")
 	if err := model.UpdateCrawlJobStatus(job.id, model.CrawlJobRunning); err != nil {
 		return fmt.Errorf("update crawl job status: %w", err)
 	}
@@ -485,7 +492,8 @@ func printBrowserImportJob(idx int, job *model.CrawlJob) {
 		log.Warn().Err(err).Str("job_id", job.ID).Msg("failed to get job stats")
 	}
 	fmt.Printf("%d  %s  %s\n", idx, job.ID, crawlJobStatusLabel(job.Status))
-	fmt.Printf("   pending: %d  done: %d  failed: %d  skipped: %d  created: %s\n",
+	fmt.Printf(
+		"   pending: %d  done: %d  failed: %d  skipped: %d  created: %s\n",
 		stats.Pending, stats.Done, stats.Failed, stats.Skipped,
 		job.CreatedAt.Format("2006-01-02 15:04:05"),
 	)

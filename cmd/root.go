@@ -279,6 +279,7 @@ func init() {
 	importCmd.AddCommand(importBrowserCmd)
 	importCmd.AddCommand(importLinkwardenCmd)
 	importCmd.AddCommand(importKarakeepCmd)
+	importCmd.PersistentFlags().String("label", "", "Label to attach to all imported documents")
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")
 	listenCmd.Flags().Bool("public", false, "allow unauthenticated access to public search interfaces")

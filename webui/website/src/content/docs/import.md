@@ -8,14 +8,16 @@ The `hister import` command collects related import tools under one command. Eve
 
 ## Available Import Sources
 
-| Command                                     | Source                                     |
-| ------------------------------------------- | ------------------------------------------ |
-| `hister import file INPUT...`               | Hister exports, archives, and saved pages  |
-| `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                  |
-| `hister import linkwarden INSTANCE_URL`     | A Linkwarden instance through its HTTP API |
-| `hister import karakeep INSTANCE_URL`       | A Karakeep instance through its HTTP API   |
+| Command                                     | Source                                     | Default label |
+| ------------------------------------------- | ------------------------------------------ | ------------- |
+| `hister import file INPUT...`               | Hister exports, archives, and saved pages  | `import`      |
+| `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                  | `browser`     |
+| `hister import linkwarden INSTANCE_URL`     | A Linkwarden instance through its HTTP API | `linkwarden`  |
+| `hister import karakeep INSTANCE_URL`       | A Karakeep instance through its HTTP API   | `karakeep`    |
 
 Use the global `--server-url` and `--token` flags when the destination Hister server differs from your configured server or requires authentication.
+
+Use `--label LABEL` with any import source to attach the same label to every imported document. Without this flag, labels stored in imported documents or resumed browser jobs are preserved. The default shown above is applied only when no label was supplied by the user or the imported document.
 
 ## Importing Files
 
@@ -41,6 +43,7 @@ The following options apply to file imports:
 | Flag                      | Purpose                                                     |
 | ------------------------- | ----------------------------------------------------------- |
 | `--skip-existing`         | Keep documents whose URL already exists in Hister           |
+| `--label LABEL`           | Override stored labels and the default `import` label       |
 | `--batch-size N`          | Submit from 1 through 100 documents per request             |
 | `--start-date YYYY-MM-DD` | Import documents added on or after the date                 |
 | `--end-date YYYY-MM-DD`   | Import documents added on or before the date                |
@@ -79,6 +82,8 @@ hister import browser firefox ~/.mozilla/firefox/example.default/places.sqlite
 Firefox stores history in `places.sqlite` inside its profile directory. Chromium based browsers usually store it in a file named `History` inside their profile directory.
 
 Use `--min-visit N` to import only URLs that have at least `N` recorded visits.
+
+Browser history documents receive the `browser` label by default. Use `--label LABEL` to replace it. Resumed browser import jobs reuse their stored label unless this flag is supplied again.
 
 ### Resume and Inspect a Browser Import
 
@@ -193,6 +198,7 @@ The following options apply to Linkwarden and Karakeep imports:
 | `--header KEY=VALUE`         | Add a request header when downloading missing content        |
 | `--cookie COOKIE`            | Add a cookie when downloading missing content                |
 | `--skip-existing`            | Keep documents whose normalized URL already exists in Hister |
+| `--label LABEL`              | Override the default service source label                    |
 | `--batch-size N`             | Submit from 1 through 100 documents per request              |
 | `--start-date YYYY-MM-DD`    | Import documents added on or after the date                  |
 | `--end-date YYYY-MM-DD`      | Import documents added on or before the date                 |

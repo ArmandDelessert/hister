@@ -174,6 +174,9 @@ func TestImportKarakeepPaginatesAndMapsContent(t *testing.T) {
 	}
 
 	stored := receivedDocs[0]
+	if stored.Label != "karakeep" {
+		t.Errorf("stored label = %q, want karakeep", stored.Label)
+	}
 	if stored.URL != "https://example.com/article" {
 		t.Errorf("stored URL = %q, want normalized URL", stored.URL)
 	}

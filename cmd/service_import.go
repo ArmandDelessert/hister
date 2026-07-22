@@ -184,6 +184,7 @@ type serviceImportOptions struct {
 	SkipExisting bool
 	StartDate    int64
 	EndDate      int64
+	Label        documentLabelOverride
 }
 
 type serviceImportStats struct {
@@ -227,6 +228,7 @@ func newServiceImportRuntime(cmd *cobra.Command) (*serviceImportRuntime, error) 
 			SkipExisting: skipExisting,
 			StartDate:    dateRange.From,
 			EndDate:      dateRange.To,
+			Label:        newDocumentLabelOverride(cmd),
 		},
 	}, nil
 }
@@ -297,6 +299,7 @@ func (b *serviceImportBuffer) Add(ctx context.Context, d *document.Document, con
 			b.stats.Errors++
 		}
 	}
+	b.options.Label.apply(d, b.source)
 
 	b.documents = append(b.documents, d)
 	if len(b.documents) == b.options.BatchSize {

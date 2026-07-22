@@ -161,6 +161,7 @@ documents whose "added" timestamp falls within the given date range.`,
 		skip, _ := cmd.Flags().GetBool("skip-existing")
 		global, _ := cmd.Flags().GetBool("global")
 		batchSize, _ := cmd.Flags().GetInt("batch-size")
+		labelOverride := newDocumentLabelOverride(cmd)
 		if batchSize < 1 || batchSize > maxImportBatchSize {
 			exit(1, fmt.Sprintf("--batch-size must be between 1 and %d", maxImportBatchSize))
 		}
@@ -184,9 +185,9 @@ documents whose "added" timestamp falls within the given date range.`,
 		for _, inputFile := range inputFiles {
 			var i, s, e int
 			if ext := strings.ToLower(filepath.Ext(inputFile)); ext == ".html" || ext == ".htm" {
-				i, s, e = importHTMLFile(c, inputFile, skip)
+				i, s, e = importHTMLFile(c, inputFile, skip, labelOverride)
 			} else {
-				i, s, e = importJSONFile(c, inputFile, skip, dateRange.From, dateRange.To, batchSize)
+				i, s, e = importJSONFile(c, inputFile, skip, dateRange.From, dateRange.To, batchSize, labelOverride)
 			}
 			imported += i
 			skipped += s
@@ -201,6 +202,37 @@ const (
 	defaultImportBatchSize = 10
 	maxImportBatchSize     = 100
 )
+
+type documentLabelOverride struct {
+	value string
+	set   bool
+}
+
+func newDocumentLabelOverride(cmd *cobra.Command) documentLabelOverride {
+	value, _ := cmd.Flags().GetString("label")
+	return documentLabelOverride{
+		value: value,
+		set:   cmd.Flags().Changed("label"),
+	}
+}
+
+func (o documentLabelOverride) apply(d *document.Document, fallback string) {
+	if o.set {
+		d.Label = o.value
+	} else if d.Label == "" {
+		d.Label = fallback
+	}
+}
+
+func (o documentLabelOverride) resolve(existing, fallback string) string {
+	if o.set {
+		return o.value
+	}
+	if existing == "" {
+		return fallback
+	}
+	return existing
+}
 
 func addDocumentImportFlags(cmd *cobra.Command) {
 	cmd.Flags().String("start-date", "", "only import documents added on or after this date (YYYY-MM-DD)")
@@ -261,7 +293,15 @@ func expandImportInputs(args []string) ([]string, error) {
 // importJSONFile imports documents from a JSON export file (optionally a
 // 7z-compressed archive) and submits them to the running server. It returns
 // the number of documents imported, skipped and failed.
-func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, endDate int64, batchSize int) (imported, skipped, errCount int) {
+func importJSONFile(
+	c *client.Client,
+	inputFile string,
+	skip bool,
+	startDate int64,
+	endDate int64,
+	batchSize int,
+	labelOverride documentLabelOverride,
+) (imported, skipped, errCount int) {
 	var reader io.Reader
 
 	if strings.HasSuffix(strings.ToLower(inputFile), ".7z") {
@@ -356,6 +396,7 @@ func importJSONFile(c *client.Client, inputFile string, skip bool, startDate, en
 				continue
 			}
 		}
+		labelOverride.apply(&d, "import")
 		docs = append(docs, &d)
 		if len(docs) == batchSize {
 			flush()
@@ -391,7 +432,12 @@ func addDocumentBatch(c *client.Client, docs []*document.Document) (imported, er
 // importHTMLFile reads a single HTML file, builds a document from it by
 // extracting the URL from the HTML, and submits it to the running server. It
 // returns the number of documents imported, skipped and failed.
-func importHTMLFile(c *client.Client, inputFile string, skip bool) (imported, skipped, errCount int) {
+func importHTMLFile(
+	c *client.Client,
+	inputFile string,
+	skip bool,
+	labelOverride documentLabelOverride,
+) (imported, skipped, errCount int) {
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
 		log.Warn().Err(err).Str("file", inputFile).Msg("Failed to read HTML file, skipping")
@@ -416,6 +462,7 @@ func importHTMLFile(c *client.Client, inputFile string, skip bool) (imported, sk
 		}
 	}
 
+	labelOverride.apply(d, "import")
 	imported, errCount = addDocumentBatch(c, []*document.Document{d})
 	return imported, 0, errCount
 }

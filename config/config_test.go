@@ -52,6 +52,36 @@ func TestIndexerDefaults(t *testing.T) {
 	}
 }
 
+func TestCrawlerProxyConfigAndEnvironment(t *testing.T) {
+	const envName = "HISTER__CRAWLER__PROXY"
+	oldProxy, hadProxy := os.LookupEnv(envName)
+	t.Cleanup(func() {
+		restoreEnv(envName, oldProxy, hadProxy)
+	})
+	if err := os.Unsetenv(envName); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := parseConfig([]byte("crawler:\n  proxy: http://file-proxy.example:8080\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.Crawler.Proxy, "http://file-proxy.example:8080"; got != want {
+		t.Fatalf("crawler proxy = %q, want %q", got, want)
+	}
+
+	if err := os.Setenv(envName, "socks5://env-proxy.example:1080"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = parseConfig([]byte("crawler:\n  proxy: http://file-proxy.example:8080\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.Crawler.Proxy, "socks5://env-proxy.example:1080"; got != want {
+		t.Fatalf("crawler proxy = %q, want %q", got, want)
+	}
+}
+
 func TestAppTitleDefaultsAndOverrides(t *testing.T) {
 	cfg := CreateDefaultConfig()
 	if cfg.App.Title != "Hister" {

@@ -84,7 +84,7 @@ func parseCookieFlag(s string) (config.CrawlerCookie, error) {
 	return config.CrawlerCookie{Name: c.Name, Value: c.Value, Domain: c.Domain, Path: path}, nil
 }
 
-// applyCrawlerBackendFlags reads --backend, --backend-option, --header, and --cookie
+// applyCrawlerBackendFlags reads --backend, --backend-option, --proxy, --header, and --cookie
 // flags from cmd and applies them to cfg.Crawler, overriding any config-file values.
 func applyCrawlerBackendFlags(cmd *cobra.Command) {
 	if b, _ := cmd.Flags().GetString("backend"); b != "" {
@@ -92,6 +92,9 @@ func applyCrawlerBackendFlags(cmd *cobra.Command) {
 	}
 	if opts, _ := cmd.Flags().GetStringToString("backend-option"); len(opts) > 0 {
 		cfg.Crawler.BackendOptions = stringToAnyMap(opts)
+	}
+	if cmd.Flags().Changed("proxy") {
+		cfg.Crawler.Proxy, _ = cmd.Flags().GetString("proxy")
 	}
 	if headers, _ := cmd.Flags().GetStringToString("header"); len(headers) > 0 {
 		if cfg.Crawler.Headers == nil {
@@ -113,6 +116,7 @@ func applyCrawlerBackendFlags(cmd *cobra.Command) {
 func addCrawlerBackendFlags(cmd *cobra.Command) {
 	cmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
 	cmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
+	cmd.Flags().String("proxy", "", "Proxy URL for crawler requests (http:// or socks5://)")
 	cmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
 	cmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 }

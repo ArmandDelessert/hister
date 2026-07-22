@@ -29,10 +29,18 @@ func newChromedpFetcher(cfg *config.CrawlerConfig) (*chromedpFetcher, error) {
 			return nil, fmt.Errorf("chromedp backend: unknown option %q", k)
 		}
 	}
+	proxyURL, err := parseProxyURL(cfg.Proxy)
+	if err != nil {
+		return nil, err
+	}
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+	opts := append(
+		chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.NoSandbox,
 	)
+	if proxyURL != nil {
+		opts = append(opts, chromedp.ProxyServer(proxyURL.String()))
+	}
 	if execPath, ok := cfg.BackendOptions["exec_path"]; ok {
 		s, ok := execPath.(string)
 		if !ok {
@@ -101,7 +109,8 @@ func (f *chromedpFetcher) fetchPage(ctx context.Context, rawURL string) (string,
 	var linkHrefs []string
 	var finalURL string
 
-	actions = append(actions,
+	actions = append(
+		actions,
 		chromedp.Navigate(rawURL),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Location(&finalURL),

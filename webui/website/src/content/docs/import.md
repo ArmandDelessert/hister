@@ -113,11 +113,12 @@ The supported backends are `http`, `chromedp`, and `bidi`. Backend options, requ
 hister import browser \
   --backend chromedp \
   --backend-option exec_path=/usr/bin/chromium \
+  --proxy http://127.0.0.1:8080 \
   --header "Accept-Language=en" \
   --cookie "session=abc; Domain=example.com"
 ```
 
-The `--backend-option`, `--header`, and `--cookie` flags can be repeated. Cookies use `Set-Cookie` syntax and require a `Domain` attribute. See [Website Crawler](crawler) for all crawler settings and backend limitations.
+The `--backend-option`, `--header`, and `--cookie` flags can be repeated. Use `--proxy` with an `http://` or `socks5://` URL. Cookies use `Set-Cookie` syntax and require a `Domain` attribute. See [Website Crawler](crawler) for all crawler settings and backend limitations.
 
 Automated requests can be rejected by bot protection, expired sessions, removed pages, or network failures. Failed URLs remain visible through `hister crawl errors` and can be retried by continuing the job.
 
@@ -231,6 +232,7 @@ Service imports preserve favicon data supplied by the source. When it is absent,
 | `--api-token TOKEN`          | Override the source service credential for this invocation   |
 | `--backend BACKEND`          | Download missing content with `http`, `chromedp`, or `bidi`  |
 | `--backend-option KEY=VALUE` | Set an option for the selected crawler backend               |
+| `--proxy URL`                | Route content downloads through an HTTP or SOCKS5 proxy      |
 | `--header KEY=VALUE`         | Add a request header when downloading missing content        |
 | `--cookie COOKIE`            | Add a cookie when downloading missing content                |
 | `--skip-existing`            | Keep documents whose normalized URL already exists in Hister |

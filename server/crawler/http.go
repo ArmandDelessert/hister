@@ -29,6 +29,10 @@ func newHTTPFetcher(cfg *config.CrawlerConfig) (*httpFetcher, error) {
 	for k := range cfg.BackendOptions {
 		return nil, fmt.Errorf("http backend: unknown option %q", k)
 	}
+	proxyURL, err := parseProxyURL(cfg.Proxy)
+	if err != nil {
+		return nil, err
+	}
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -59,8 +63,9 @@ func newHTTPFetcher(cfg *config.CrawlerConfig) (*httpFetcher, error) {
 
 	return &httpFetcher{
 		client: &http.Client{
-			Timeout: timeout,
-			Jar:     jar,
+			Timeout:   timeout,
+			Jar:       jar,
+			Transport: transportWithProxy(proxyURL),
 		},
 		userAgent: cfg.UserAgent,
 		headers:   cfg.Headers,

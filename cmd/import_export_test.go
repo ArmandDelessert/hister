@@ -262,6 +262,9 @@ func TestImportCommandHierarchy(t *testing.T) {
 }
 
 func TestImportSubcommandFlagOwnership(t *testing.T) {
+	if indexCmd.Flags().Lookup("proxy") == nil {
+		t.Error("index is missing --proxy")
+	}
 	if importCmd.PersistentFlags().Lookup("label") == nil {
 		t.Fatal("import is missing --label")
 	}
@@ -283,7 +286,7 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 	if importBrowserCmd.Flags().Lookup("min-visit") == nil {
 		t.Error("import browser is missing --min-visit")
 	}
-	for _, name := range []string{"backend", "backend-option", "header", "cookie"} {
+	for _, name := range []string{"backend", "backend-option", "proxy", "header", "cookie"} {
 		for _, importCommand := range []*cobra.Command{importBrowserCmd, importLinkwardenCmd, importKarakeepCmd, importShaarliCmd} {
 			if importCommand.Flags().Lookup(name) == nil {
 				t.Errorf("import %s is missing --%s", importCommand.Name(), name)

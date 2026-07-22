@@ -93,6 +93,7 @@ indexer:
 
 crawler:
   backend: 'http'
+  proxy: 'http://127.0.0.1:8080'
   timeout: 5
   delay: 1
   user_agent: 'Hister'
@@ -581,7 +582,8 @@ TUI keyboard shortcuts are configured in `tui.yaml` under the `hotkeys` section.
 ## `crawler` Section
 
 The `crawler` section configures the web crawler used by `hister index`, `hister index --recursive`,
-and `hister import browser`. All three commands share the same backend and request settings.
+browser imports, and service imports that need to download bookmark content. These commands share
+the same backend and request settings.
 Every recursive crawl runs as a persistent job so it can be interrupted and resumed
 without losing progress. See [Website Crawler](crawler) for usage details.
 
@@ -589,12 +591,29 @@ without losing progress. See [Website Crawler](crawler) for usage details.
 | ----------------- | ----------------- | ------- | -------------------------------------------------------------------------- |
 | `backend`         | string            | `http`  | Scraping backend to use. One of: `http`, `chromedp`, `bidi`.               |
 | `backend_options` | map               | (none)  | Backend-specific options. See [Backend Options](#crawler-backend-options). |
+| `proxy`           | string            | (none)  | HTTP or SOCKS5 proxy URL used by every crawler backend.                    |
 | `timeout`         | int               | `5`     | Request timeout in seconds.                                                |
 | `delay`           | int               | `0`     | Seconds to wait between requests. Use to avoid overloading target servers. |
 | `user_agent`      | string            | (none)  | Custom `User-Agent` header sent with every request (both backends).        |
 | `headers`         | map[string]string | (none)  | Extra HTTP headers sent with every request (both backends).                |
 | `cookies`         | Cookie[]          | (none)  | Cookies sent with every request. See [Crawler Cookies](#crawler-cookies).  |
 | `no_robots`       | bool              | `false` | Disable robots.txt compliance during crawling.                             |
+
+Set `proxy` to an `http://` or `socks5://` URL. The HTTP backend uses it as its transport proxy,
+Chromedp passes it to the browser process, and BiDi requests it when creating the browser session.
+robots.txt requests use the same proxy. For example:
+
+```yaml
+crawler:
+  proxy: 'socks5://127.0.0.1:1080'
+```
+
+Proxy URLs with embedded credentials are rejected because browser backends cannot apply them
+consistently. You can also set the proxy with `HISTER__CRAWLER__PROXY` or the `--proxy` flag.
+
+For BiDi, a configured proxy requires the remote browser to accept `session.new` with the proxy
+capability. Initialization fails if the endpoint already owns a session or rejects that capability,
+so Hister never continues while silently ignoring the proxy.
 
 ### Crawler Backend Options
 
@@ -674,6 +693,7 @@ Each entry in `cookies` is an object with the following keys:
 ```yaml
 crawler:
   backend: 'http'
+  proxy: 'http://127.0.0.1:8080'
   timeout: 10
   delay: 2
   user_agent: 'Hister'

@@ -126,6 +126,7 @@ type CrawlerConfig struct {
 	Delay          int               `yaml:"delay"           mapstructure:"delay"`
 	Backend        string            `yaml:"backend"         mapstructure:"backend"`
 	BackendOptions map[string]any    `yaml:"backend_options" mapstructure:"backend_options"`
+	Proxy          string            `yaml:"proxy"           mapstructure:"proxy"`
 	UserAgent      string            `yaml:"user_agent"      mapstructure:"user_agent"`
 	Headers        map[string]string `yaml:"headers"         mapstructure:"headers"`
 	Cookies        []CrawlerCookie   `yaml:"cookies"         mapstructure:"cookies"`

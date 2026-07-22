@@ -27,13 +27,25 @@ type RobotsCache struct {
 // NewRobotsCache creates a RobotsCache that will identify itself using the
 // given userAgent when fetching robots.txt files.
 func NewRobotsCache(userAgent string) *RobotsCache {
+	cache, _ := NewRobotsCacheWithProxy(userAgent, "")
+	return cache
+}
+
+// NewRobotsCacheWithProxy creates a RobotsCache that uses proxy for robots.txt
+// requests. The proxy accepts the same URL formats as crawler backends.
+func NewRobotsCacheWithProxy(userAgent, proxy string) (*RobotsCache, error) {
+	proxyURL, err := parseProxyURL(proxy)
+	if err != nil {
+		return nil, err
+	}
 	return &RobotsCache{
 		cache:     make(map[string]*robotstxt.RobotsData),
 		userAgent: userAgent,
 		client: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			Transport: transportWithProxy(proxyURL),
 		},
-	}
+	}, nil
 }
 
 // Allowed reports whether the given URL is allowed to be fetched according

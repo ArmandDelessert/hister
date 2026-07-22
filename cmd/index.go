@@ -67,7 +67,11 @@ var indexCmd = &cobra.Command{
 
 		var robotsCache *crawler.RobotsCache
 		if !noRobots && !cfg.Crawler.NoRobots {
-			robotsCache = crawler.NewRobotsCache(cfg.Crawler.UserAgent)
+			robotsCache, err = crawler.NewRobotsCacheWithProxy(cfg.Crawler.UserAgent, cfg.Crawler.Proxy)
+			if err != nil {
+				exit(1, "Failed to configure robots.txt requests: "+err.Error())
+				return
+			}
 		}
 
 		if urlList != "" {
@@ -371,10 +375,7 @@ func init() {
 	indexCmd.Flags().Uint("user-id", 0, "Index documents under the given user ID (only for admins in multiuser mode)")
 	indexCmd.Flags().String("url-list", "", "File containing one URL per line; creates a persistent crawl job and replaces positional URLs")
 	indexCmd.Flags().String("job-id", "", "Persistent crawl job ID; use with --recursive to start a new job or alone to resume an existing one")
-	indexCmd.Flags().String("backend", "", "Crawler backend to use (\"http\", \"chromedp\", or \"bidi\")")
-	indexCmd.Flags().StringToString("backend-option", nil, "Crawler backend option as key=value (repeatable, e.g. --backend-option exec_path=/usr/bin/chromium)")
-	indexCmd.Flags().StringToString("header", nil, "Extra HTTP header as KEY=VALUE (repeatable, e.g. --header Accept-Language=en)")
-	indexCmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
+	addCrawlerBackendFlags(indexCmd)
 	indexCmd.Flags().Bool("no-robots", false, "Disable robots.txt compliance during crawling")
 	indexCmd.Flags().Int("delay", 0, "Delay in seconds between requests (0 = no delay; overrides config)")
 	indexCmd.Flags().Int("timeout", 0, "Request timeout in seconds (0 = 5s default; overrides config)")

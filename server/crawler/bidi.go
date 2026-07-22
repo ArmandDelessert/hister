@@ -63,6 +63,10 @@ func newBidiFetcher(cfg *config.CrawlerConfig) (*bidiFetcher, error) {
 			return nil, fmt.Errorf("bidi backend: unknown option %q", k)
 		}
 	}
+	proxyURL, err := parseProxyURL(cfg.Proxy)
+	if err != nil {
+		return nil, err
+	}
 
 	wsURL, err := buildBidiWSURL(cfg.BackendOptions)
 	if err != nil {
@@ -119,10 +123,20 @@ func newBidiFetcher(cfg *config.CrawlerConfig) (*bidiFetcher, error) {
 	sessionCtx, sessionCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer sessionCancel()
 
+	capabilities := map[string]any{}
+	if proxyURL != nil {
+		capabilities["alwaysMatch"] = map[string]any{
+			"proxy": bidiProxyCapability(proxyURL),
+		}
+	}
 	_, err = f.call(sessionCtx, "session.new", map[string]any{
-		"capabilities": map[string]any{},
+		"capabilities": capabilities,
 	})
 	if err != nil {
+		if proxyURL != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("cannot create a BiDi session with the configured proxy: %w", err)
+		}
 		// session.new may fail if the browser already has max sessions.
 		// Continue without owning a session — commands may still work.
 		log.Debug().Err(err).Msg("bidi: session.new failed, continuing without owning session")
@@ -336,7 +350,8 @@ func (f *bidiFetcher) fetchPage(ctx context.Context, rawURL string) (string, str
 	}
 
 	// Extract link hrefs.
-	linkHrefs, err := f.evaluateStringArray(timeoutCtx, contextID,
+	linkHrefs, err := f.evaluateStringArray(
+		timeoutCtx, contextID,
 		`Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href'))`,
 	)
 	if err != nil {

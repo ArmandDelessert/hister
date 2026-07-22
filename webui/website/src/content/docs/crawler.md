@@ -138,7 +138,7 @@ The settings that define crawl scope are stored when a job is created:
 
 Fetch and destination settings are not restored from the job. Keep them in
 [crawler configuration](configuration#crawler-section), repeat them when resuming, or rerun the
-same complete command. These include `--backend`, `--backend-option`, `--header`, `--cookie`,
+same complete command. These include `--backend`, `--backend-option`, `--proxy`, `--header`, `--cookie`,
 `--delay`, `--timeout`, `--user-agent`, `--no-robots`, `--force`, `--global`, and `--user-id`.
 
 For example, resume a job with Chromium and a one second request delay:
@@ -243,6 +243,7 @@ The request related flags are:
 | ---------------------------- | ---------------------------------------------------------------------------------- |
 | `--backend NAME`             | Select `http`, `chromedp`, or `bidi`.                                              |
 | `--backend-option KEY=VALUE` | Set a backend option such as `exec_path`. Repeatable.                              |
+| `--proxy URL`                | Route crawler and robots.txt requests through an HTTP or SOCKS5 proxy.             |
 | `--header KEY=VALUE`         | Add or replace an HTTP header. Repeatable.                                         |
 | `--cookie VALUE`             | Add a cookie in `Set-Cookie` format. Repeatable and requires a `Domain` attribute. |
 | `--delay N`                  | Wait `N` seconds between requests.                                                 |
@@ -252,6 +253,14 @@ The request related flags are:
 
 For all backend options and configuration examples, see the
 [Crawler Configuration](configuration#crawler-backend-options) reference.
+
+For example, route a crawl through a local SOCKS5 proxy:
+
+```bash
+hister index --recursive \
+  --proxy socks5://127.0.0.1:1080 \
+  https://docs.example.com
+```
 
 ## Indexing and Ownership Options
 

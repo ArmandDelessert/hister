@@ -196,11 +196,12 @@ func (f *crawlerServiceContentFetcher) Close() error {
 }
 
 type serviceImportOptions struct {
-	BatchSize    int
-	SkipExisting bool
-	StartDate    int64
-	EndDate      int64
-	Label        documentLabelOverride
+	BatchSize         int
+	SkipExisting      bool
+	StartDate         int64
+	EndDate           int64
+	Label             documentLabelOverride
+	FaviconDownloader func(*document.Document) error
 }
 
 type serviceImportStats struct {
@@ -245,6 +246,9 @@ func newServiceImportRuntime(cmd *cobra.Command) (*serviceImportRuntime, error) 
 			StartDate:    dateRange.From,
 			EndDate:      dateRange.To,
 			Label:        newDocumentLabelOverride(cmd),
+			FaviconDownloader: func(d *document.Document) error {
+				return d.DownloadFavicon(UserAgent)
+			},
 		},
 	}, nil
 }
@@ -313,6 +317,11 @@ func (b *serviceImportBuffer) Add(ctx context.Context, d *document.Document, con
 		if err := loadServiceContent(ctx, b.contentFetcher, d, *contentRequest, b.languageDetector); err != nil {
 			log.Warn().Err(err).Str("source", b.source).Str("url", d.URL).Msg("Failed to load service content, importing bookmark metadata only")
 			b.stats.Errors++
+		}
+	}
+	if d.Favicon == "" && b.options.FaviconDownloader != nil {
+		if err := b.options.FaviconDownloader(d); err != nil {
+			log.Debug().Err(err).Str("source", b.source).Str("url", d.URL).Msg("Failed to download service import favicon")
 		}
 	}
 	b.options.Label.apply(d, b.source)
@@ -420,6 +429,7 @@ func applyServiceContent(
 		return errors.New("downloaded page has no extractable content")
 	}
 
+	d.CopyFaviconFrom(fetched)
 	d.HTML = fetched.HTML
 	d.Text = combineImportText(prefixText, fetched.Text)
 	if sourceTitle != "" {
@@ -437,6 +447,23 @@ func applyServiceContent(
 	}
 	d.Language = languageDetector.DetectLanguage(d.Text)
 	return nil
+}
+
+func setServiceFavicon(d *document.Document, favicon string) {
+	favicon = strings.TrimSpace(favicon)
+	if favicon == "" {
+		return
+	}
+	if strings.HasPrefix(favicon, "data:") {
+		d.Favicon = favicon
+		return
+	}
+	if faviconURL, err := url.Parse(favicon); err == nil && !faviconURL.IsAbs() {
+		if documentURL, baseErr := url.Parse(d.URL); baseErr == nil {
+			favicon = documentURL.ResolveReference(faviconURL).String()
+		}
+	}
+	d.SetFaviconURL(favicon)
 }
 
 func latestServiceUpdated(target *client.Client, source string) (int64, error) {

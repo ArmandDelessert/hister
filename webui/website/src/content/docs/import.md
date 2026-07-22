@@ -179,6 +179,7 @@ Karakeep applies the `after:` search qualifier to the bookmark creation date. A 
 | Note, summary, description, and content    | Searchable text         |
 | Creation date                              | Added timestamp         |
 | Modification date                          | Updated timestamp       |
+| Stored favicon                             | Document favicon        |
 | Tags, statuses, source, assets, and ID     | Document metadata       |
 
 For link bookmarks, Hister extracts the stored Karakeep HTML when it is available. If stored HTML is absent or cannot be extracted, Hister downloads the page with the selected crawler backend. Text and asset bookmarks use their stored content when they have a source URL.
@@ -222,6 +223,8 @@ Pagination and batch submission are automatic. Consult the [Shaarli API document
 ## Service Import Options
 
 The following options apply to Linkwarden, Karakeep, and Shaarli imports:
+
+Service imports preserve favicon data supplied by the source. When it is absent, Hister tries the favicon URL discovered while extracting the linked page, or the conventional `/favicon.ico` URL when no page icon is available. A favicon download failure does not stop the import.
 
 | Flag                         | Purpose                                                      |
 | ---------------------------- | ------------------------------------------------------------ |

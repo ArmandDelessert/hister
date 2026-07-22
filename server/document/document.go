@@ -236,6 +236,16 @@ func (d *Document) SetFaviconURL(u string) {
 	d.faviconURL = u
 }
 
+// CopyFaviconFrom copies favicon data or a discovered favicon URL when the
+// destination document does not already have a favicon source.
+func (d *Document) CopyFaviconFrom(source *Document) {
+	if source == nil || d.Favicon != "" || d.faviconURL != "" {
+		return
+	}
+	d.Favicon = source.Favicon
+	d.faviconURL = source.faviconURL
+}
+
 func (d *Document) ID() string {
 	return GetDocID(d.UserID, d.URL)
 }

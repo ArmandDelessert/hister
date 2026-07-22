@@ -278,6 +278,7 @@ func karakeepDocument(
 		Updated:  updated,
 		Metadata: metadata,
 	}
+	setServiceFavicon(d, bookmark.Content.Favicon)
 	if err := d.Process(languageDetector, nil); err != nil {
 		return nil, nil, err
 	}

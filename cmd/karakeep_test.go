@@ -58,6 +58,7 @@ func TestImportKarakeepPaginatesAndMapsContent(t *testing.T) {
 							"url": "https://example.com/article?utm_source=karakeep#section",
 							"title": "Crawled title",
 							"description": "Article description",
+							"favicon": "data:image/png;base64,a2FyYWtlZXA=",
 							"htmlContent": "<html><head><title>Stored title</title></head><body><main><p>Stored Karakeep content.</p></main></body></html>",
 							"crawlStatus": "success",
 							"fullPageArchiveAssetId": "archive-1"
@@ -122,6 +123,7 @@ func TestImportKarakeepPaginatesAndMapsContent(t *testing.T) {
 
 	var receivedDocs []*document.Document
 	var batchSizes []int
+	var faviconDownloads []string
 	targetHTTPClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodPost || req.URL.Path != "/api/batch" {
 			return nil, fmt.Errorf("unexpected Hister request %s %s", req.Method, req.URL.Path)
@@ -155,7 +157,14 @@ func TestImportKarakeepPaginatesAndMapsContent(t *testing.T) {
 		target,
 		document.NewNullLanguageDetector(),
 		contentFetcher,
-		serviceImportOptions{BatchSize: 10},
+		serviceImportOptions{
+			BatchSize: 10,
+			FaviconDownloader: func(d *document.Document) error {
+				faviconDownloads = append(faviconDownloads, d.URL)
+				d.Favicon = "data:image/png;base64,ZmV0Y2hlZA=="
+				return nil
+			},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +180,9 @@ func TestImportKarakeepPaginatesAndMapsContent(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fetchedURLs, []string{"https://fallback.example/article"}) {
 		t.Fatalf("fetched URLs = %v, want only the bookmark missing stored content", fetchedURLs)
+	}
+	if !reflect.DeepEqual(faviconDownloads, []string{"https://notes.example/note/2", "https://fallback.example/article"}) {
+		t.Fatalf("favicon downloads = %v, want only records without a stored favicon", faviconDownloads)
 	}
 
 	stored := receivedDocs[0]
@@ -190,6 +202,9 @@ func TestImportKarakeepPaginatesAndMapsContent(t *testing.T) {
 	}
 	if stored.HTML == "" {
 		t.Error("stored Karakeep HTML was not preserved")
+	}
+	if stored.Favicon != "data:image/png;base64,a2FyYWtlZXA=" {
+		t.Errorf("stored favicon = %q, want Karakeep favicon", stored.Favicon)
 	}
 	if stored.Updated != mustUnixTime(t, "2024-02-03T04:05:06Z") {
 		t.Errorf("stored updated = %d", stored.Updated)

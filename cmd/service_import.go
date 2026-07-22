@@ -30,17 +30,33 @@ const (
 )
 
 type serviceAPIClient struct {
-	name       string
-	baseURL    string
-	token      string
-	tokenHint  string
-	httpClient *http.Client
+	name                string
+	baseURL             string
+	bearerTokenProvider func() string
+	tokenHint           string
+	httpClient          *http.Client
 }
 
 func newServiceAPIClient(
 	name string,
 	instanceURL string,
 	token string,
+	tokenHint string,
+	httpClient *http.Client,
+) (*serviceAPIClient, error) {
+	return newServiceAPIClientWithBearerToken(
+		name,
+		instanceURL,
+		func() string { return token },
+		tokenHint,
+		httpClient,
+	)
+}
+
+func newServiceAPIClientWithBearerToken(
+	name string,
+	instanceURL string,
+	bearerTokenProvider func() string,
 	tokenHint string,
 	httpClient *http.Client,
 ) (*serviceAPIClient, error) {
@@ -75,11 +91,11 @@ func newServiceAPIClient(
 	}
 
 	return &serviceAPIClient{
-		name:       name,
-		baseURL:    strings.TrimRight(parsed.String(), "/"),
-		token:      token,
-		tokenHint:  tokenHint,
-		httpClient: httpClient,
+		name:                name,
+		baseURL:             strings.TrimRight(parsed.String(), "/"),
+		bearerTokenProvider: bearerTokenProvider,
+		tokenHint:           tokenHint,
+		httpClient:          httpClient,
 	}, nil
 }
 
@@ -94,7 +110,7 @@ func (c *serviceAPIClient) getJSON(ctx context.Context, endpoint string, query u
 		return fmt.Errorf("create %s request: %w", c.name, err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+c.bearerTokenProvider())
 	req.Header.Set("User-Agent", UserAgent)
 
 	resp, err := c.httpClient.Do(req)

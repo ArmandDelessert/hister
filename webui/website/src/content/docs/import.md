@@ -1,5 +1,5 @@
 ---
-date: '2026-07-21T00:00:00+02:00'
+date: '2026-07-22T00:00:00+02:00'
 draft: false
 title: 'Importing Documents'
 ---
@@ -14,6 +14,7 @@ The `hister import` command collects related import tools under one command. Eve
 | `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                  | `browser`     |
 | `hister import linkwarden INSTANCE_URL`     | A Linkwarden instance through its HTTP API | `linkwarden`  |
 | `hister import karakeep INSTANCE_URL`       | A Karakeep instance through its HTTP API   | `karakeep`    |
+| `hister import shaarli INSTANCE_URL`        | A Shaarli instance through its HTTP API    | `shaarli`     |
 
 Use the global `--server-url` and `--token` flags when the destination Hister server differs from your configured server or requires authentication.
 
@@ -186,13 +187,45 @@ Text and asset bookmarks without a source URL are skipped because every Hister d
 
 Consult the [Karakeep API documentation](https://docs.karakeep.app/api) when troubleshooting API access.
 
+## Importing from Shaarli
+
+Copy the API secret from the Shaarli administration page, then store it in the environment before running the import:
+
+```bash
+export HISTER_IMPORT_SHAARLI_SECRET='your-shaarli-api-secret'
+hister import shaarli https://shaarli.example.com
+```
+
+You can use `--api-token` as a temporary override. For Shaarli, this option accepts the API secret from the administration page. Hister uses the secret to generate a short lived HS512 JWT for each API request. The secret itself is not sent to Shaarli. The global `--token` flag remains the access token for the destination Hister server.
+
+### Incremental Shaarli Imports
+
+Every imported Shaarli document receives `source: shaarli` metadata. Hister searches for `metadata.source:shaarli` and reads the newest imported document timestamp before calling Shaarli.
+
+If a previous import exists, Hister requests Shaarli history since that timestamp and retrieves the current value of every created or updated Shaare. Repeated events for the same Shaare are combined. Deleted Shaares are ignored because an import does not remove existing Hister documents. Without a previous result, Hister requests every Shaare.
+
+### Shaarli Data Mapping
+
+| Shaarli value                                 | Hister value            |
+| --------------------------------------------- | ----------------------- |
+| Link URL or text note permalink               | Normalized document URL |
+| Title                                         | Title                   |
+| Description and downloaded page content       | Searchable text         |
+| Creation date                                 | Added timestamp         |
+| Update date                                   | Updated timestamp       |
+| Tags, privacy, short URL, note status, and ID | Document metadata       |
+
+Shaarli stores bookmark descriptions rather than complete copies of linked pages. Hister therefore downloads every ordinary bookmark with the configured crawler backend and combines its extracted content with the stored description. Text notes use their description directly and keep a stable Shaarli permalink, so they are not downloaded.
+
+Pagination and batch submission are automatic. Consult the [Shaarli API documentation](https://shaarli.github.io/api-documentation/) and [Shaarli REST API authentication guide](https://shaarli.readthedocs.io/en/master/REST-API.html) when troubleshooting API access.
+
 ## Service Import Options
 
-The following options apply to Linkwarden and Karakeep imports:
+The following options apply to Linkwarden, Karakeep, and Shaarli imports:
 
 | Flag                         | Purpose                                                      |
 | ---------------------------- | ------------------------------------------------------------ |
-| `--api-token TOKEN`          | Override the source service token for this invocation        |
+| `--api-token TOKEN`          | Override the source service credential for this invocation   |
 | `--backend BACKEND`          | Download missing content with `http`, `chromedp`, or `bidi`  |
 | `--backend-option KEY=VALUE` | Set an option for the selected crawler backend               |
 | `--header KEY=VALUE`         | Add a request header when downloading missing content        |

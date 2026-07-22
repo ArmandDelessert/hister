@@ -117,6 +117,12 @@ func addCrawlerBackendFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArray("cookie", nil, "HTTP cookie as Set-Cookie value (repeatable, e.g. --cookie \"session=abc; Domain=example.com\")")
 }
 
+func addServiceImportFlags(cmd *cobra.Command, serviceName, tokenEnv string) {
+	addDocumentImportFlags(cmd)
+	addCrawlerBackendFlags(cmd)
+	cmd.Flags().String("api-token", "", serviceName+" API token (default: "+tokenEnv+")")
+}
+
 func targetUserIDClientOptions(cmd *cobra.Command, global bool) []client.Option {
 	targetUserID, _ := cmd.Flags().GetUint("user-id")
 	userIDChanged := cmd.Flags().Changed("user-id")
@@ -272,6 +278,7 @@ func init() {
 	importCmd.AddCommand(importFileCmd)
 	importCmd.AddCommand(importBrowserCmd)
 	importCmd.AddCommand(importLinkwardenCmd)
+	importCmd.AddCommand(importKarakeepCmd)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address")
 	listenCmd.Flags().Bool("public", false, "allow unauthenticated access to public search interfaces")
@@ -285,9 +292,8 @@ func init() {
 	crawlQueueCmd.Flags().BoolP("count", "c", false, "only print the number of queued URLs")
 
 	addDocumentImportFlags(importFileCmd)
-	addDocumentImportFlags(importLinkwardenCmd)
-	addCrawlerBackendFlags(importLinkwardenCmd)
-	importLinkwardenCmd.Flags().String("api-token", "", "Linkwarden API token (default: "+linkwardenTokenEnv+")")
+	addServiceImportFlags(importLinkwardenCmd, "Linkwarden", linkwardenTokenEnv)
+	addServiceImportFlags(importKarakeepCmd, "Karakeep", karakeepTokenEnv)
 
 	exportCmd.Flags().String("start-date", "", "only export documents updated on or after this date (YYYY-MM-DD)")
 	exportCmd.Flags().String("end-date", "", "only export documents updated on or before this date (YYYY-MM-DD)")

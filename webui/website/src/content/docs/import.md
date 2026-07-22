@@ -13,6 +13,7 @@ The `hister import` command collects related import tools under one command. Eve
 | `hister import file INPUT...`               | Hister exports, archives, and saved pages  |
 | `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                  |
 | `hister import linkwarden INSTANCE_URL`     | A Linkwarden instance through its HTTP API |
+| `hister import karakeep INSTANCE_URL`       | A Karakeep instance through its HTTP API   |
 
 Use the global `--server-url` and `--token` flags when the destination Hister server differs from your configured server or requires authentication.
 
@@ -146,21 +147,57 @@ Records without a URL are skipped because every Hister document requires a URL. 
 
 If a Linkwarden URL record has no extracted text content, Hister downloads the page and extracts its contents before importing it. The configured crawler backend is used for these downloads. The crawler is initialized only when missing content is encountered and is reused for the rest of the import.
 
-The following options apply to Linkwarden imports:
+## Importing from Karakeep
 
-| Flag                         | Purpose                                                       |
-| ---------------------------- | ------------------------------------------------------------- |
-| `--api-token TOKEN`          | Override `HISTER_IMPORT_LINKWARDEN_TOKEN` for this invocation |
-| `--backend BACKEND`          | Download missing content with `http`, `chromedp`, or `bidi`   |
-| `--backend-option KEY=VALUE` | Set an option for the selected crawler backend                |
-| `--header KEY=VALUE`         | Add a request header when downloading missing content         |
-| `--cookie COOKIE`            | Add a cookie when downloading missing content                 |
-| `--skip-existing`            | Keep documents whose normalized URL already exists in Hister  |
-| `--batch-size N`             | Submit from 1 through 100 documents per request               |
-| `--start-date YYYY-MM-DD`    | Import documents added on or after the date                   |
-| `--end-date YYYY-MM-DD`      | Import documents added on or before the date                  |
-| `--global`                   | Import for all users when authenticated as an administrator   |
-| `--user-id ID`               | Import for one user when authenticated as an administrator    |
+Karakeep was formerly named Hoarder. Create an API key in Karakeep, then store it in the environment before running the import:
+
+```bash
+export HISTER_IMPORT_KARAKEEP_TOKEN='your-karakeep-token'
+hister import karakeep https://karakeep.example.com
+```
+
+You can use `--api-token` as a temporary override. The Karakeep API token is separate from the global `--token` flag used for the destination Hister server.
+
+### Incremental Karakeep Imports
+
+Every imported Karakeep document receives `source: karakeep` metadata. Hister searches for `metadata.source:karakeep` and reads the newest imported document timestamp before calling Karakeep. If a previous import exists, the importer uses Karakeep search with an `after:` date. Otherwise, it requests every bookmark.
+
+Karakeep applies the `after:` search qualifier to the bookmark creation date. A bookmark created before the checkpoint and edited afterward might therefore require a complete import to refresh it.
+
+### Karakeep Data Mapping
+
+| Karakeep value                             | Hister value            |
+| ------------------------------------------ | ----------------------- |
+| Link URL or source URL                     | Normalized document URL |
+| Bookmark title, content title, or filename | Title                   |
+| Note, summary, description, and content    | Searchable text         |
+| Creation date                              | Added timestamp         |
+| Modification date                          | Updated timestamp       |
+| Tags, statuses, source, assets, and ID     | Document metadata       |
+
+For link bookmarks, Hister extracts the stored Karakeep HTML when it is available. If stored HTML is absent or cannot be extracted, Hister downloads the page with the selected crawler backend. Text and asset bookmarks use their stored content when they have a source URL.
+
+Text and asset bookmarks without a source URL are skipped because every Hister document requires a URL. Pagination and batch submission are automatic.
+
+Consult the [Karakeep API documentation](https://docs.karakeep.app/api) when troubleshooting API access.
+
+## Service Import Options
+
+The following options apply to Linkwarden and Karakeep imports:
+
+| Flag                         | Purpose                                                      |
+| ---------------------------- | ------------------------------------------------------------ |
+| `--api-token TOKEN`          | Override the source service token for this invocation        |
+| `--backend BACKEND`          | Download missing content with `http`, `chromedp`, or `bidi`  |
+| `--backend-option KEY=VALUE` | Set an option for the selected crawler backend               |
+| `--header KEY=VALUE`         | Add a request header when downloading missing content        |
+| `--cookie COOKIE`            | Add a cookie when downloading missing content                |
+| `--skip-existing`            | Keep documents whose normalized URL already exists in Hister |
+| `--batch-size N`             | Submit from 1 through 100 documents per request              |
+| `--start-date YYYY-MM-DD`    | Import documents added on or after the date                  |
+| `--end-date YYYY-MM-DD`      | Import documents added on or before the date                 |
+| `--global`                   | Import for all users when authenticated as an administrator  |
+| `--user-id ID`               | Import for one user when authenticated as an administrator   |
 
 For example:
 

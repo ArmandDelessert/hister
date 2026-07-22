@@ -19,9 +19,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type linkwardenContentFetchFunc func(context.Context, string) (*document.Document, error)
+type serviceContentFetchFunc func(context.Context, string) (*document.Document, error)
 
-func (f linkwardenContentFetchFunc) Fetch(ctx context.Context, rawURL string) (*document.Document, error) {
+func (f serviceContentFetchFunc) Fetch(ctx context.Context, rawURL string) (*document.Document, error) {
 	return f(ctx, rawURL)
 }
 
@@ -201,7 +201,7 @@ func TestImportLinkwardenDownloadsMissingURLContent(t *testing.T) {
 
 	fetchCalls := 0
 	const downloadedHTML = `<html><head><title>Downloaded title</title></head><body><main><p>Downloaded body text.</p></main></body></html>`
-	contentFetcher := linkwardenContentFetchFunc(func(_ context.Context, rawURL string) (*document.Document, error) {
+	contentFetcher := serviceContentFetchFunc(func(_ context.Context, rawURL string) (*document.Document, error) {
 		fetchCalls++
 		if rawURL != "https://example.com/article?utm_source=linkwarden#content" {
 			t.Errorf("download URL = %q, want original bookmark URL", rawURL)

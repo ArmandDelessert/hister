@@ -180,6 +180,7 @@ func TestImportCommandHierarchy(t *testing.T) {
 		"file":       importFileCmd,
 		"browser":    importBrowserCmd,
 		"linkwarden": importLinkwardenCmd,
+		"karakeep":   importKarakeepCmd,
 	}
 	for name, want := range tests {
 		got, _, err := importCmd.Find([]string{name})
@@ -199,7 +200,7 @@ func TestImportCommandHierarchy(t *testing.T) {
 
 func TestImportSubcommandFlagOwnership(t *testing.T) {
 	for _, name := range []string{"batch-size", "start-date", "end-date", "skip-existing", "global", "user-id"} {
-		for _, importCommand := range []*cobra.Command{importFileCmd, importLinkwardenCmd} {
+		for _, importCommand := range []*cobra.Command{importFileCmd, importLinkwardenCmd, importKarakeepCmd} {
 			if importCommand.Flags().Lookup(name) == nil {
 				t.Errorf("import %s is missing --%s", importCommand.Name(), name)
 			}
@@ -214,8 +215,11 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 	if importLinkwardenCmd.Flags().Lookup("min-visit") != nil {
 		t.Error("import linkwarden unexpectedly has --min-visit")
 	}
+	if importKarakeepCmd.Flags().Lookup("min-visit") != nil {
+		t.Error("import karakeep unexpectedly has --min-visit")
+	}
 	for _, name := range []string{"backend", "backend-option", "header", "cookie"} {
-		for _, importCommand := range []*cobra.Command{importBrowserCmd, importLinkwardenCmd} {
+		for _, importCommand := range []*cobra.Command{importBrowserCmd, importLinkwardenCmd, importKarakeepCmd} {
 			if importCommand.Flags().Lookup(name) == nil {
 				t.Errorf("import %s is missing --%s", importCommand.Name(), name)
 			}
@@ -224,11 +228,13 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 			t.Errorf("import file unexpectedly has --%s", name)
 		}
 	}
-	if importLinkwardenCmd.Flags().Lookup("api-token") == nil {
-		t.Error("import linkwarden is missing --api-token")
-	}
-	if importLinkwardenCmd.Flags().Lookup("source-token") != nil {
-		t.Error("import linkwarden still has the old --source-token flag")
+	for _, importCommand := range []*cobra.Command{importLinkwardenCmd, importKarakeepCmd} {
+		if importCommand.Flags().Lookup("api-token") == nil {
+			t.Errorf("import %s is missing --api-token", importCommand.Name())
+		}
+		if importCommand.Flags().Lookup("source-token") != nil {
+			t.Errorf("import %s has the old --source-token flag", importCommand.Name())
+		}
 	}
 	for _, importCommand := range []*cobra.Command{importFileCmd, importBrowserCmd} {
 		if importCommand.Flags().Lookup("api-token") != nil {

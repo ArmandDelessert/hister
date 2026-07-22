@@ -2,23 +2,16 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/asciimoo/hister/client"
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/crawler"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/extractor"
-	"github.com/asciimoo/hister/server/indexer"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -27,10 +20,6 @@ import (
 const (
 	linkwardenTokenEnv            = "HISTER_IMPORT_LINKWARDEN_TOKEN"
 	linkwardenSourceMetadataValue = "linkwarden"
-	linkwardenSourceQuery         = "metadata.source:" + linkwardenSourceMetadataValue
-	linkwardenRequestTimeout      = 30 * time.Second
-	maxLinkwardenResponseSize     = 64 << 20
-	maxLinkwardenErrorBodySize    = 64 << 10
 )
 
 var errLinkwardenMissingURL = errors.New("linkwarden record has no URL")
@@ -69,71 +58,15 @@ type linkwardenSearchResponse struct {
 }
 
 type linkwardenClient struct {
-	searchURL    string
-	token        string
+	*serviceAPIClient
 	updatedAfter int64
-	httpClient   *http.Client
 }
 
-type linkwardenImportOptions struct {
-	BatchSize    int
-	SkipExisting bool
-	StartDate    int64
-	EndDate      int64
-}
-
-type linkwardenImportStats struct {
-	Imported int
-	Skipped  int
-	Errors   int
-}
-
-type linkwardenContentFetcher interface {
-	Fetch(context.Context, string) (*document.Document, error)
-}
-
-type linkwardenCrawlerContentFetcher struct {
-	cfg     *config.CrawlerConfig
-	crawler crawler.Crawler
-}
-
-func newLinkwardenCrawlerContentFetcher(cfg *config.CrawlerConfig) *linkwardenCrawlerContentFetcher {
-	return &linkwardenCrawlerContentFetcher{cfg: cfg}
-}
-
-func (f *linkwardenCrawlerContentFetcher) Fetch(ctx context.Context, rawURL string) (*document.Document, error) {
-	if f.crawler == nil {
-		cr, err := crawler.New(f.cfg, nil)
-		if err != nil {
-			return nil, fmt.Errorf("initialize linkwarden content crawler: %w", err)
-		}
-		f.crawler = cr
-	}
-	validator, err := crawler.NewValidator(&crawler.ValidatorRules{MaxLinks: 1})
-	if err != nil {
-		return nil, fmt.Errorf("initialize linkwarden content validator: %w", err)
-	}
-	documents, err := f.crawler.Crawl(ctx, rawURL, validator)
-	if err != nil {
-		return nil, fmt.Errorf("download linkwarden content: %w", err)
-	}
-	select {
-	case d, ok := <-documents:
-		if !ok {
-			return nil, errors.New("download linkwarden content: no response")
-		}
-		return d, nil
-	case <-ctx.Done():
-		return nil, fmt.Errorf("download linkwarden content: %w", ctx.Err())
-	}
-}
-
-func (f *linkwardenCrawlerContentFetcher) Close() error {
-	if f.crawler == nil {
-		return nil
-	}
-	return f.crawler.Close()
-}
+type (
+	linkwardenImportOptions  = serviceImportOptions
+	linkwardenImportStats    = serviceImportStats
+	linkwardenContentFetcher = serviceContentFetcher
+)
 
 var importLinkwardenCmd = &cobra.Command{
 	Use:   "linkwarden INSTANCE_URL",
@@ -156,47 +89,34 @@ The global --token flag remains the access token for the destination Hister serv
 			exit(1, "Linkwarden API token is required; set "+linkwardenTokenEnv+" or use --api-token")
 		}
 
-		batchSize, _ := cmd.Flags().GetInt("batch-size")
-		if batchSize < 1 || batchSize > maxImportBatchSize {
-			exit(1, fmt.Sprintf("--batch-size must be between 1 and %d", maxImportBatchSize))
-		}
-		dateRange, err := parseDateRangeFlags(cmd)
+		runtime, err := newServiceImportRuntime(cmd)
 		if err != nil {
 			exit(1, err.Error())
 		}
+		defer func() {
+			if err := runtime.Close(); err != nil {
+				log.Warn().Err(err).Msg("Linkwarden content crawler close error")
+			}
+		}()
 		source, err := newLinkwardenClient(args[0], token, nil)
 		if err != nil {
 			exit(1, err.Error())
 		}
 
-		global, _ := cmd.Flags().GetBool("global")
-		clientOpts := append([]client.Option{client.WithTimeout(0)}, targetUserIDClientOptions(cmd, global)...)
-		target := newClient(clientOpts...)
-		updatedAfter, err := latestLinkwardenUpdated(target)
+		updatedAfter, err := latestLinkwardenUpdated(runtime.target)
 		if err != nil {
 			exit(1, "Failed to find the latest Linkwarden import: "+err.Error())
 		}
 		source.updatedAfter = updatedAfter
-		skipExisting, _ := cmd.Flags().GetBool("skip-existing")
-		languageDetector := document.LanguageDetector(document.NewNullLanguageDetector())
-		if cfg.Indexer.DetectLanguages {
-			languageDetector = document.NewLanguageDetector()
-		}
-		cfg.Crawler.UserAgent = UserAgent
-		applyCrawlerBackendFlags(cmd)
-		contentFetcher := newLinkwardenCrawlerContentFetcher(&cfg.Crawler)
-		defer func() {
-			if err := contentFetcher.Close(); err != nil {
-				log.Warn().Err(err).Msg("Linkwarden content crawler close error")
-			}
-		}()
 
-		stats, err := importLinkwarden(cmd.Context(), source, target, languageDetector, contentFetcher, linkwardenImportOptions{
-			BatchSize:    batchSize,
-			SkipExisting: skipExisting,
-			StartDate:    dateRange.From,
-			EndDate:      dateRange.To,
-		})
+		stats, err := importLinkwarden(
+			cmd.Context(),
+			source,
+			runtime.target,
+			runtime.languageDetector,
+			runtime.contentFetcher,
+			runtime.options,
+		)
 		if err != nil {
 			exit(1, "Linkwarden import failed: "+err.Error())
 		}
@@ -205,106 +125,34 @@ The global --token flag remains the access token for the destination Hister serv
 }
 
 func linkwardenAPIToken(cmd *cobra.Command) string {
-	if cmd.Flags().Changed("api-token") {
-		token, _ := cmd.Flags().GetString("api-token")
-		return strings.TrimSpace(token)
-	}
-	return strings.TrimSpace(os.Getenv(linkwardenTokenEnv))
+	return serviceAPIToken(cmd, linkwardenTokenEnv)
 }
 
 func newLinkwardenClient(instanceURL, token string, httpClient *http.Client) (*linkwardenClient, error) {
-	instanceURL = strings.TrimSpace(instanceURL)
-	parsed, err := url.Parse(instanceURL)
+	apiClient, err := newServiceAPIClient(
+		linkwardenSourceMetadataValue,
+		instanceURL,
+		token,
+		linkwardenTokenEnv+" or --api-token",
+		httpClient,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("invalid Linkwarden instance URL: %w", err)
+		return nil, err
 	}
-	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return nil, errors.New("invalid Linkwarden instance URL: an http or https URL with a host is required")
-	}
-	if parsed.User != nil {
-		return nil, errors.New("invalid Linkwarden instance URL: embedded credentials are not supported")
-	}
-	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("invalid Linkwarden instance URL: query parameters and fragments are not supported")
-	}
-	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: linkwardenRequestTimeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 10 {
-					return errors.New("stopped after 10 redirects")
-				}
-				origin := via[0].URL
-				if !strings.EqualFold(req.URL.Scheme, origin.Scheme) || !strings.EqualFold(req.URL.Host, origin.Host) {
-					return errors.New("refusing to send the Linkwarden token to a different origin")
-				}
-				return nil
-			},
-		}
-	}
-
-	return &linkwardenClient{
-		searchURL:  strings.TrimRight(parsed.String(), "/") + "/api/v1/search",
-		token:      token,
-		httpClient: httpClient,
-	}, nil
+	return &linkwardenClient{serviceAPIClient: apiClient}, nil
 }
 
 func (c *linkwardenClient) search(ctx context.Context, cursor *int) (*linkwardenSearchData, error) {
-	requestURL, err := url.Parse(c.searchURL)
-	if err != nil {
-		return nil, fmt.Errorf("build Linkwarden search URL: %w", err)
-	}
-	query := requestURL.Query()
+	query := make(url.Values)
 	if c.updatedAfter != 0 {
 		query.Set("searchQueryString", "after:"+time.Unix(c.updatedAfter, 0).UTC().Format("2006-01-02"))
 	}
 	if cursor != nil {
 		query.Set("cursor", strconv.Itoa(*cursor))
 	}
-	requestURL.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("create Linkwarden request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("User-Agent", UserAgent)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request Linkwarden links: %w", err)
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.Debug().Err(closeErr).Msg("Failed to close Linkwarden response body")
-		}
-	}()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxLinkwardenErrorBodySize))
-		detail := strings.TrimSpace(string(body))
-		switch resp.StatusCode {
-		case http.StatusUnauthorized, http.StatusForbidden:
-			return nil, fmt.Errorf("linkwarden authentication failed with status %d; check %s or --api-token", resp.StatusCode, linkwardenTokenEnv)
-		default:
-			if detail != "" {
-				return nil, fmt.Errorf("linkwarden returned status %d: %s", resp.StatusCode, detail)
-			}
-			return nil, fmt.Errorf("linkwarden returned status %d", resp.StatusCode)
-		}
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxLinkwardenResponseSize+1))
-	if err != nil {
-		return nil, fmt.Errorf("read Linkwarden response: %w", err)
-	}
-	if len(body) > maxLinkwardenResponseSize {
-		return nil, fmt.Errorf("linkwarden response exceeds the %d MiB limit", maxLinkwardenResponseSize>>20)
-	}
 	var response linkwardenSearchResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("decode Linkwarden response: %w", err)
+	if err := c.getJSON(ctx, "/api/v1/search", query, &response); err != nil {
+		return nil, err
 	}
 	if response.Data == nil {
 		return nil, errors.New("linkwarden response is missing data")
@@ -313,18 +161,7 @@ func (c *linkwardenClient) search(ctx context.Context, cursor *int) (*linkwarden
 }
 
 func latestLinkwardenUpdated(target *client.Client) (int64, error) {
-	result, err := target.Search(&indexer.Query{
-		Text:  linkwardenSourceQuery,
-		Limit: 1,
-		Sort:  "date",
-	})
-	if err != nil {
-		return 0, err
-	}
-	if len(result.Documents) == 0 {
-		return 0, nil
-	}
-	return result.Documents[0].Updated, nil
+	return latestServiceUpdated(target, linkwardenSourceMetadataValue)
 }
 
 func importLinkwarden(
@@ -335,80 +172,56 @@ func importLinkwarden(
 	contentFetcher linkwardenContentFetcher,
 	options linkwardenImportOptions,
 ) (linkwardenImportStats, error) {
-	var stats linkwardenImportStats
-	if options.BatchSize < 1 || options.BatchSize > maxImportBatchSize {
-		return stats, fmt.Errorf("batch size must be between 1 and %d", maxImportBatchSize)
+	buffer, err := newServiceImportBuffer(
+		linkwardenSourceMetadataValue,
+		target,
+		languageDetector,
+		contentFetcher,
+		options,
+	)
+	if err != nil {
+		return linkwardenImportStats{}, err
 	}
 	var cursor *int
 	seenCursors := make(map[int]struct{})
-	docs := make([]*document.Document, 0, options.BatchSize)
-	flush := func() {
-		if len(docs) == 0 {
-			return
-		}
-		imported, errCount := addDocumentBatch(target, docs)
-		stats.Imported += imported
-		stats.Errors += errCount
-		docs = docs[:0]
-	}
 
 	for {
 		page, err := source.search(ctx, cursor)
 		if err != nil {
-			flush()
-			return stats, err
+			buffer.Flush()
+			return buffer.stats, err
 		}
 
 		for _, link := range page.Links {
 			d, err := linkwardenDocument(link, languageDetector)
 			if errors.Is(err, errLinkwardenMissingURL) {
 				log.Debug().Int64("linkwarden_id", link.ID).Msg("Skipping Linkwarden record without a URL")
-				stats.Skipped++
+				buffer.stats.Skipped++
 				continue
 			}
 			if err != nil {
 				log.Warn().Err(err).Int64("linkwarden_id", link.ID).Msg("Failed to convert Linkwarden record, skipping")
-				stats.Errors++
+				buffer.stats.Errors++
 				continue
 			}
-			if (options.StartDate != 0 && d.Added < options.StartDate) || (options.EndDate != 0 && d.Added > options.EndDate) {
-				log.Debug().Str("url", d.URL).Int64("added", d.Added).Msg("Skipping Linkwarden record outside of date range")
-				stats.Skipped++
-				continue
-			}
-			if options.SkipExisting {
-				exists, err := target.DocumentExists(d.URL)
-				if err != nil {
-					log.Warn().Err(err).Str("url", d.URL).Msg("Failed to check if document exists, skipping")
-					stats.Errors++
-					continue
-				}
-				if exists {
-					log.Debug().Str("url", d.URL).Msg("Document already exists, skipping")
-					stats.Skipped++
-					continue
+			var contentRequest *serviceContentRequest
+			if linkwardenNeedsContentDownload(link) {
+				contentRequest = &serviceContentRequest{
+					URL:         strings.TrimSpace(link.URL),
+					PrefixText:  link.Description,
+					SourceTitle: strings.TrimSpace(link.Name),
 				}
 			}
-			if linkwardenNeedsContentDownload(link) && contentFetcher != nil {
-				if err := downloadLinkwardenContent(ctx, contentFetcher, d, link, languageDetector); err != nil {
-					log.Warn().Err(err).Str("url", d.URL).Msg("Failed to download missing Linkwarden content, importing bookmark metadata only")
-					stats.Errors++
-				}
-			}
-
-			docs = append(docs, d)
-			if len(docs) == options.BatchSize {
-				flush()
-			}
+			buffer.Add(ctx, d, contentRequest)
 		}
 
 		if page.NextCursor == nil {
-			flush()
-			return stats, nil
+			buffer.Flush()
+			return buffer.stats, nil
 		}
 		if _, seen := seenCursors[*page.NextCursor]; seen {
-			flush()
-			return stats, fmt.Errorf("linkwarden returned the repeated pagination cursor %d", *page.NextCursor)
+			buffer.Flush()
+			return buffer.stats, fmt.Errorf("linkwarden returned the repeated pagination cursor %d", *page.NextCursor)
 		}
 		seenCursors[*page.NextCursor] = struct{}{}
 		cursor = page.NextCursor
@@ -417,41 +230,6 @@ func importLinkwarden(
 
 func linkwardenNeedsContentDownload(link linkwardenLink) bool {
 	return strings.TrimSpace(link.TextContent) == "" && (link.Type == "" || strings.EqualFold(link.Type, "url"))
-}
-
-func downloadLinkwardenContent(
-	ctx context.Context,
-	contentFetcher linkwardenContentFetcher,
-	d *document.Document,
-	link linkwardenLink,
-	languageDetector document.LanguageDetector,
-) error {
-	fetched, err := contentFetcher.Fetch(ctx, strings.TrimSpace(link.URL))
-	if err != nil {
-		return err
-	}
-	if err := fetched.Process(languageDetector, extractor.Extract); err != nil {
-		return fmt.Errorf("process downloaded linkwarden content: %w", err)
-	}
-	if strings.TrimSpace(fetched.Text) == "" {
-		return errors.New("downloaded linkwarden page has no extractable content")
-	}
-
-	d.HTML = fetched.HTML
-	d.Text = combineLinkwardenText(link.Description, fetched.Text)
-	if strings.TrimSpace(link.Name) == "" && fetched.Title != "" {
-		d.Title = fetched.Title
-	}
-	if d.Metadata == nil {
-		d.Metadata = make(map[string]any)
-	}
-	for key, value := range fetched.Metadata {
-		if _, exists := d.Metadata[key]; !exists {
-			d.Metadata[key] = value
-		}
-	}
-	d.Language = languageDetector.DetectLanguage(d.Text)
-	return nil
 }
 
 func linkwardenDocument(link linkwardenLink, languageDetector document.LanguageDetector) (*document.Document, error) {
@@ -484,16 +262,16 @@ func linkwardenDocument(link linkwardenLink, languageDetector document.LanguageD
 		}
 	}
 
-	added := parseLinkwardenTime(link.ImportDate)
+	added := parseServiceTime(link.ImportDate)
 	if added == 0 {
-		added = parseLinkwardenTime(link.CreatedAt)
+		added = parseServiceTime(link.CreatedAt)
 	}
 	d := &document.Document{
 		URL:      linkURL,
 		Title:    strings.TrimSpace(link.Name),
 		Text:     combineLinkwardenText(link.Description, link.TextContent),
 		Added:    added,
-		Updated:  parseLinkwardenTime(link.UpdatedAt),
+		Updated:  parseServiceTime(link.UpdatedAt),
 		Metadata: metadata,
 	}
 	sourceUpdated := d.Updated
@@ -510,26 +288,5 @@ func linkwardenDocument(link linkwardenLink, languageDetector document.LanguageD
 }
 
 func combineLinkwardenText(description, textContent string) string {
-	description = strings.TrimSpace(description)
-	textContent = strings.TrimSpace(textContent)
-	if description == "" || description == textContent {
-		return textContent
-	}
-	if textContent == "" {
-		return description
-	}
-	return description + "\n\n" + textContent
-}
-
-func parseLinkwardenTime(value string) int64 {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0
-	}
-	for _, layout := range []string{time.RFC3339Nano, "2006-01-02"} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed.Unix()
-		}
-	}
-	return 0
+	return combineImportText(description, textContent)
 }

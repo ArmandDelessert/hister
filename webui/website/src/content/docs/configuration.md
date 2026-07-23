@@ -357,6 +357,13 @@ app:
 
 The web UI automatically prompts for and stores the access token when configured. The access token has to be added to the browser extension as well.
 
+Form encoded `POST /api/add` requests may provide the configured token in the
+`access_token` form field instead of a request header. This supports browser
+integrations that submit rendered page content using a simple `no-cors`
+request. Hister accepts the submission only after validating the token. The
+form field is not accepted for other endpoints, request methods, or content
+types.
+
 ## Public Mode
 
 Public mode lets anonymous visitors search the shared index while write access remains authenticated. Enable it with `app.public: true` or by starting the server with `hister listen --public`. A public instance must also configure either `app.access_token` or `app.user_handling`, otherwise Hister refuses to start.

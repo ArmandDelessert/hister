@@ -268,6 +268,30 @@ func init() {
 					Required:    false,
 					Description: "Plain-text content",
 				},
+				{
+					Name:        "html",
+					Type:        "string",
+					Required:    false,
+					Description: "Raw HTML source (text is extracted server-side)",
+				},
+				{
+					Name:        "favicon",
+					Type:        "string",
+					Required:    false,
+					Description: "Base64-encoded favicon data URI",
+				},
+				{
+					Name:        "label",
+					Type:        "string",
+					Required:    false,
+					Description: "User-defined label for the document",
+				},
+				{
+					Name:        accessTokenField,
+					Type:        "string",
+					Required:    false,
+					Description: "Configured access token for authenticated form submissions",
+				},
 			},
 			JSONSchema: []*JSONSchemaField{
 				{
@@ -334,6 +358,24 @@ func init() {
 					Type:        "string",
 					Required:    false,
 					Description: "Plain-text content",
+				},
+				{
+					Name:        "html",
+					Type:        "string",
+					Required:    false,
+					Description: "Raw HTML source (text is extracted server-side)",
+				},
+				{
+					Name:        "favicon",
+					Type:        "string",
+					Required:    false,
+					Description: "Base64-encoded favicon data URI",
+				},
+				{
+					Name:        "label",
+					Type:        "string",
+					Required:    false,
+					Description: "User-defined label for the document",
 				},
 			},
 			JSONSchema: []*JSONSchemaField{

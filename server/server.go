@@ -44,14 +44,16 @@ import (
 var Version = "unknown"
 
 var (
-	appSubFS         iofs.FS
-	staticFileServer http.Handler
-	sessionStore     *sessions.CookieStore
-	errCSRFMismatch  = errors.New("CSRF token mismatch")
-	storeName        = "hister"
-	tokName          = "csrf_token"
-	accessTokenField = "access_token"
-	staticTextFiles  map[string][]byte
+	appSubFS           iofs.FS
+	staticFileServer   http.Handler
+	sessionStore       *sessions.CookieStore
+	errCSRFMismatch    = errors.New("CSRF token mismatch")
+	storeName          = "hister"
+	tokName            = "csrf_token"
+	accessTokenField   = "access_token"
+	formClientField    = "hister_client"
+	greasemonkeyClient = "greasemonkey"
+	staticTextFiles    map[string][]byte
 )
 
 type historyItem struct {
@@ -219,6 +221,9 @@ func registerEndpoints(cfg *config.Config) http.Handler {
 			} else {
 				h = withUserAuth(h)
 			}
+		}
+		if e.Method == POST && e.Path == "/api/add" {
+			h = withGreasemonkeyNoContent(h)
 		}
 		mux.HandleFunc(e.Pattern(), createHandler(cfg, h))
 	}
@@ -577,6 +582,65 @@ func withCSRF(handler endpointHandler) endpointHandler {
 		c.csrf = tok
 		c.Response.Header().Add("X-CSRF-Token", tok)
 		handler(c)
+	}
+}
+
+type greasemonkeyResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *greasemonkeyResponseWriter) WriteHeader(statusCode int) {
+	if w.statusCode == 0 {
+		w.statusCode = statusCode
+	}
+}
+
+func (w *greasemonkeyResponseWriter) Write(p []byte) (int, error) {
+	if w.statusCode == 0 {
+		w.statusCode = http.StatusOK
+	}
+	return len(p), nil
+}
+
+func isGreasemonkeySubmission(r *http.Request) bool {
+	if r.Method != http.MethodPost || r.URL.Path != "/api/add" {
+		return false
+	}
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || contentType != "application/x-www-form-urlencoded" {
+		return false
+	}
+	if err := r.ParseForm(); err != nil {
+		return false
+	}
+	return r.PostForm.Get(formClientField) == greasemonkeyClient
+}
+
+func withGreasemonkeyNoContent(handler endpointHandler) endpointHandler {
+	return func(c *webContext) {
+		if !isGreasemonkeySubmission(c.Request) {
+			handler(c)
+			return
+		}
+
+		response := c.Response
+		writer := &greasemonkeyResponseWriter{ResponseWriter: response}
+		c.Response = writer
+		defer func() {
+			c.Response = response
+		}()
+
+		handler(c)
+
+		if writer.statusCode == 0 {
+			writer.statusCode = http.StatusOK
+		}
+		response.Header().Del("Content-Encoding")
+		response.Header().Del("Content-Length")
+		response.Header().Del("Content-Type")
+		log.Debug().Int("status", writer.statusCode).Msg("replaced Greasemonkey response with no content")
+		response.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -1135,14 +1199,6 @@ func decodeAddDocument(r *http.Request) (*document.Document, error) {
 	return d, nil
 }
 
-func serveAddSuccess(c *webContext) {
-	if c.formTokenAuth {
-		c.Response.WriteHeader(http.StatusNoContent)
-		return
-	}
-	c.Response.WriteHeader(http.StatusCreated)
-}
-
 func serveAdd(c *webContext) {
 	m := c.Request.Method
 	if m == http.MethodGet {
@@ -1187,7 +1243,7 @@ func serveAdd(c *webContext) {
 				}
 			}
 		}
-		serveAddSuccess(c)
+		c.Response.WriteHeader(http.StatusCreated)
 	} else {
 		log.Debug().Str("url", d.URL).Msg("skip indexing")
 		c.Response.WriteHeader(http.StatusNotAcceptable)

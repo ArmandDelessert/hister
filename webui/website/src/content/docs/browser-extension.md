@@ -37,7 +37,9 @@ The script runs in qutebrowser's isolated user JavaScript world. It submits a
 form encoded request because qutebrowser does not provide the privileged cross
 origin request behavior available to Chrome and Firefox extensions. Form
 submission is not controlled by the page's `connect-src` policy. Hister returns
-an empty response that keeps the current page open.
+an empty `204` response that keeps the current page open. This response is used
+for every outcome, including rejected and failed submissions. Check the Hister
+server log when troubleshooting indexing failures.
 
 The access token is included in the request body. The form fields are kept in a
 closed shadow root while the request is submitted so page scripts cannot read

@@ -248,7 +248,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveAdd,
-			Description:  "Index a document. Accepts either application/x-www-form-urlencoded or application/json. Successful form token authentication returns 204 so browser form submissions keep the current page open.",
+			Description:  "Index a document. Accepts either application/x-www-form-urlencoded or application/json. Greasemonkey form submissions always return 204 so browser form submissions keep the current page open.",
 			Args: []*EndpointArg{
 				{
 					Name:        "url",
@@ -291,6 +291,12 @@ func init() {
 					Type:        "string",
 					Required:    false,
 					Description: "Configured access token for authenticated form submissions",
+				},
+				{
+					Name:        formClientField,
+					Type:        "string",
+					Required:    false,
+					Description: "Set to greasemonkey to receive an empty 204 response for every outcome",
 				},
 			},
 			JSONSchema: []*JSONSchemaField{

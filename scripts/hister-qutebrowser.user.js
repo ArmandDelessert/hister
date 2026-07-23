@@ -96,7 +96,8 @@ const HISTER_QUTEBROWSER_CONFIG = Object.freeze({
 			["title", data.title],
 			["text", data.text],
 			["html", data.html],
-			["access_token", HISTER_QUTEBROWSER_CONFIG.accessToken]
+			["access_token", HISTER_QUTEBROWSER_CONFIG.accessToken],
+			["hister_client", "greasemonkey"]
 		]);
 		if (HISTER_QUTEBROWSER_CONFIG.label) fields.set("label", HISTER_QUTEBROWSER_CONFIG.label);
 		try {

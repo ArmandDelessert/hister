@@ -191,33 +191,76 @@ func TestDecodeAddDocumentFromFormIncludesRenderedContent(t *testing.T) {
 	}
 }
 
-func TestServeAddSuccessUsesNoContentForFormTokenAuthentication(t *testing.T) {
+func TestGreasemonkeySubmissionAlwaysReturnsNoContent(t *testing.T) {
 	tests := []struct {
 		name          string
-		formTokenAuth bool
-		want          int
+		contentType   string
+		target        string
+		formClient    string
+		handlerStatus int
+		wantStatus    int
+		wantBody      string
 	}{
 		{
-			name: "normal request",
-			want: http.StatusCreated,
+			name:          "successful Greasemonkey submission",
+			contentType:   "application/x-www-form-urlencoded",
+			target:        "/api/add",
+			formClient:    greasemonkeyClient,
+			handlerStatus: http.StatusCreated,
+			wantStatus:    http.StatusNoContent,
 		},
 		{
-			name:          "form token request",
-			formTokenAuth: true,
-			want:          http.StatusNoContent,
+			name:          "blocked Greasemonkey submission",
+			contentType:   "application/x-www-form-urlencoded",
+			target:        "/api/add",
+			formClient:    greasemonkeyClient,
+			handlerStatus: http.StatusNotAcceptable,
+			wantStatus:    http.StatusNoContent,
+		},
+		{
+			name:          "failed Greasemonkey submission",
+			contentType:   "application/x-www-form-urlencoded",
+			target:        "/api/add",
+			formClient:    greasemonkeyClient,
+			handlerStatus: http.StatusInternalServerError,
+			wantStatus:    http.StatusNoContent,
+		},
+		{
+			name:          "normal form submission",
+			contentType:   "application/x-www-form-urlencoded",
+			target:        "/api/add",
+			handlerStatus: http.StatusNotAcceptable,
+			wantStatus:    http.StatusNotAcceptable,
+			wantBody:      "response body",
+		},
+		{
+			name:          "different route",
+			contentType:   "application/x-www-form-urlencoded",
+			target:        "/api/other",
+			formClient:    greasemonkeyClient,
+			handlerStatus: http.StatusNotAcceptable,
+			wantStatus:    http.StatusNotAcceptable,
+			wantBody:      "response body",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			body := url.Values{formClientField: {tt.formClient}}.Encode()
+			req := httptest.NewRequest(http.MethodPost, tt.target, strings.NewReader(body))
+			req.Header.Set("Content-Type", tt.contentType)
 			rec := httptest.NewRecorder()
-			serveAddSuccess(&webContext{
-				Response:      rec,
-				formTokenAuth: tt.formTokenAuth,
+			handler := withGreasemonkeyNoContent(func(c *webContext) {
+				c.Response.WriteHeader(tt.handlerStatus)
+				_, _ = c.Response.Write([]byte("response body"))
 			})
+			handler(&webContext{Request: req, Response: rec})
 
-			if rec.Code != tt.want {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if rec.Body.String() != tt.wantBody {
+				t.Fatalf("body = %q, want %q", rec.Body.String(), tt.wantBody)
 			}
 		})
 	}

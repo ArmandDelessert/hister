@@ -9,19 +9,16 @@ function isFetchableFaviconURL(rawURL: string): boolean {
   }
 }
 
-async function fetchFavicon(url) {
+async function fetchFavicon(url: string): Promise<string> {
   if (!isFetchableFaviconURL(url)) {
     return '';
   }
   const response = await fetch(url);
   let iconBytes = await response.blob();
-  const reader = new FileReader();
-  reader.readAsDataURL(iconBytes);
-  //let icon = btoa(iconBytes.text());
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      resolve(reader.result);
+      resolve(typeof reader.result === 'string' ? reader.result : '');
     };
     reader.onerror = () => resolve('');
     reader.readAsDataURL(iconBytes);
@@ -97,4 +94,4 @@ async function sendPDFData(
   return fetchAPI(url, { body: { document: doc, pdf: pdfBase64 }, customHeaders });
 }
 
-export { fetchAPI, sendPageData, sendResult, sendPDFData };
+export { fetchAPI, fetchFavicon, sendPageData, sendResult, sendPDFData };

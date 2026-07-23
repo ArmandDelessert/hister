@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist/*",
-    "build": "vite build",
+    "build": "vite build && npm run build:qutebrowser",
+    "build:qutebrowser": "vite build --config vite.qutebrowser.config.ts",
     "dev": "vite build --watch --mode development"
   },
   "dependencies": {

@@ -10,10 +10,46 @@ The Hister browser extension is the primary way to automatically index your brow
 
 - **Chrome / Chromium / Edge**: [Install from Chrome Web Store](https://chromewebstore.google.com/detail/hister/cciilamhchpmbdnniabclekddabkifhb)
 - **Firefox**: [Install from Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/hister/) (also works on Firefox for Android)
+- **qutebrowser**: Install the generated Greasemonkey script from `scripts/hister-qutebrowser.user.js` as described below.
 
 After installing, click the extension icon in your browser toolbar to open the popup and verify the server URL is correct.
 
 > The extension only communicates with your Hister server, it never contacts any third-party services or the websites you visit (except for downloading the page's favicon while collecting page data).
+
+### qutebrowser
+
+The qutebrowser integration uses the same page extraction code as the browser
+extension. It submits the rendered page title, text, HTML, and favicon to
+Hister, then checks periodically for changes made by single page applications.
+Pages served from the configured Hister base URL are ignored.
+
+1. Configure `app.access_token` in Hister. The script requires token
+   authentication because its cross origin response is intentionally opaque.
+2. Copy `scripts/hister-qutebrowser.user.js` from the Hister repository into
+   the `greasemonkey` directory shown by `:version`. Both the qutebrowser data
+   directory and config directory are supported.
+3. Edit `HISTER_QUTEBROWSER_CONFIG` near the top of the copied file. Set
+   `serverURL` and replace `replace-with-app-access-token` with the configured
+   token. The optional `label` is applied to every submitted page.
+4. Run `:greasemonkey-reload` in qutebrowser.
+
+The script runs in qutebrowser's isolated user JavaScript world. It submits a
+form encoded request because qutebrowser does not provide the privileged cross
+origin request behavior available to Chrome and Firefox extensions. Form
+submission is not controlled by the page's `connect-src` policy. Hister returns
+an empty response that keeps the current page open.
+
+The access token is included in the request body. The form fields are kept in a
+closed shadow root while the request is submitted so page scripts cannot read
+the token from the DOM. A page can still block the request with an explicit
+`form-action` policy.
+
+To regenerate the script after changing the shared extractor or qutebrowser
+entry point, run:
+
+```bash
+npm run build:qutebrowser -w @hister/ext
+```
 
 ## Features
 

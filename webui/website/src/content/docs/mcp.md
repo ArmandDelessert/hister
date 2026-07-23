@@ -53,8 +53,8 @@ Authorization: Bearer <your-user-token>
 
 When `app.public: true` is enabled, unauthenticated MCP access is allowed for
 public routes. MCP tools can read public search results and previews for global
-documents. The `get_history` tool is disabled in public mode, including for
-authenticated callers.
+documents. The `get_history` tool remains unavailable to anonymous callers but
+is enabled when the request includes a valid global or personal access token.
 
 ## Available Tools
 
@@ -124,7 +124,7 @@ Example:
 ### `get_history`
 
 Retrieve items from the Hister history views. This tool is available only when
-public mode is disabled.
+public mode is disabled or the caller is authenticated.
 
 | Argument   | Type    | Required | Default   | Description                                                                           |
 | ---------- | ------- | -------- | --------- | ------------------------------------------------------------------------------------- |

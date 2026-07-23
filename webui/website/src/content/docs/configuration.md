@@ -385,7 +385,7 @@ app:
   user_handling: true
 ```
 
-Public mode exposes search, suggestions, document reads, previews, file serving, API documentation, and MCP search. It does not allow anonymous users to add, edit, label, delete, change rules, reindex, clean up, or access profile APIs. Web history is fully disabled while public mode is enabled.
+Public mode exposes search, suggestions, document reads, previews, file serving, API documentation, and MCP search. It does not allow anonymous users to add, edit, label, delete, change rules, reindex, clean up, access web history, or access profile APIs. Authenticated callers can access web history normally.
 
 Only index content that is meant to be public. Local files, previews, and MCP search can expose indexed document content to anonymous visitors.
 

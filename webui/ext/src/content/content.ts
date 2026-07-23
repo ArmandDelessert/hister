@@ -1,4 +1,4 @@
-import { PageData, extractPageData, registerResultExtractor } from '../modules/extract';
+import { type PageData, extractPageData, registerResultExtractor } from '../modules/extract';
 
 let d: PageData;
 // ms

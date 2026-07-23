@@ -111,7 +111,7 @@ You can also start a configured authenticated server with:
 hister listen --public
 ```
 
-Public mode allows unauthenticated search, previews, file serving, API documentation, and MCP search. It does not allow anonymous writes or admin operations. Web history is disabled while public mode is active.
+Public mode allows unauthenticated search, previews, file serving, API documentation, and MCP search. It does not allow anonymous writes, history access, or admin operations. Authenticated callers can access web history normally.
 
 Only index content intended for public access. Local files, stored previews, and MCP responses can reveal indexed content to anonymous users.
 

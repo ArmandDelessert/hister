@@ -248,7 +248,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveAdd,
-			Description:  "Index a document. Accepts either application/x-www-form-urlencoded or application/json.",
+			Description:  "Index a document. Accepts either application/x-www-form-urlencoded or application/json. Successful form token authentication returns 204 so browser form submissions keep the current page open.",
 			Args: []*EndpointArg{
 				{
 					Name:        "url",

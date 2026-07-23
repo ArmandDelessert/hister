@@ -184,7 +184,7 @@ The document count shown on the home page reflects the authenticated user's own 
 
 When `app.public: true` is enabled together with user handling, anonymous visitors can search only global documents stored under user ID `0`. Documents owned by named users remain private to those authenticated users.
 
-Authenticated users can still add, delete, label, and manage their own content according to the normal user handling rules. Web history is disabled for everyone while public mode is enabled.
+Authenticated users can still add, delete, label, manage their own content, and access their web history according to the normal user handling rules. Web history remains unavailable to anonymous visitors.
 
 ## Personal Access Tokens
 

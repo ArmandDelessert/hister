@@ -5,6 +5,7 @@ webui/ext/dist/
 
 # Auto-generated
 .svelte-kit/
+scripts/hister-qutebrowser.user.js
 
 # Dependencies
 node_modules/

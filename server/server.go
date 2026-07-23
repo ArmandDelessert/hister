@@ -1135,6 +1135,14 @@ func decodeAddDocument(r *http.Request) (*document.Document, error) {
 	return d, nil
 }
 
+func serveAddSuccess(c *webContext) {
+	if c.formTokenAuth {
+		c.Response.WriteHeader(http.StatusNoContent)
+		return
+	}
+	c.Response.WriteHeader(http.StatusCreated)
+}
+
 func serveAdd(c *webContext) {
 	m := c.Request.Method
 	if m == http.MethodGet {
@@ -1179,7 +1187,7 @@ func serveAdd(c *webContext) {
 				}
 			}
 		}
-		c.Response.WriteHeader(http.StatusCreated)
+		serveAddSuccess(c)
 	} else {
 		log.Debug().Str("url", d.URL).Msg("skip indexing")
 		c.Response.WriteHeader(http.StatusNotAcceptable)

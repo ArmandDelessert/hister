@@ -12,6 +12,7 @@
     "webui/ext/svelte.config.js"
   ],
   "ignorePatterns": [
+    "scripts/hister-qutebrowser.user.js",
     "webui/package.json",
     "webui/ext/src/popup/popup.html",
     "webui/ext/src/options/options.html"

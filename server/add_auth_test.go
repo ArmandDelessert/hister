@@ -191,6 +191,38 @@ func TestDecodeAddDocumentFromFormIncludesRenderedContent(t *testing.T) {
 	}
 }
 
+func TestServeAddSuccessUsesNoContentForFormTokenAuthentication(t *testing.T) {
+	tests := []struct {
+		name          string
+		formTokenAuth bool
+		want          int
+	}{
+		{
+			name: "normal request",
+			want: http.StatusCreated,
+		},
+		{
+			name:          "form token request",
+			formTokenAuth: true,
+			want:          http.StatusNoContent,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			serveAddSuccess(&webContext{
+				Response:      rec,
+				formTokenAuth: tt.formTokenAuth,
+			})
+
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
+	}
+}
+
 func TestServeAddFormWritesStatusOnce(t *testing.T) {
 	cfg := testutil.Config(t)
 	cfg.Server.BaseURL = "http://127.0.0.1:4433"

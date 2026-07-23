@@ -185,11 +185,35 @@ func TestTokenLoginSetsHttpOnlySessionCookieAndAuthenticates(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/add with session cookie status = %d, want %d", rec.Code, http.StatusOK)
 	}
+
+	configReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	configReq.AddCookie(sessionCookie)
+	configRec := httptest.NewRecorder()
+	handler.ServeHTTP(configRec, configReq)
+
+	if configRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/config with session cookie status = %d, want %d", configRec.Code, http.StatusOK)
+	}
+	var configBody struct {
+		Authenticated  bool `json:"authenticated"`
+		HistoryEnabled bool `json:"historyEnabled"`
+	}
+	if err := json.Unmarshal(configRec.Body.Bytes(), &configBody); err != nil {
+		t.Fatal(err)
+	}
+	if !configBody.Authenticated {
+		t.Fatal("authenticated = false, want true")
+	}
+	if !configBody.HistoryEnabled {
+		t.Fatal("historyEnabled = false, want true")
+	}
 }
 
-func TestPublicModeDisablesHistoryForAuthenticatedCallers(t *testing.T) {
-	_, handler := newPublicTokenTestServer(t)
-	anonymousRec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com"}`), map[string]string{
+func TestPublicModeEnablesHistoryForAuthenticatedCallers(t *testing.T) {
+	cfg, handler := newPublicTokenTestServer(t)
+	cfg.Server.Database = "file::memory:"
+	testutil.InitModelWithConfig(t, cfg)
+	anonymousRec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com","title":"Example"}`), map[string]string{
 		"Origin": "hister://",
 	})
 
@@ -197,21 +221,28 @@ func TestPublicModeDisablesHistoryForAuthenticatedCallers(t *testing.T) {
 		t.Fatalf("anonymous POST /api/history status = %d, want %d", anonymousRec.Code, http.StatusForbidden)
 	}
 
-	readRec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/history", nil, map[string]string{
+	readRec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/history?opened=true", nil, map[string]string{
 		"X-Access-Token": "secret",
 	})
 
-	if readRec.Code != http.StatusNotFound {
-		t.Fatalf("authenticated GET /api/history status = %d, want %d", readRec.Code, http.StatusNotFound)
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("authenticated GET /api/history status = %d, want %d", readRec.Code, http.StatusOK)
 	}
 
-	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com"}`), map[string]string{
+	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/history", strings.NewReader(`{"query":"q","url":"https://example.com","title":"Example"}`), map[string]string{
 		"Origin":         "hister://",
 		"X-Access-Token": "secret",
 	})
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("POST /api/history status = %d, want %d", rec.Code, http.StatusNoContent)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/history status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	items, err := model.GetLatestHistoryItems(0, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Query != "q" || items[0].URL != "https://example.com" {
+		t.Fatalf("saved history = %+v, want submitted item", items)
 	}
 }
 

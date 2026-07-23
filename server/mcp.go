@@ -308,7 +308,7 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 			q.IncludeHTML = true
 		}
 	}
-	res, err := doSearch(q, c.Config, c.effectiveRules(), c.UserID)
+	res, err := doSearch(q, c.Config, c.effectiveRules(), c.UserID, historyEnabled(c))
 	if err != nil {
 		log.Error().Err(err).Str("query", args.Query).Msg("MCP search failed")
 		mcpWriteError(c, id, mcpErrInternal, "search failed")
@@ -392,7 +392,7 @@ func mcpToolGetHistory(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 			return
 		}
 	}
-	if !historyEnabled(c.Config) {
+	if !historyEnabled(c) {
 		mcpWriteError(c, id, mcpErrNotFound, "history is disabled")
 		return
 	}

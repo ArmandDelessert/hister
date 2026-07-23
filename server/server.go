@@ -467,8 +467,8 @@ func withAdminAuth(handler endpointHandler) endpointHandler {
 	}
 }
 
-func historyEnabled(cfg *config.Config) bool {
-	return !cfg.App.Public
+func historyEnabled(c *webContext) bool {
+	return !c.Config.App.Public || c.Authenticated
 }
 
 func canWrite(c *webContext) bool {
@@ -837,7 +837,7 @@ func serveConfig(c *webContext) {
 		Authenticated:       authenticated,
 		Public:              c.Config.App.Public,
 		CanWrite:            canWrite(c),
-		HistoryEnabled:      historyEnabled(c.Config),
+		HistoryEnabled:      historyEnabled(c),
 		Username:            c.Username,
 		UserID:              c.UserID,
 		SemanticEnabled:     indexer.SemanticSearchEnabled(),
@@ -895,7 +895,7 @@ func parseSearchQueryParams(r *http.Request) (*indexer.Query, error) {
 
 // serveSearchHTTP executes a single search and writes a JSON response.
 func serveSearchHTTP(c *webContext, query *indexer.Query) {
-	r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
+	r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID, historyEnabled(c))
 	if err != nil {
 		log.Error().Err(err).Msg("search error")
 		serve500(c)
@@ -942,7 +942,7 @@ func serveSearchWebSocket(c *webContext) {
 		if !c.Config.SemanticSearch.Enable {
 			query.SemanticEnabled = false
 		}
-		res, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
+		res, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID, historyEnabled(c))
 		if err != nil {
 			log.Error().Err(err).Msg("search error")
 			continue
@@ -989,7 +989,7 @@ func serveSearch(c *webContext) {
 	serveSearchWebSocket(c)
 }
 
-func doSearch(query *indexer.Query, cfg *config.Config, rules *config.Rules, userID uint) (*indexer.Results, error) {
+func doSearch(query *indexer.Query, cfg *config.Config, rules *config.Rules, userID uint, includeHistory bool) (*indexer.Results, error) {
 	start := time.Now()
 	oq := query.Text
 	if rules != nil {
@@ -1006,7 +1006,7 @@ func doSearch(query *indexer.Query, cfg *config.Config, rules *config.Rules, use
 	if res == nil {
 		res = &indexer.Results{}
 	}
-	if historyEnabled(cfg) {
+	if includeHistory {
 		hr, err := model.GetURLsByQuery(userID, oq)
 		if err == nil && len(hr) > 0 {
 			res.History = hr
@@ -1266,7 +1266,7 @@ func serveUpdateLabel(c *webContext) {
 }
 
 func serveHistory(c *webContext) {
-	if !historyEnabled(c.Config) {
+	if !historyEnabled(c) {
 		c.Response.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -1401,7 +1401,7 @@ func serveRSS(c *webContext, title, link string, items []rssItem) {
 }
 
 func serveSaveHistory(c *webContext) {
-	if !historyEnabled(c.Config) {
+	if !historyEnabled(c) {
 		c.Response.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1545,7 +1545,7 @@ func serveGetFacets(c *webContext) {
 			}
 		}
 	}
-	res, err := doSearch(q, c.Config, c.effectiveRules(), c.UserID)
+	res, err := doSearch(q, c.Config, c.effectiveRules(), c.UserID, historyEnabled(c))
 	if err != nil || res.Facets == nil {
 		c.JSON(map[string]any{})
 		return
@@ -1730,7 +1730,7 @@ func endpointMutates(e *Endpoint) bool {
 
 func serveStats(c *webContext) {
 	var hs []*model.HistoryItem
-	if historyEnabled(c.Config) {
+	if historyEnabled(c) {
 		hs, _ = model.GetLatestHistoryItems(c.UserID, 5, 0)
 	}
 	var docCount uint64

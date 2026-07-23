@@ -13,6 +13,16 @@ import (
 	"github.com/gorilla/sessions"
 )
 
+type statusCountingWriter struct {
+	http.ResponseWriter
+	statusCodes []int
+}
+
+func (w *statusCountingWriter) WriteHeader(statusCode int) {
+	w.statusCodes = append(w.statusCodes, statusCode)
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
 func newFormTokenTestHandler(t *testing.T, cfg *config.Config, called *bool) http.Handler {
 	t.Helper()
 	sessionStore = sessions.NewCookieStore([]byte(strings.Repeat("x", 32)))
@@ -157,12 +167,9 @@ func TestDecodeAddDocumentFromFormIncludesRenderedContent(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/add", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	doc, jsonData, err := decodeAddDocument(req)
+	doc, err := decodeAddDocument(req)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if jsonData {
-		t.Fatal("form document was identified as JSON")
 	}
 	if doc.URL != "https://example.com/article" {
 		t.Errorf("URL = %q, want %q", doc.URL, "https://example.com/article")
@@ -181,5 +188,30 @@ func TestDecodeAddDocumentFromFormIncludesRenderedContent(t *testing.T) {
 	}
 	if doc.Label != "qutebrowser" {
 		t.Errorf("Label = %q, want %q", doc.Label, "qutebrowser")
+	}
+}
+
+func TestServeAddFormWritesStatusOnce(t *testing.T) {
+	cfg := testutil.Config(t)
+	cfg.Server.BaseURL = "http://127.0.0.1:4433"
+	body := url.Values{
+		"url": {"http://127.0.0.1:4433/already-local"},
+	}.Encode()
+	req := httptest.NewRequest(http.MethodPost, "/api/add", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	writer := &statusCountingWriter{ResponseWriter: rec}
+
+	serveAdd(&webContext{
+		Request:  req,
+		Response: writer,
+		Config:   cfg,
+	})
+
+	if len(writer.statusCodes) != 1 {
+		t.Fatalf("WriteHeader calls = %v, want one call", writer.statusCodes)
+	}
+	if writer.statusCodes[0] != http.StatusNotAcceptable {
+		t.Fatalf("status = %d, want %d", writer.statusCodes[0], http.StatusNotAcceptable)
 	}
 }

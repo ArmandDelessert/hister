@@ -1114,17 +1114,15 @@ func serveVersions(c *webContext) {
 	c.JSON(versions)
 }
 
-func decodeAddDocument(r *http.Request) (*document.Document, bool, error) {
+func decodeAddDocument(r *http.Request) (*document.Document, error) {
 	d := &document.Document{}
-	jsonData := false
 	if strings.Contains(r.Header.Get("Content-Type"), "json") {
-		jsonData = true
 		if err := json.NewDecoder(r.Body).Decode(d); err != nil {
-			return nil, false, err
+			return nil, err
 		}
 	} else {
 		if err := r.ParseForm(); err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		f := r.PostForm
 		d.URL = f.Get("url")
@@ -1134,7 +1132,7 @@ func decodeAddDocument(r *http.Request) (*document.Document, bool, error) {
 		d.Favicon = f.Get("favicon")
 		d.Label = f.Get("label")
 	}
-	return d, jsonData, nil
+	return d, nil
 }
 
 func serveAdd(c *webContext) {
@@ -1147,7 +1145,7 @@ func serveAdd(c *webContext) {
 		serve500(c)
 		return
 	}
-	d, jsonData, err := decodeAddDocument(c.Request)
+	d, err := decodeAddDocument(c.Request)
 	if err != nil {
 		serve500(c)
 		return
@@ -1186,10 +1184,6 @@ func serveAdd(c *webContext) {
 		log.Debug().Str("url", d.URL).Msg("skip indexing")
 		c.Response.WriteHeader(http.StatusNotAcceptable)
 	}
-	if jsonData {
-		return
-	}
-	serve200(c)
 }
 
 func serveAddPDF(c *webContext) {

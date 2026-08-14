@@ -50,7 +50,7 @@ func requireIndexMetadata(t *testing.T, idx bleve.Index, want indexMetadata) {
 
 func TestIndexMetadataPersistence(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), true, true, "embedding")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: true, KeepStopwords: true}, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestIndexMetadataPersistence(t *testing.T) {
 	}
 	idx.Close()
 
-	idx, err = initializeIndexer(cfg.FullPath(""), true, true, "different")
+	idx, err = initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: true, KeepStopwords: true}, "different")
 	if err != nil {
 		t.Fatalf("reopen indexer: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestIndexMetadataPersistence(t *testing.T) {
 
 func TestBackfillEmbeddingFingerprint(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: false, KeepStopwords: false}, "")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestBackfillEmbeddingFingerprint(t *testing.T) {
 
 func TestGetMetadataRejectsInvalidInternalValue(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "embedding")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: false, KeepStopwords: false}, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestGetMetadataRejectsInvalidInternalValue(t *testing.T) {
 
 func TestGetMetadataValidatesAllSubIndexes(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), true, false, "embedding")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: true, KeepStopwords: false}, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestGetMetadataValidatesAllSubIndexes(t *testing.T) {
 
 func TestLanguageIndexMetadataIsSelfContained(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), true, true, "embedding")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: true, KeepStopwords: true}, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestLanguageIndexMetadataIsSelfContained(t *testing.T) {
 
 func TestReindexStoresReplacementIndexMetadata(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "stored-embedding")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: false, KeepStopwords: false}, "stored-embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestReindexStoresReplacementIndexMetadata(t *testing.T) {
 
 func TestReindexStoresActiveEmbeddingFingerprint(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "stored-embedding")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: false, KeepStopwords: false}, "stored-embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestReindexStoresActiveEmbeddingFingerprint(t *testing.T) {
 
 func TestReindexPreservesIndexWhenVectorRebuildFails(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "stored-embedding")
+	idx, err := initializeIndexer(cfg.FullPath(""), indexOptions{DetectLanguages: false, KeepStopwords: false}, "stored-embedding")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1306,7 +1306,7 @@ func BenchmarkPrioritySearch(b *testing.B) {
 func priorityBenchmarkIndexer(b *testing.B, count int) *Indexer {
 	b.Helper()
 	dir := b.TempDir()
-	idx, err := initializeIndexer(dir, true, false, "")
+	idx, err := initializeIndexer(dir, indexOptions{DetectLanguages: true, KeepStopwords: false}, "")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -1338,7 +1338,7 @@ func priorityBenchmarkIndexer(b *testing.B, count int) *Indexer {
 	}
 	idx.Close()
 	// Reopen persisted indexes so background writes do not skew query timings.
-	idx, err = initializeIndexer(dir, true, false, "")
+	idx, err = initializeIndexer(dir, indexOptions{DetectLanguages: true, KeepStopwords: false}, "")
 	if err != nil {
 		b.Fatal(err)
 	}

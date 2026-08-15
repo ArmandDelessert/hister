@@ -299,7 +299,10 @@ func newServiceImportRuntime(cmd *cobra.Command) (*serviceImportRuntime, error) 
 	clientOptions = append(clientOptions, documentSubmissionClientOptions(cmd)...)
 	languageDetector := document.LanguageDetector(document.NewNullLanguageDetector())
 	if cfg.Indexer.DetectLanguages {
-		languageDetector = document.NewLanguageDetector()
+		languageDetector = document.NewLanguageDetectorFor(
+			cfg.Indexer.Languages,
+			cfg.Indexer.LowAccuracyLanguageDetection(),
+		)
 	}
 	cfg.Crawler.UserAgent = UserAgent
 	applyCrawlerBackendFlags(cmd)

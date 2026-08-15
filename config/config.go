@@ -617,9 +617,10 @@ func CreateDefaultConfig() *Config {
 			Metrics:          false,
 		},
 		Indexer: Indexer{
-			DetectLanguages: true,
-			KeepStopwords:   false,
-			MaxFileSize:     1,
+			DetectLanguages:           true,
+			KeepStopwords:             false,
+			MaxFileSize:               1,
+			LanguageDetectionAccuracy: LanguageDetectionAccuracyHigh,
 		},
 		Crawler: CrawlerConfig{
 			Backend: "http",

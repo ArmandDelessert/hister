@@ -19,7 +19,7 @@ import (
 	"github.com/asciimoo/hister/server/types"
 )
 
-const postType = "bluesky_post"
+const postType = "bluesky"
 
 var blueskyHosts = map[string]struct{}{
 	"bsky.app":       {},

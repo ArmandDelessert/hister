@@ -98,8 +98,8 @@ func TestDiscourseRunsBeforeJSONLD(t *testing.T) {
 	if err := Extract(doc); err != nil {
 		t.Fatalf("Extract failed: %v", err)
 	}
-	if got := doc.Metadata["type"]; got != "DiscourseTopic" {
-		t.Fatalf("metadata type = %#v, want DiscourseTopic", got)
+	if got := doc.Metadata["type"]; got != "discourse" {
+		t.Fatalf("metadata type = %#v, want discourse", got)
 	}
 	if _, exists := doc.Metadata["jsonld"]; exists {
 		t.Fatal("JSON LD metadata was extracted before Discourse stopped the chain")

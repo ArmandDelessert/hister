@@ -141,7 +141,7 @@ func (e *RedditExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
-	d.Metadata["type"] = "RedditPost"
+	d.Metadata["type"] = "reddit"
 	setMetadata(d.Metadata, "author", post.Author)
 	setMetadata(d.Metadata, "subreddit", post.Subreddit)
 	setMetadata(d.Metadata, "published", post.Published)

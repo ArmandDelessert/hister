@@ -178,7 +178,7 @@ func TestExtractPreloadedAndRenderedPosts(t *testing.T) {
 		}
 	}
 	for key, want := range map[string]any{
-		"type":            "DiscourseTopic",
+		"type":            "discourse",
 		"topic_id":        "42",
 		"author":          "Alice Example (@alice)",
 		"published":       "2026-08-14T08:00:00Z",

@@ -14,7 +14,7 @@ cases:
         - Accepted Solution
       min_text_length: 2000
       metadata:
-        type: DiscourseTopic
+        type: discourse
         topic_id: '104150'
         category: New to Julia
         accepted_answer: 3
@@ -42,7 +42,7 @@ cases:
         - cybersecurity
       min_text_length: 500
       metadata:
-        type: DiscourseTopic
+        type: discourse
         topic_id: '77701'
       metadata_minimums:
         posts: 2
@@ -150,7 +150,7 @@ cases:
         - reduce my dependence on online search engines
       min_text_length: 1000
       metadata:
-        type: RedditPost
+        type: reddit
         post_id: 1sl5dzx
         subreddit: r/selfhosted
       preview_contains:

@@ -119,7 +119,7 @@ func (e *DiscourseExtractor) Extract(d *document.Document) (types.ExtractorState
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
-	d.Metadata["type"] = "DiscourseTopic"
+	d.Metadata["type"] = "discourse"
 	d.Metadata["topic_id"] = strconv.FormatInt(topic.ID, 10)
 	d.Metadata["posts"] = len(topic.Posts)
 	d.Metadata["replies"] = len(topic.Posts)

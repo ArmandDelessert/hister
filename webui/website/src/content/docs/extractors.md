@@ -432,7 +432,7 @@ pass.
 Handles Bluesky profiles, custom feeds, and post threads by splitting every
 available post into a separate document. Each document receives its canonical
 `bsky.app` URL, author, handle, publication time, and a
-`type: bluesky_post` metadata marker. The source page itself is not indexed.
+`type: bluesky` metadata marker. The source page itself is not indexed.
 
 The extractor prefers schema.org `DiscussionForumPosting` and `Comment` data
 published by Bluesky. This supports profile and individual post pages even

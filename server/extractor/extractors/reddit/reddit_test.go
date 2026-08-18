@@ -116,7 +116,7 @@ func TestExtractShredditPostAndVisibleComments(t *testing.T) {
 		t.Fatalf("nested reply was not extracted exactly once:\n%s", d.Text)
 	}
 	for key, want := range map[string]any{
-		"type":      "RedditPost",
+		"type":      "reddit",
 		"author":    "post_author",
 		"subreddit": "r/golang",
 		"published": "2026-08-12T10:00:00Z",

@@ -306,6 +306,39 @@ func TestSearchFiltersMetadataSourceByLatestUpdate(t *testing.T) {
 	}
 }
 
+func TestSearchFiltersMetadataAlternation(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+
+	docs := []*document.Document{
+		{URL: "https://example.com/toot", Metadata: map[string]any{"type": "toot"}, Processed: true},
+		{URL: "https://example.com/tweet", Metadata: map[string]any{"type": "tweet"}, Processed: true},
+		{URL: "https://example.com/discourse", Metadata: map[string]any{"type": "discourse"}, Processed: true},
+	}
+	for _, doc := range docs {
+		if err := idx.Add(doc); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	res, err := idx.Search(&Query{Text: "metadata.type:(toot|tweet)"})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(res.Documents) != 2 {
+		t.Fatalf("Search returned %d documents, want 2", len(res.Documents))
+	}
+	urls := make(map[string]bool, len(res.Documents))
+	for _, doc := range res.Documents {
+		urls[doc.URL] = true
+	}
+	for _, want := range docs[:2] {
+		if !urls[want.URL] {
+			t.Errorf("Search did not return %q", want.URL)
+		}
+	}
+}
+
 func TestSearchFiltersByVisitCount(t *testing.T) {
 	idxCfg := testutil.Config(t)
 	idx := newTestIndexer(t, idxCfg)

@@ -659,6 +659,27 @@ func Test_build_alternation(t *testing.T) {
 	asDisjunction(t, dq.Disjuncts[1])
 }
 
+func Test_build_metadata_alternation(t *testing.T) {
+	bq := buildBoolQ(t, "metadata.type:(toot|tweet)")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	dq := asDisjunction(t, clauses[0])
+	if len(dq.Disjuncts) != 2 {
+		t.Fatalf("expected 2 disjuncts, got %d", len(dq.Disjuncts))
+	}
+	for i, want := range []string{"toot", "tweet"} {
+		tq := asTerm(t, dq.Disjuncts[i])
+		if tq.Term != want {
+			t.Errorf("term %d = %q, want %q", i, tq.Term, want)
+		}
+		if tq.FieldVal != "metadata.type" {
+			t.Errorf("field %d = %q, want metadata.type", i, tq.FieldVal)
+		}
+	}
+}
+
 // Test for issue #274: field:(a|b) alternation syntax
 func Test_build_domain_alternation(t *testing.T) {
 	bq := buildBoolQ(t, "domain:(hister.org|docs.hister.org)")

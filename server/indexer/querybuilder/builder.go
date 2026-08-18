@@ -390,6 +390,25 @@ func createMatchPhraseQuery(s string, boost float64) query.Query {
 	return q
 }
 
+func buildFieldAlternationQuery(field, value string, now time.Time) (query.Query, bool) {
+	if !strings.HasPrefix(value, "(") || !strings.HasSuffix(value, ")") {
+		return nil, false
+	}
+	parts, err := parseAlternationParts(value[1 : len(value)-1])
+	if err != nil || len(parts) == 0 {
+		return nil, false
+	}
+	queries := make([]query.Query, 0, len(parts))
+	for _, part := range parts {
+		partQuery, _ := getTokenQuery(Token{Type: TokenWord, Value: field + ":" + part.Value}, now)
+		queries = append(queries, partQuery)
+	}
+	if len(queries) == 1 {
+		return queries[0], true
+	}
+	return bleve.NewDisjunctionQuery(queries...), true
+}
+
 func getTokenQuery(t Token, now time.Time) (query.Query, bool) {
 	negated := false
 	switch t.Type {
@@ -418,14 +437,19 @@ func getTokenQuery(t Token, now time.Time) (query.Query, bool) {
 			return query.NewMatchAllQuery(), negated
 		}
 		if strings.HasPrefix(t.Value, "metadata.") && strings.Contains(t.Value, ":") {
-			metadataField := strings.Split(t.Value, ":")[0]
-			v := strings.TrimPrefix(t.Value, metadataField+":")
+			metadataField, v, _ := strings.Cut(t.Value, ":")
+			if q, ok := buildFieldAlternationQuery(metadataField, v, now); ok {
+				return q, negated
+			}
 			q := bleve.NewTermQuery(v)
 			q.SetField(metadataField)
 			return q, negated
 		}
 		field, v, hasField := fieldFilterValue(t.Value)
 		if hasField {
+			if q, ok := buildFieldAlternationQuery(field.Name, v, now); ok {
+				return q, negated
+			}
 			switch field.Kind {
 			case searchschema.FieldKindEnum:
 				if value, ok := searchschema.Value(field.ValueSet, v); ok {
@@ -454,25 +478,6 @@ func getTokenQuery(t Token, now time.Time) (query.Query, bool) {
 			if strings.HasPrefix(v, "-") && len(v) > 1 {
 				negated = true
 				v = v[1:]
-			}
-			// Handle parenthesized alternation groups like field:(a|b|c)
-			if strings.HasPrefix(v, "(") && strings.HasSuffix(v, ")") {
-				inner := v[1 : len(v)-1]
-				parts, err := parseAlternationParts(inner)
-				if err == nil {
-					if len(parts) > 1 {
-						qs := []query.Query{}
-						for _, p := range parts {
-							partToken := Token{Type: TokenWord, Value: field.Name + ":" + p.Value}
-							q, _ := getTokenQuery(partToken, now)
-							qs = append(qs, q)
-						}
-						return bleve.NewDisjunctionQuery(qs...), negated
-					}
-					if len(parts) == 1 {
-						v = parts[0].Value
-					}
-				}
 			}
 			return buildFieldQuery(field.Name, v), negated
 		}

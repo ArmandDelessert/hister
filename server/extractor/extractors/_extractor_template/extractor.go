@@ -9,7 +9,7 @@
 //  4. Rename TemplateExtractor to something descriptive.
 //  5. Update matchURLPrefix (and the Match function) for your target site.
 //  6. Implement Extract and Preview.
-//  7. Register the extractor in server/extractor/extractor.go.
+//  7. Register the extractor in DefaultExtractors in registry.go.
 //
 // The directory name starts with "_" so the Go toolchain ignores it during
 // normal builds. That means this file is never compiled as-is, but it is valid
@@ -22,10 +22,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // matchURLPrefix is the URL prefix this extractor targets.
@@ -35,7 +33,7 @@ const matchURLPrefix = "https://example.com/"
 // TemplateExtractor extracts content from example.com pages.
 // Rename this type to reflect the site or content type you are targeting.
 type TemplateExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 // Name returns a short human-readable identifier used in log messages and as
@@ -52,8 +50,8 @@ func (e *TemplateExtractor) Description() string {
 
 // Capabilities declares which phases this extractor participates in. Set
 // Enrich when it only annotates documents and should never select their body.
-func (e *TemplateExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *TemplateExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
 // GetConfig returns the extractor's current configuration, or built-in
@@ -66,9 +64,9 @@ func (e *TemplateExtractor) Capabilities() types.ExtractorCapabilities {
 // Declare every supported option key with its default value in Options.
 // extractor.Init merges defaults with any user-supplied values before calling
 // SetConfig, so SetConfig always receives the fully resolved map.
-func (e *TemplateExtractor) GetConfig() *config.Extractor {
+func (e *TemplateExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{
+		return &sdk.Config{
 			Enable:  true,
 			Options: map[string]any{
 				// Declare extractor-specific options and their defaults here.
@@ -84,7 +82,7 @@ func (e *TemplateExtractor) GetConfig() *config.Extractor {
 // SetConfig applies cfg to the extractor.
 // Reject any unrecognised option key with a descriptive error so the user
 // gets immediate feedback about typos in the config file.
-func (e *TemplateExtractor) SetConfig(c *config.Extractor) error {
+func (e *TemplateExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		switch k {
 		// List accepted option keys here. Example:
@@ -105,7 +103,7 @@ func (e *TemplateExtractor) SetConfig(c *config.Extractor) error {
 //	URL prefix:  strings.HasPrefix(d.URL, matchURLPrefix)
 //	Exact domain: d.Domain == "example.com"
 //	Path suffix:  strings.HasSuffix(d.URL, ".rss")
-func (e *TemplateExtractor) Match(d *document.Document) bool {
+func (e *TemplateExtractor) Match(d *sdk.Document) bool {
 	return strings.HasPrefix(d.URL, matchURLPrefix) && len(d.URL) > len(matchURLPrefix)
 }
 
@@ -124,12 +122,12 @@ func (e *TemplateExtractor) Match(d *document.Document) bool {
 //     (e.g. paginated content, linked sub-pages).
 //   - Set d.SkipIndexing = true when the current document should not be
 //     indexed itself and only its ExtraDocuments matter.
-func (e *TemplateExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *TemplateExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
 		// Return ExtractFallback so the next extractor can try. Use
 		// AbortExtraction only when further processing would be unsafe.
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	// --- Title -----------------------------------------------------------
@@ -146,7 +144,7 @@ func (e *TemplateExtractor) Extract(d *document.Document) types.ExtractResult {
 	d.Text = strings.TrimSpace(b.String())
 
 	if d.Title == "" && d.Text == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
 
 	// --- Metadata (optional) --------------------------------------------
@@ -165,14 +163,14 @@ func (e *TemplateExtractor) Extract(d *document.Document) types.ExtractResult {
 	//
 	//   doc.Find("a.related-link").Each(func(_ int, s *goquery.Selection) {
 	//       if href, ok := s.Attr("href"); ok {
-	//           d.ExtraDocuments = append(d.ExtraDocuments, &document.Document{
+	//           d.ExtraDocuments = append(d.ExtraDocuments, &sdk.Document{
 	//               URL:    resolveAbsoluteURL(d.URL, href),
 	//               UserID: d.UserID,
 	//           })
 	//       }
 	//   })
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 // Preview returns a rendered representation of the document for the preview
@@ -181,10 +179,10 @@ func (e *TemplateExtractor) Extract(d *document.Document) types.ExtractResult {
 //
 // If you do not need a custom preview, return PreviewFallback and the generic
 // readability or basic extractor will provide one automatically.
-func (e *TemplateExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *TemplateExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -200,12 +198,12 @@ func (e *TemplateExtractor) Preview(d *document.Document) types.PreviewResult {
 	}
 
 	if b.Len() == 0 {
-		return types.PreviewFallback(fmt.Errorf("no preview content"))
+		return sdk.PreviewFallback(fmt.Errorf("no preview content"))
 	}
 
 	// Always sanitize HTML before returning it to strip scripts, event
 	// handlers, and other potentially unsafe markup.
-	return types.Previewed(types.PreviewResponse{
+	return sdk.Previewed(sdk.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(b.String()),
 		// Template: "my_template", // leave empty to use the default layout
 	})

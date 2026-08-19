@@ -112,12 +112,12 @@ Writing a new extractor is straightforward. You implement a single Go interface:
 type Extractor interface {
     Name() string
     Description() string
-    Capabilities() types.ExtractorCapabilities
-    Match(*document.Document) bool
-    Extract(*document.Document) types.ExtractResult
-    Preview(*document.Document) types.PreviewResult
-    GetConfig() *config.Extractor
-    SetConfig(*config.Extractor) error
+    Capabilities() sdk.Capabilities
+    Match(*sdk.Document) bool
+    Extract(*sdk.Document) sdk.ExtractResult
+    Preview(*sdk.Document) sdk.PreviewResult
+    GetConfig() *sdk.Config
+    SetConfig(*sdk.Config) error
 }
 ```
 
@@ -154,16 +154,14 @@ import (
     "strings"
 
     "github.com/PuerkitoBio/goquery"
-    "github.com/asciimoo/hister/config"
-    "github.com/asciimoo/hister/server/document"
+    "github.com/asciimoo/hister/server/extractor/sdk"
     "github.com/asciimoo/hister/server/sanitizer"
-    "github.com/asciimoo/hister/server/types"
 )
 
 const matchPrefix = "https://example.com/posts/"
 
 type MySiteExtractor struct {
-    cfg *config.Extractor
+    cfg *sdk.Config
 }
 
 func (e *MySiteExtractor) Name() string { return "MySite" }
@@ -172,41 +170,41 @@ func (e *MySiteExtractor) Description() string {
     return "Renders example.com posts"
 }
 
-func (e *MySiteExtractor) Capabilities() types.ExtractorCapabilities {
-    return types.ExtractorCapabilities{Preview: true}
+func (e *MySiteExtractor) Capabilities() sdk.Capabilities {
+    return sdk.Capabilities{Preview: true}
 }
 
-func (e *MySiteExtractor) Match(d *document.Document) bool {
+func (e *MySiteExtractor) Match(d *sdk.Document) bool {
     return strings.HasPrefix(d.URL, matchPrefix)
 }
 
-func (e *MySiteExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *MySiteExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
     // Let the generic Readability extractor handle indexing.
-    return types.ExtractFallback(nil)
+    return sdk.ExtractFallback(nil)
 }
 
-func (e *MySiteExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *MySiteExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
     doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
     if err != nil {
-        return types.PreviewFallback(err)
+        return sdk.PreviewFallback(err)
     }
     content, err := doc.Find("article.post-body").Html()
     if err != nil {
-        return types.PreviewFallback(err)
+        return sdk.PreviewFallback(err)
     }
-    return types.Previewed(types.PreviewResponse{
+    return sdk.Previewed(sdk.PreviewResponse{
         Content: sanitizer.SanitizeHTML(content),
     })
 }
 
-func (e *MySiteExtractor) GetConfig() *config.Extractor {
+func (e *MySiteExtractor) GetConfig() *sdk.Config {
     if e.cfg == nil {
-        return &config.Extractor{Enable: true, Options: map[string]any{}}
+        return &sdk.Config{Enable: true, Options: map[string]any{}}
     }
     return e.cfg
 }
 
-func (e *MySiteExtractor) SetConfig(c *config.Extractor) error {
+func (e *MySiteExtractor) SetConfig(c *sdk.Config) error {
     for k := range c.Options {
         return fmt.Errorf("unknown option %q", k)
     }
@@ -216,8 +214,9 @@ func (e *MySiteExtractor) SetConfig(c *config.Extractor) error {
 ```
 
 Once you have the struct, place it in a new subdirectory under
-`server/extractor/extractors/` and prepend an instance to the `extractors` slice
-in `server/extractor/extractor.go`. That is all it takes.
+`server/extractor/extractors/` and add an instance to `DefaultExtractors` in
+`server/extractor/registry.go`, before the generic fallbacks. That is all it
+takes.
 
 ## A Few Things Worth Knowing
 

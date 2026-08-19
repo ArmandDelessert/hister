@@ -76,11 +76,13 @@ func (e *stubExtractor) SetConfig(cfg *config.Extractor) error {
 	return nil
 }
 
-func useExtractors(t *testing.T, replacements ...Extractor) {
+func useExtractors(t *testing.T, replacements ...Extractor) *Registry {
 	t.Helper()
-	original := extractors
-	extractors = replacements
-	t.Cleanup(func() { extractors = original })
+	registry, err := NewRegistry(replacements...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return registry
 }
 
 func TestReadabilityPreviewSanitizesMetaRefresh(t *testing.T) {
@@ -184,7 +186,7 @@ func TestEnrichersRunBeforeContentExtractor(t *testing.T) {
 }
 
 func TestRegisteredExtractorCapabilities(t *testing.T) {
-	for _, candidate := range extractors {
+	for _, candidate := range DefaultRegistry().Extractors() {
 		caps := candidate.Capabilities()
 		if !caps.Enrich && !caps.Extract && !caps.Preview {
 			t.Errorf("%s declares no capabilities", candidate.Name())
@@ -203,6 +205,38 @@ func TestRegisteredExtractorCapabilities(t *testing.T) {
 			if caps.Enrich || !caps.Extract || !caps.Preview {
 				t.Errorf("%s capabilities = %+v, want content and preview", candidate.Name(), caps)
 			}
+		}
+	}
+}
+
+func TestDefaultRegistryOrder(t *testing.T) {
+	want := []string{
+		"Markdown",
+		"OrgMode",
+		"EmbeddedVideo",
+		"Discourse",
+		"JSONLD",
+		"Reddit",
+		"StackExchange",
+		"GoDoc",
+		"GitHub",
+		"Lobsters",
+		"Wikipedia",
+		"Mastodon",
+		"Bluesky",
+		"Twitter",
+		"Notion",
+		"Ytdlp",
+		"Readability",
+		"Basic",
+	}
+	registered := DefaultRegistry().Extractors()
+	if len(registered) != len(want) {
+		t.Fatalf("registered extractor count = %d, want %d", len(registered), len(want))
+	}
+	for i, candidate := range registered {
+		if candidate.Name() != want[i] {
+			t.Errorf("extractor %d = %q, want %q", i, candidate.Name(), want[i])
 		}
 	}
 }
@@ -254,9 +288,9 @@ func TestInvalidExtractionResultStopsTheChain(t *testing.T) {
 			return types.ExtractResult{}
 		},
 	}
-	useExtractors(t, invalid)
+	registry := useExtractors(t, invalid)
 
-	err := Extract(&document.Document{URL: "https://example.com"})
+	err := registry.Extract(&document.Document{URL: "https://example.com"})
 	if !errors.Is(err, ErrInvalidExtractorResult) {
 		t.Fatalf("Extract error = %v, want ErrInvalidExtractorResult", err)
 	}
@@ -277,10 +311,10 @@ func TestExplicitPreviewFallsBack(t *testing.T) {
 			return types.Previewed(types.PreviewResponse{Content: "fallback preview"})
 		},
 	}
-	useExtractors(t, first, second)
+	registry := useExtractors(t, first, second)
 	doc := &document.Document{URL: "https://example.com"}
 
-	response, err := Preview(doc, "First")
+	response, err := registry.Preview(doc, "First")
 	if err != nil {
 		t.Fatalf("Preview failed: %v", err)
 	}
@@ -296,8 +330,8 @@ func TestExplicitPreviewRequiresEnabledMatchingExtractor(t *testing.T) {
 			capabilities: types.ExtractorCapabilities{Preview: true},
 			cfg:          &config.Extractor{Enable: false, Options: map[string]any{}},
 		}
-		useExtractors(t, candidate)
-		_, err := Preview(&document.Document{URL: "https://example.com"}, candidate.Name())
+		registry := useExtractors(t, candidate)
+		_, err := registry.Preview(&document.Document{URL: "https://example.com"}, candidate.Name())
 		if !errors.Is(err, ErrNoExtractor) {
 			t.Fatalf("Preview error = %v, want ErrNoExtractor", err)
 		}
@@ -309,8 +343,8 @@ func TestExplicitPreviewRequiresEnabledMatchingExtractor(t *testing.T) {
 			capabilities: types.ExtractorCapabilities{Preview: true},
 			match:        func(*document.Document) bool { return false },
 		}
-		useExtractors(t, candidate)
-		_, err := Preview(&document.Document{URL: "https://example.com"}, candidate.Name())
+		registry := useExtractors(t, candidate)
+		_, err := registry.Preview(&document.Document{URL: "https://example.com"}, candidate.Name())
 		if !errors.Is(err, ErrNoExtractor) {
 			t.Fatalf("Preview error = %v, want ErrNoExtractor", err)
 		}
@@ -344,12 +378,12 @@ func TestExtractorContextPropagation(t *testing.T) {
 			return types.Previewed(types.PreviewResponse{Content: "preview"})
 		},
 	}
-	useExtractors(t, content, preview)
+	registry := useExtractors(t, content, preview)
 
-	if err := ExtractContext(ctx, &document.Document{URL: "https://example.com"}); err != nil {
+	if err := registry.ExtractContext(ctx, &document.Document{URL: "https://example.com"}); err != nil {
 		t.Fatalf("Extract failed: %v", err)
 	}
-	if _, err := PreviewContext(ctx, &document.Document{URL: "https://example.com"}, ""); err != nil {
+	if _, err := registry.PreviewContext(ctx, &document.Document{URL: "https://example.com"}, ""); err != nil {
 		t.Fatalf("Preview failed: %v", err)
 	}
 }
@@ -373,13 +407,108 @@ func TestCanceledContextStopsExtractorFallback(t *testing.T) {
 			return types.Extracted()
 		},
 	}
-	useExtractors(t, first, second)
+	registry := useExtractors(t, first, second)
 
-	err := ExtractContext(ctx, &document.Document{URL: "https://example.com"})
+	err := registry.ExtractContext(ctx, &document.Document{URL: "https://example.com"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Extract error = %v, want context.Canceled", err)
 	}
 	if secondCalled {
 		t.Fatal("fallback extractor ran after cancellation")
+	}
+}
+
+func TestRegisterBeforeControlsChainOrder(t *testing.T) {
+	fallback := &stubExtractor{
+		name:         "Fallback",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+		extract: func(d *document.Document) types.ExtractResult {
+			d.Text = "fallback"
+			return types.Extracted()
+		},
+	}
+	preferred := &stubExtractor{
+		name:         "Preferred",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+		extract: func(d *document.Document) types.ExtractResult {
+			d.Text = "preferred"
+			return types.Extracted()
+		},
+	}
+	registry := useExtractors(t, fallback)
+	if err := registry.RegisterBefore("fallback", preferred); err != nil {
+		t.Fatal(err)
+	}
+
+	doc := &document.Document{URL: "https://example.com"}
+	if err := registry.Extract(doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Text != "preferred" {
+		t.Fatalf("extracted text = %q, want preferred", doc.Text)
+	}
+}
+
+func TestRegistryRejectsInvalidRegistration(t *testing.T) {
+	registered := &stubExtractor{
+		name:         "Registered",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+	}
+	registry := useExtractors(t, registered)
+
+	duplicate := &stubExtractor{
+		name:         "registered",
+		capabilities: types.ExtractorCapabilities{Preview: true},
+	}
+	if err := registry.Register(duplicate); !errors.Is(err, ErrDuplicateExtractor) {
+		t.Fatalf("duplicate registration error = %v, want ErrDuplicateExtractor", err)
+	}
+
+	invalid := &stubExtractor{name: "Invalid"}
+	if err := registry.Register(invalid); !errors.Is(err, ErrInvalidExtractor) {
+		t.Fatalf("invalid registration error = %v, want ErrInvalidExtractor", err)
+	}
+
+	var nilExtractor *stubExtractor
+	if err := registry.Register(nilExtractor); !errors.Is(err, ErrInvalidExtractor) {
+		t.Fatalf("nil registration error = %v, want ErrInvalidExtractor", err)
+	}
+}
+
+func TestRegistryExtractorSnapshotIsIndependent(t *testing.T) {
+	registered := &stubExtractor{
+		name:         "Registered",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+	}
+	registry := useExtractors(t, registered)
+
+	snapshot := registry.Extractors()
+	snapshot[0] = nil
+	if got := registry.Extractors()[0]; got != registered {
+		t.Fatalf("registered extractor changed through snapshot: %v", got)
+	}
+}
+
+func TestRegistryInstancesHaveIndependentConfiguration(t *testing.T) {
+	first := &stubExtractor{
+		name:         "Custom",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+	}
+	second := &stubExtractor{
+		name:         "Custom",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+	}
+	firstRegistry := useExtractors(t, first)
+	_ = useExtractors(t, second)
+	if err := firstRegistry.Init(map[string]*config.Extractor{
+		"custom": {Enable: false, Options: map[string]any{}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if first.GetConfig().Enable {
+		t.Fatal("configured extractor remained enabled")
+	}
+	if !second.GetConfig().Enable {
+		t.Fatal("second registry inherited configuration")
 	}
 }

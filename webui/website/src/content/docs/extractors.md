@@ -125,8 +125,10 @@ If no extractor succeeds, `ErrNoExtractor` is returned.
 
 ## The Extractor interface
 
-A custom extractor must implement the following Go interface (defined in
-[`server/extractor/extractor.go`](https://github.com/asciimoo/hister/blob/main/server/extractor/extractor.go)):
+A custom extractor can depend on the focused
+[`server/extractor/sdk`](https://github.com/asciimoo/hister/tree/main/server/extractor/sdk)
+package instead of importing Hister's configuration, document, and result
+packages separately. It must implement this interface:
 
 ```go
 type Extractor interface {
@@ -137,37 +139,37 @@ type Extractor interface {
     Description() string
 
     // Capabilities declares the extractor phases this implementation joins.
-    Capabilities() types.ExtractorCapabilities
+    Capabilities() sdk.Capabilities
 
     // Match reports whether this extractor applies to the given document.
     // Extract and Preview are only called when Match returns true.
-    Match(*document.Document) bool
+    Match(*sdk.Document) bool
 
     // Extract rewrites the document before it is added to the index.
     // Return an explicit success, fallback, or abort result.
-    Extract(*document.Document) types.ExtractResult
+    Extract(*sdk.Document) sdk.ExtractResult
 
     // Preview returns a rendered representation suitable for display.
     // Return an explicit success, fallback, or abort result.
-    Preview(*document.Document) types.PreviewResult
+    Preview(*sdk.Document) sdk.PreviewResult
 
     // GetConfig returns the extractor's current configuration.
     // Must return sensible defaults before SetConfig is called.
-    GetConfig() *config.Extractor
+    GetConfig() *sdk.Config
 
     // SetConfig applies user-supplied configuration on top of defaults.
     // Return an error for any unrecognised option key.
-    SetConfig(*config.Extractor) error
+    SetConfig(*sdk.Config) error
 }
 ```
 
-### `ExtractorCapabilities`
+### `Capabilities`
 
 Capabilities keep metadata enrichment, searchable content extraction, and
 preview rendering independent:
 
 ```go
-type ExtractorCapabilities struct {
+type Capabilities struct {
     Enrich  bool
     Extract bool
     Preview bool
@@ -181,18 +183,17 @@ declare both content and preview capabilities.
 
 ### Result types
 
-[`types.ExtractResult`](https://github.com/asciimoo/hister/blob/main/server/types/types.go)
-and `types.PreviewResult` are defined in the `server/types` package. Construct
-them with the helpers below:
+`sdk.ExtractResult` and `sdk.PreviewResult` describe the outcome of each phase.
+Construct them with these helpers:
 
 ```go
-return types.Extracted()
-return types.ExtractFallback(err)
-return types.AbortExtraction(err)
+return sdk.Extracted()
+return sdk.ExtractFallback(err)
+return sdk.AbortExtraction(err)
 
-return types.Previewed(types.PreviewResponse{Content: html})
-return types.PreviewFallback(err)
-return types.AbortPreview(err)
+return sdk.Previewed(sdk.PreviewResponse{Content: html})
+return sdk.PreviewFallback(err)
+return sdk.AbortPreview(err)
 ```
 
 Fallback errors are optional diagnostics. Abort helpers always carry an error.
@@ -201,13 +202,13 @@ ambiguous result.
 
 ### `Document`
 
-The whole [`document.Document`](https://github.com/asciimoo/hister/blob/main/server/document/document.go)
-struct is passed to `Match`, `Extract`, and `Preview`.
+`sdk.Document` aliases the complete
+[`document.Document`](https://github.com/asciimoo/hister/blob/main/server/document/document.go)
+type. It is passed to `Match`, `Extract`, and `Preview`.
 
 ### `PreviewResponse`
 
-[`types.PreviewResponse`](https://github.com/asciimoo/hister/blob/main/server/types/types.go)
-carries the output of `Preview`:
+`sdk.PreviewResponse` carries the output of `Preview`:
 
 ```go
 type PreviewResponse struct {
@@ -218,10 +219,25 @@ type PreviewResponse struct {
 
 ### Registering a new extractor
 
-Add an instance of your extractor to the `extractors` slice in
-[`server/extractor/extractor.go`](https://github.com/asciimoo/hister/blob/main/server/extractor/extractor.go).
-Place it **before** the generic fallbacks so that it takes priority for the
-pages it targets.
+Built in extractors are constructed by `DefaultExtractors` in
+[`server/extractor/registry.go`](https://github.com/asciimoo/hister/blob/main/server/extractor/registry.go).
+Add an instance there before the generic fallbacks so it takes priority for
+the pages it targets.
+
+Applications can also create an isolated chain or extend a fresh default one:
+
+```go
+registry := extractor.NewDefaultRegistry()
+if err := registry.RegisterBefore("Readability", &MyExtractor{}); err != nil {
+    return err
+}
+if err := registry.Init(configuredExtractors); err != nil {
+    return err
+}
+```
+
+The package level extraction functions remain available and use
+`extractor.DefaultRegistry()`.
 
 ## Writing a new extractor
 
@@ -241,8 +257,8 @@ builds, but the file itself is valid, fully-commented Go.
 6. Implement `Extract` to populate `d.Title`, `d.Text`, and optionally `d.Metadata`.
 7. Implement `Preview` to return sanitized HTML (or return `PreviewFallback`
    to reuse the generic readability preview).
-8. Add an import and a `&MyExtractor{}` entry to the `extractors` slice in
-   `server/extractor/extractor.go`, before the `&readabilityExtractor{}` line.
+8. Add an import and a `&MyExtractor{}` entry to `DefaultExtractors` in
+   `server/extractor/registry.go`, before the readability extractor.
 
 ## Configuration
 
@@ -284,9 +300,9 @@ the extractor implementation; each extractor validates its `options` in
 when no config has been applied yet):
 
 ```go
-func (e *MyExtractor) GetConfig() *config.Extractor {
+func (e *MyExtractor) GetConfig() *sdk.Config {
     if e.cfg == nil {
-        return &config.Extractor{
+        return &sdk.Config{
             Enable:  true,
             Options: map[string]any{},
         }
@@ -299,7 +315,7 @@ func (e *MyExtractor) GetConfig() *config.Extractor {
 the config:
 
 ```go
-func (e *MyExtractor) SetConfig(c *config.Extractor) error {
+func (e *MyExtractor) SetConfig(c *sdk.Config) error {
     allowed := map[string]bool{"timeout": true}
     for k := range c.Options {
         if !allowed[k] {
@@ -312,7 +328,7 @@ func (e *MyExtractor) SetConfig(c *config.Extractor) error {
 ```
 
 Config merging (default → user-supplied) is performed automatically by
-`extractor.Init` before `SetConfig` is called, so `SetConfig` always receives
+`Registry.Init` before `SetConfig` is called, so `SetConfig` always receives
 the fully resolved configuration.
 
 ## Built-in extractors

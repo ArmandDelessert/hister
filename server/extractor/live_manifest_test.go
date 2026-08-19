@@ -88,6 +88,7 @@ func validateLiveManifest(manifest *liveManifest) error {
 		return fmt.Errorf("live extractor manifest has no cases")
 	}
 	seen := make(map[string]struct{}, len(manifest.Cases))
+	extractors := DefaultRegistry().Extractors()
 	covered := make(map[string]struct{}, len(extractors))
 	for index, testCase := range manifest.Cases {
 		prefix := fmt.Sprintf("live extractor case %d", index+1)
@@ -140,7 +141,7 @@ func validateLiveManifest(manifest *liveManifest) error {
 }
 
 func liveExtractorByName(name string) Extractor {
-	for _, candidate := range extractors {
+	for _, candidate := range DefaultRegistry().Extractors() {
 		if strings.EqualFold(candidate.Name(), name) {
 			return candidate
 		}

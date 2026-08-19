@@ -8,7 +8,6 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io"
-	"maps"
 	"net/url"
 	"strings"
 	"time"
@@ -19,70 +18,19 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/extractor/extractors/bluesky"
-	"github.com/asciimoo/hister/server/extractor/extractors/discourse"
-	"github.com/asciimoo/hister/server/extractor/extractors/embeddedvideo"
-	"github.com/asciimoo/hister/server/extractor/extractors/github"
-	"github.com/asciimoo/hister/server/extractor/extractors/godoc"
-	"github.com/asciimoo/hister/server/extractor/extractors/jsonld"
-	"github.com/asciimoo/hister/server/extractor/extractors/lobsters"
-	"github.com/asciimoo/hister/server/extractor/extractors/markdown"
-	"github.com/asciimoo/hister/server/extractor/extractors/mastodon"
-	"github.com/asciimoo/hister/server/extractor/extractors/notion"
-	"github.com/asciimoo/hister/server/extractor/extractors/org"
-	"github.com/asciimoo/hister/server/extractor/extractors/reddit"
-	"github.com/asciimoo/hister/server/extractor/extractors/stackexchange"
-	"github.com/asciimoo/hister/server/extractor/extractors/twitter"
-	"github.com/asciimoo/hister/server/extractor/extractors/wikipedia"
-	"github.com/asciimoo/hister/server/extractor/extractors/ytdlp"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
 	"github.com/asciimoo/hister/server/types"
 )
 
-// Extractor extracts content from a Document.
-type Extractor interface {
-	// Name returns a human-readable identifier for the extractor.
-	Name() string
+// Extractor is retained as an alias for the stable SDK contract.
+type Extractor = sdk.Extractor
 
-	// Description returns a short human-readable summary of what the extractor does.
-	Description() string
+// ContextExtractor is retained as an alias for the stable SDK contract.
+type ContextExtractor = sdk.ContextExtractor
 
-	// Capabilities declares which extractor phases this implementation joins.
-	Capabilities() types.ExtractorCapabilities
-
-	// Match reports whether this extractor is applicable to the given document.
-	// Extract and Preview will only be called when Match returns true.
-	Match(*document.Document) bool
-
-	// Extract rewrites documents before the documents are added to the index.
-	// It returns an explicit success, fallback, or abort result.
-	Extract(*document.Document) types.ExtractResult
-
-	// Preview returns a rendered representation of the document suitable for
-	// display (e.g. readable HTML or plain text).
-	// It returns an explicit success, fallback, or abort result.
-	Preview(*document.Document) types.PreviewResult
-
-	// GetConfig returns the extractor's current configuration. Before
-	// SetConfig is called, implementations must return their default config.
-	GetConfig() *config.Extractor
-
-	// SetConfig applies cfg to the extractor, overwriting defaults.
-	// Implementations should return an error for unrecognised option keys.
-	SetConfig(*config.Extractor) error
-}
-
-// ContextExtractor is implemented by extractors whose extraction work can be
-// canceled. The chain uses ExtractContext instead of Extract when available.
-type ContextExtractor interface {
-	ExtractContext(context.Context, *document.Document) types.ExtractResult
-}
-
-// ContextPreviewer is implemented by extractors whose preview work can be
-// canceled. The chain uses PreviewContext instead of Preview when available.
-type ContextPreviewer interface {
-	PreviewContext(context.Context, *document.Document) types.PreviewResult
-}
+// ContextPreviewer is retained as an alias for the stable SDK contract.
+type ContextPreviewer = sdk.ContextPreviewer
 
 func extractWithContext(ctx context.Context, e Extractor, d *document.Document) types.ExtractResult {
 	if contextual, ok := e.(ContextExtractor); ok {
@@ -121,8 +69,13 @@ type ExtractorInfo struct {
 // matches d, in chain order. Options is omitted so the result is safe to send
 // to clients.
 func ListMatching(d *document.Document) []ExtractorInfo {
+	return defaultRegistry.ListMatching(d)
+}
+
+// ListMatching returns matching enabled extractors in registry order.
+func (r *Registry) ListMatching(d *document.Document) []ExtractorInfo {
 	infos := make([]ExtractorInfo, 0)
-	for _, e := range extractors {
+	for _, e := range r.Extractors() {
 		if !e.GetConfig().Enable {
 			continue
 		}
@@ -141,8 +94,14 @@ func ListMatching(d *document.Document) []ExtractorInfo {
 // ListMatchingPreview returns every enabled preview extractor matching d in
 // chain order. Metadata-only enrichers and content-only extractors are omitted.
 func ListMatchingPreview(d *document.Document) []ExtractorInfo {
+	return defaultRegistry.ListMatchingPreview(d)
+}
+
+// ListMatchingPreview returns matching enabled preview extractors in registry
+// order.
+func (r *Registry) ListMatchingPreview(d *document.Document) []ExtractorInfo {
 	infos := make([]ExtractorInfo, 0)
-	for _, e := range extractors {
+	for _, e := range r.Extractors() {
 		if !e.GetConfig().Enable || !e.Capabilities().Preview {
 			continue
 		}
@@ -161,6 +120,12 @@ func ListMatchingPreview(d *document.Document) []ExtractorInfo {
 // ListEnabled returns an ExtractorInfo entry for every enabled extractor in
 // chain order. Options is omitted so the result is safe to send to clients.
 func ListEnabled() []ExtractorInfo {
+	return defaultRegistry.ListEnabled()
+}
+
+// ListEnabled returns enabled extractors in registry order.
+func (r *Registry) ListEnabled() []ExtractorInfo {
+	extractors := r.Extractors()
 	infos := make([]ExtractorInfo, 0, len(extractors))
 	for _, e := range extractors {
 		if !e.GetConfig().Enable {
@@ -180,6 +145,12 @@ func ListEnabled() []ExtractorInfo {
 // order. Options is always populated; callers that should not expose
 // configuration must clear or omit it before sending to clients.
 func List() []ExtractorInfo {
+	return defaultRegistry.List()
+}
+
+// List returns every extractor in registry order, including configuration.
+func (r *Registry) List() []ExtractorInfo {
+	extractors := r.Extractors()
 	infos := make([]ExtractorInfo, 0, len(extractors))
 	for _, e := range extractors {
 		cfg := e.GetConfig()
@@ -194,61 +165,37 @@ func List() []ExtractorInfo {
 	return infos
 }
 
-var extractors = []Extractor{
-	&markdown.MarkdownExtractor{},
-	&org.OrgModeExtractor{},
-	&embeddedvideo.EmbeddedVideoExtractor{},
-	&discourse.DiscourseExtractor{},
-	&jsonld.JSONLDExtractor{},
-	&reddit.RedditExtractor{},
-	&stackexchange.StackExchangeExtractor{},
-	&godoc.GoDocExtractor{},
-	&github.GitHubExtractor{},
-	&lobsters.LobstersExtractor{},
-	&wikipedia.WikipediaExtractor{},
-	&mastodon.MastodonExtractor{},
-	&bluesky.BlueskyExtractor{},
-	&twitter.TwitterExtractor{},
-	&notion.NotionExtractor{},
-	&ytdlp.YtdlpExtractor{},
-	&readabilityExtractor{},
-	&basicExtractor{},
-}
-
 // Init applies user-supplied extractor configurations on top of each
 // extractor's defaults. It must be called before Extract or Preview.
 // cfgs is keyed by lowercased extractor name (as Viper lowercases YAML keys).
 func Init(cfgs map[string]*config.Extractor) error {
-	for _, e := range extractors {
-		def := e.GetConfig()
-		merged := &config.Extractor{
-			Enable:  def.Enable,
-			Options: make(map[string]any, len(def.Options)),
-		}
-		maps.Copy(merged.Options, def.Options)
-		if user, ok := cfgs[strings.ToLower(e.Name())]; ok && user != nil {
-			merged.Enable = user.Enable
-			maps.Copy(merged.Options, user.Options)
-		}
-		if err := e.SetConfig(merged); err != nil {
-			return fmt.Errorf("extractor %s: %w", e.Name(), err)
-		}
-	}
-	return nil
+	return defaultRegistry.Init(cfgs)
 }
 
 // Extract first runs every matching enricher, then tries matching content
 // extractors in registration order and returns the first successful result.
 // Returns ErrNoExtractor if no content extractor succeeds.
 func Extract(d *document.Document) error {
-	return ExtractContext(context.Background(), d)
+	return defaultRegistry.Extract(d)
+}
+
+// Extract runs this registry's extraction chain.
+func (r *Registry) Extract(d *document.Document) error {
+	return r.ExtractContext(context.Background(), d)
 }
 
 // ExtractContext runs the extraction chain with caller cancellation.
 func ExtractContext(ctx context.Context, d *document.Document) error {
+	return defaultRegistry.ExtractContext(ctx, d)
+}
+
+// ExtractContext runs this registry's extraction chain with caller
+// cancellation.
+func (r *Registry) ExtractContext(ctx context.Context, d *document.Document) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	extractors := r.Extractors()
 	for _, e := range extractors {
 		if !e.GetConfig().Enable || !e.Capabilities().Enrich {
 			continue
@@ -305,14 +252,25 @@ func ExtractContext(ctx context.Context, d *document.Document) error {
 // fallbacks. Explicit selection still requires the extractor to be enabled,
 // preview capable, and matched to the document.
 func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
-	return PreviewContext(context.Background(), d, name)
+	return defaultRegistry.Preview(d, name)
+}
+
+// Preview runs this registry's preview chain.
+func (r *Registry) Preview(d *document.Document, name string) (types.PreviewResponse, error) {
+	return r.PreviewContext(context.Background(), d, name)
 }
 
 // PreviewContext renders a preview with caller cancellation.
 func PreviewContext(ctx context.Context, d *document.Document, name string) (types.PreviewResponse, error) {
+	return defaultRegistry.PreviewContext(ctx, d, name)
+}
+
+// PreviewContext runs this registry's preview chain with caller cancellation.
+func (r *Registry) PreviewContext(ctx context.Context, d *document.Document, name string) (types.PreviewResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return types.PreviewResponse{}, err
 	}
+	extractors := r.Extractors()
 	start := 0
 	if name != "" {
 		lower := strings.ToLower(name)

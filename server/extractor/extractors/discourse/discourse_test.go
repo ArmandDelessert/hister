@@ -146,12 +146,12 @@ func TestExtractPreloadedAndRenderedPosts(t *testing.T) {
 		</body></html>`, preloaded),
 	}
 
-	state, err := (&DiscourseExtractor{}).Extract(d)
+	state, err := (&DiscourseExtractor{}).Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if got, want := d.Title, "How should this work?"; got != want {
 		t.Fatalf("Title = %q, want %q", got, want)
@@ -193,12 +193,12 @@ func TestExtractPreloadedAndRenderedPosts(t *testing.T) {
 		}
 	}
 
-	preview, previewState, err := (&DiscourseExtractor{}).Preview(d)
+	preview, previewState, err := (&DiscourseExtractor{}).Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview returned an error: %v", err)
 	}
-	if previewState != types.ExtractorStop {
-		t.Fatalf("Preview state = %v, want %v", previewState, types.ExtractorStop)
+	if previewState != types.ExtractorSuccess {
+		t.Fatalf("Preview state = %v, want %v", previewState, types.ExtractorSuccess)
 	}
 	for _, want := range []string{
 		"Original post",
@@ -243,8 +243,8 @@ func TestExtractCrawlerMarkup(t *testing.T) {
 		</body></html>`,
 	}
 
-	state, err := (&DiscourseExtractor{}).Extract(d)
-	if err != nil || state != types.ExtractorStop {
+	state, err := (&DiscourseExtractor{}).Extract(d).Unpack()
+	if err != nil || state != types.ExtractorSuccess {
 		t.Fatalf("Extract returned state %v and error %v", state, err)
 	}
 	for _, want := range []string{"Crawler question.", "Crawler accepted answer.", "[Accepted Solution]"} {
@@ -290,8 +290,8 @@ func TestSchemaFallback(t *testing.T) {
 		</head><body></body></html>`,
 	}
 
-	state, err := (&DiscourseExtractor{}).Extract(d)
-	if err != nil || state != types.ExtractorStop {
+	state, err := (&DiscourseExtractor{}).Extract(d).Unpack()
+	if err != nil || state != types.ExtractorSuccess {
 		t.Fatalf("Extract returned state %v and error %v", state, err)
 	}
 	for _, want := range []string{"Schema question.", "Another answer.", "Schema solution.", "[4 likes]"} {
@@ -309,12 +309,12 @@ func TestExtractRejectsNonTopicPage(t *testing.T) {
 		URL:  "https://forum.example.com/c/support/6",
 		HTML: `<meta name="generator" content="Discourse 3.3"><article data-post-id="100"><div class="cooked">Feed post</div></article>`,
 	}
-	state, err := (&DiscourseExtractor{}).Extract(d)
+	state, err := (&DiscourseExtractor{}).Extract(d).Unpack()
 	if err == nil {
 		t.Fatal("Extract returned no error for a category page")
 	}
-	if state != types.ExtractorContinue {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorContinue)
+	if state != types.ExtractorFallback {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorFallback)
 	}
 	if d.Title != "" || d.Text != "" {
 		t.Fatalf("category page was modified: %#v", d)

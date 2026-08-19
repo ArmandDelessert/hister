@@ -65,23 +65,23 @@ func (e *GoDocExtractor) Match(d *document.Document) bool {
 }
 
 // Extract does not provide a custom extractor
-func (e *GoDocExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
-	return types.ExtractorContinue, nil
+func (e *GoDocExtractor) Extract(d *document.Document) types.ExtractResult {
+	return types.ExtractFallback(nil)
 }
 
 // Preview returns the sanitized HTML of the documentation base
 // element with all relative links and image sources rewritten
 // to absolute URLs.
-func (e *GoDocExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *GoDocExtractor) Preview(d *document.Document) types.PreviewResult {
 	base, err := url.Parse(d.URL)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 	content, err := extractArticle(d.HTML, true, base)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(content)}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(content)})
 }
 
 func extractArticle(rawHTML string, renderHTML bool, base *url.URL) (string, error) {

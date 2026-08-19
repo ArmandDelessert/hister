@@ -54,17 +54,13 @@ type Extractor interface {
 	Match(*document.Document) bool
 
 	// Extract rewrites documents before the documents are added to the index.
-	// The returned ExtractorState signals how the chain should proceed:
-	// ExtractorStop means success, ExtractorContinue means try the next extractor,
-	// ExtractorAbort means stop immediately and return the error.
-	Extract(*document.Document) (types.ExtractorState, error)
+	// It returns an explicit success, fallback, or abort result.
+	Extract(*document.Document) types.ExtractResult
 
 	// Preview returns a rendered representation of the document suitable for
 	// display (e.g. readable HTML or plain text).
-	// The returned ExtractorState signals how the chain should proceed:
-	// ExtractorStop means success, ExtractorContinue means try the next extractor,
-	// ExtractorAbort means stop immediately and return the error.
-	Preview(*document.Document) (types.PreviewResponse, types.ExtractorState, error)
+	// It returns an explicit success, fallback, or abort result.
+	Preview(*document.Document) types.PreviewResult
 
 	// GetConfig returns the extractor's current configuration. Before
 	// SetConfig is called, implementations must return their default config.
@@ -78,8 +74,12 @@ type Extractor interface {
 // ErrNoExtractor is returned when no extractor can handle the document.
 var ErrNoExtractor = errors.New("no extractor found")
 
-// ErrExtractorAbort is returned when an extractor signals ExtractorAbort.
+// ErrExtractorAbort is returned when an extractor aborts its current phase.
 var ErrExtractorAbort = errors.New("extractor aborted")
+
+// ErrInvalidExtractorResult is returned when an extractor returns the zero
+// value or another result that was not created by a result constructor.
+var ErrInvalidExtractorResult = errors.New("invalid extractor result")
 
 // ExtractorInfo holds a summary of an extractor's identity and current state.
 type ExtractorInfo struct {
@@ -219,13 +219,18 @@ func Extract(d *document.Document) error {
 			continue
 		}
 		if e.Match(d) {
-			state, err := e.Extract(d)
+			result := e.Extract(d)
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Enriching document")
-			if state == types.ExtractorAbort {
-				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, err)
-			}
-			if err != nil {
-				log.Warn().Err(err).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to enrich document")
+			switch result.Decision() {
+			case types.ExtractorSuccess:
+			case types.ExtractorFallback:
+				if result.Err() != nil {
+					log.Warn().Err(result.Err()).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to enrich document")
+				}
+			case types.ExtractorAbort:
+				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, result.Err())
+			default:
+				return fmt.Errorf("extractor %s: %w", e.Name(), ErrInvalidExtractorResult)
 			}
 		}
 	}
@@ -234,62 +239,73 @@ func Extract(d *document.Document) error {
 			continue
 		}
 		if e.Match(d) {
-			state, err := e.Extract(d)
+			result := e.Extract(d)
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Extracting data")
-			switch state {
-			case types.ExtractorStop:
+			switch result.Decision() {
+			case types.ExtractorSuccess:
 				return nil
 			case types.ExtractorAbort:
-				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, err)
-			default:
-				if err != nil {
-					log.Warn().Err(err).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to extract content")
+				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, result.Err())
+			case types.ExtractorFallback:
+				if result.Err() != nil {
+					log.Warn().Err(result.Err()).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to extract content")
 				}
+			default:
+				return fmt.Errorf("extractor %s: %w", e.Name(), ErrInvalidExtractorResult)
 			}
 		}
 	}
 	return ErrNoExtractor
 }
 
-// Preview returns a rendered preview of the document. When name is empty the
-// first matching enabled extractor in the chain is used. When name is
-// non-empty the extractor with that name (case-insensitive) is used directly,
-// bypassing Match() and the enabled check. ErrNoExtractor is returned when
-// name is non-empty but not found.
+// Preview returns a rendered preview of the document. When name is empty, the
+// first successful matching preview extractor is used. A name selects the
+// starting extractor, with later matching preview extractors acting as
+// fallbacks. Explicit selection still requires the extractor to be enabled,
+// preview capable, and matched to the document.
 func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
+	start := 0
 	if name != "" {
 		lower := strings.ToLower(name)
-		for _, e := range extractors {
+		found := false
+		for i, e := range extractors {
 			if strings.ToLower(e.Name()) == lower {
+				found = true
+				if !e.GetConfig().Enable {
+					return types.PreviewResponse{}, fmt.Errorf("%w: %s is disabled", ErrNoExtractor, name)
+				}
 				if !e.Capabilities().Preview {
 					return types.PreviewResponse{}, fmt.Errorf("%w: %s does not provide previews", ErrNoExtractor, name)
 				}
-				log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Creating preview with explicit extractor")
-				resp, state, err := e.Preview(d)
-				if state == types.ExtractorAbort {
-					return types.PreviewResponse{}, fmt.Errorf("extractor %s: %w", e.Name(), err)
+				if !e.Match(d) {
+					return types.PreviewResponse{}, fmt.Errorf("%w: %s does not match document", ErrNoExtractor, name)
 				}
-				return resp, nil
+				start = i
+				break
 			}
 		}
-		return types.PreviewResponse{}, fmt.Errorf("%w: %s", ErrNoExtractor, name)
+		if !found {
+			return types.PreviewResponse{}, fmt.Errorf("%w: %s", ErrNoExtractor, name)
+		}
 	}
-	for _, e := range extractors {
+	for _, e := range extractors[start:] {
 		if !e.GetConfig().Enable || !e.Capabilities().Preview {
 			continue
 		}
 		if e.Match(d) {
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Creating preview")
-			resp, state, err := e.Preview(d)
-			switch state {
-			case types.ExtractorStop:
-				return resp, nil
+			result := e.Preview(d)
+			switch result.Decision() {
+			case types.ExtractorSuccess:
+				return result.Response(), nil
 			case types.ExtractorAbort:
-				return types.PreviewResponse{}, fmt.Errorf("extractor %s: %w", e.Name(), err)
-			default:
-				if err != nil {
-					log.Warn().Err(err).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to preview content")
+				return types.PreviewResponse{}, fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, result.Err())
+			case types.ExtractorFallback:
+				if result.Err() != nil {
+					log.Warn().Err(result.Err()).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to preview content")
 				}
+			default:
+				return types.PreviewResponse{}, fmt.Errorf("extractor %s: %w", e.Name(), ErrInvalidExtractorResult)
 			}
 		}
 	}
@@ -350,7 +366,7 @@ func (e *basicExtractor) Match(_ *document.Document) bool {
 	return true
 }
 
-func (e *basicExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *basicExtractor) Extract(d *document.Document) types.ExtractResult {
 	var extractedTitle strings.Builder
 	r := strings.NewReader(d.HTML)
 	doc := html.NewTokenizer(r)
@@ -367,7 +383,7 @@ out:
 			if errors.Is(err, io.EOF) {
 				break out
 			}
-			return types.ExtractorStop, errors.New("failed to parse html: " + err.Error())
+			return types.AbortExtraction(errors.New("failed to parse html: " + err.Error()))
 		case html.SelfClosingTagToken, html.StartTagToken:
 			tn, _ := doc.TagName()
 			currentTag = string(tn)
@@ -399,13 +415,13 @@ out:
 		d.Title = extractedTitle.String()
 	}
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractorStop, errors.New("no content found")
+		return types.ExtractFallback(errors.New("no content found"))
 	}
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
-func (e *basicExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
-	return types.PreviewResponse{Content: stdhtml.EscapeString(d.Text)}, types.ExtractorStop, nil
+func (e *basicExtractor) Preview(d *document.Document) types.PreviewResult {
+	return types.Previewed(types.PreviewResponse{Content: stdhtml.EscapeString(d.Text)})
 }
 
 func (e *readabilityExtractor) Name() string {
@@ -424,20 +440,20 @@ func (e *readabilityExtractor) Match(_ *document.Document) bool {
 	return true
 }
 
-func (e *readabilityExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *readabilityExtractor) Extract(d *document.Document) types.ExtractResult {
 	r := strings.NewReader(d.HTML)
 
 	u, err := url.Parse(d.URL)
 	if err != nil {
-		return types.ExtractorStop, err
+		return types.AbortExtraction(err)
 	}
 	a, err := readability.FromReader(r, u)
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 	buf := bytes.NewBuffer(nil)
 	if err := a.RenderText(buf); err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 	d.Text = buf.String()
 	if t := a.Title(); t != "" {
@@ -445,7 +461,7 @@ func (e *readabilityExtractor) Extract(d *document.Document) (types.ExtractorSta
 	}
 	d.SetFaviconURL(a.Favicon())
 	writeReadabilityMeta(d, a)
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 // writeReadabilityMeta copies the rich fields readability already parsed
@@ -475,19 +491,19 @@ func writeReadabilityMeta(d *document.Document, a readability.Article) {
 	}
 }
 
-func (e *readabilityExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *readabilityExtractor) Preview(d *document.Document) types.PreviewResult {
 	r := strings.NewReader(d.HTML)
 	u, err := url.Parse(d.URL)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorStop, err
+		return types.AbortPreview(err)
 	}
 	a, err := readability.FromReader(r, u)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 	var htmlContent strings.Builder
 	if err := a.RenderHTML(&htmlContent); err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(htmlContent.String())}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(htmlContent.String())})
 }

@@ -134,10 +134,10 @@ func validRedditID(id string) bool {
 	return true
 }
 
-func (e *RedditExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *RedditExtractor) Extract(d *document.Document) types.ExtractResult {
 	post, err := parseRedditPost(d)
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	d.Title = post.Title
@@ -155,7 +155,7 @@ func (e *RedditExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	setMetadata(d.Metadata, "post_id", post.PostID)
 	d.Metadata["comments"] = len(post.Comments)
 
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 func setMetadata(metadata map[string]any, key, value string) {
@@ -164,10 +164,10 @@ func setMetadata(metadata map[string]any, key, value string) {
 	}
 }
 
-func (e *RedditExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *RedditExtractor) Preview(d *document.Document) types.PreviewResult {
 	post, err := parseRedditPost(d)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -228,7 +228,7 @@ func (e *RedditExtractor) Preview(d *document.Document) (types.PreviewResponse, 
 		}
 	}
 
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
 func parseRedditPost(d *document.Document) (*redditPost, error) {

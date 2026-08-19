@@ -170,12 +170,12 @@ func TestExtractProfileSchemaPosts(t *testing.T) {
 		</head><body></body></html>`,
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if !doc.SkipIndexing {
 		t.Fatal("source profile was not marked to skip indexing")
@@ -247,11 +247,11 @@ func TestExtractSchemaThreadIncludesComments(t *testing.T) {
 		}</script>`,
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop || len(doc.ExtraDocuments) != 2 {
+	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 2 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	if got, want := doc.ExtraDocuments[0].Text, "Root post"; got != want {
@@ -291,11 +291,11 @@ func TestExtractRenderedFeed(t *testing.T) {
 		</main>`,
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop || len(doc.ExtraDocuments) != 2 {
+	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 2 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 
@@ -348,11 +348,11 @@ func TestRenderedMarkupOverridesSchemaContentAndDeduplicates(t *testing.T) {
 		</div>`,
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop || len(doc.ExtraDocuments) != 1 {
+	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	post := doc.ExtraDocuments[0]
@@ -377,11 +377,11 @@ func TestGenericPostAnchorFallback(t *testing.T) {
 		</div>`,
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop || len(doc.ExtraDocuments) != 1 {
+	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	if got, want := doc.ExtraDocuments[0].Text, "Future markup post"; got != want {
@@ -400,11 +400,11 @@ func TestExtractDirectPostMetadataFallback(t *testing.T) {
 		</head><body><div id="application"></div></body></html>`,
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop || len(doc.ExtraDocuments) != 1 {
+	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	post := doc.ExtraDocuments[0]
@@ -431,12 +431,12 @@ func TestExtractSkipsPageWhenNoPostsFound(t *testing.T) {
 		HTML: `<html><body><div id="application"></div></body></html>`,
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if !doc.SkipIndexing {
 		t.Fatal("source page was not marked to skip indexing")
@@ -453,12 +453,12 @@ func TestExtractStopsForExtractedPost(t *testing.T) {
 		Metadata: map[string]any{"type": postType},
 	}
 
-	state, err := (&BlueskyExtractor{}).Extract(doc)
+	state, err := (&BlueskyExtractor{}).Extract(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if doc.SkipIndexing {
 		t.Fatal("extracted post was marked to skip indexing")
@@ -474,12 +474,12 @@ func TestPreviewSanitizesPostHTML(t *testing.T) {
 		HTML:  `<p onclick="alert(1)">Safe text<script>alert(2)</script><a href="javascript:alert(3)">bad link</a></p>`,
 	}
 
-	response, state, err := (&BlueskyExtractor{}).Preview(doc)
+	response, state, err := (&BlueskyExtractor{}).Preview(doc).Unpack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Preview state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Preview state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	for _, disallowed := range []string{"<script", "onclick", "javascript:"} {
 		if strings.Contains(strings.ToLower(response.Content), disallowed) {

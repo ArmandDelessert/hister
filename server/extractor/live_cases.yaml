@@ -78,7 +78,7 @@ cases:
     backend: http
     extractor: GoDoc
     timeout: 20
-    extract_state: continue
+    extract_decision: fallback
     run_chain: false
     expect:
       preview_contains:
@@ -92,7 +92,7 @@ cases:
     backend: http
     extractor: JSONLD
     timeout: 20
-    extract_state: continue
+    extract_decision: fallback
     run_chain: false
     expect:
       metadata:
@@ -104,7 +104,7 @@ cases:
     backend: http
     extractor: Markdown
     timeout: 20
-    extract_state: continue
+    extract_decision: fallback
     run_chain: false
     expect:
       preview_contains:
@@ -117,7 +117,7 @@ cases:
     backend: http
     extractor: OrgMode
     timeout: 20
-    extract_state: continue
+    extract_decision: fallback
     run_chain: false
     expect:
       preview_contains:
@@ -129,7 +129,7 @@ cases:
     backend: http
     extractor: EmbeddedVideo
     timeout: 20
-    extract_state: continue
+    extract_decision: fallback
     run_chain: false
     expect:
       metadata_contains:

@@ -112,10 +112,10 @@ func (e *DiscourseExtractor) Match(d *document.Document) bool {
 	return ok && isDiscourseHTML(d.HTML)
 }
 
-func (e *DiscourseExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *DiscourseExtractor) Extract(d *document.Document) types.ExtractResult {
 	topic, err := parseDiscourseTopic(d)
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	d.Title = topic.Title
@@ -146,13 +146,13 @@ func (e *DiscourseExtractor) Extract(d *document.Document) (types.ExtractorState
 		}
 	}
 
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
-func (e *DiscourseExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *DiscourseExtractor) Preview(d *document.Document) types.PreviewResult {
 	topic, err := parseDiscourseTopic(d)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -195,7 +195,7 @@ func (e *DiscourseExtractor) Preview(d *document.Document) (types.PreviewRespons
 		b.WriteString(post.HTML)
 	}
 
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
 func parseDiscourseTopic(d *document.Document) (*discourseTopic, error) {

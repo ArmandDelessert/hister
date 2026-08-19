@@ -52,14 +52,14 @@ func (e *OrgModeExtractor) Match(d *document.Document) bool {
 }
 
 // Extract is a no-op: indexing is handled by Indexer.AddOrg.
-func (e *OrgModeExtractor) Extract(_ *document.Document) (types.ExtractorState, error) {
-	return types.ExtractorContinue, nil
+func (e *OrgModeExtractor) Extract(_ *document.Document) types.ExtractResult {
+	return types.ExtractFallback(nil)
 }
 
 // Preview sanitizes the rendered HTML stored in doc.HTML.
-func (e *OrgModeExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *OrgModeExtractor) Preview(d *document.Document) types.PreviewResult {
 	if d.HTML == "" {
-		return types.PreviewResponse{}, types.ExtractorContinue, nil
+		return types.PreviewFallback(nil)
 	}
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(d.HTML)}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(d.HTML)})
 }

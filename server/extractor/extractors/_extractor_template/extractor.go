@@ -113,10 +113,8 @@ func (e *TemplateExtractor) Match(d *document.Document) bool {
 // Populate d.Title and d.Text with the best searchable representation of the
 // content. Both fields are stored in Bleve and searched by default.
 //
-// Return values:
-//   - (ExtractorStop,     nil)  success; stop the chain.
-//   - (ExtractorContinue, _)    inconclusive; let the next extractor try.
-//   - (ExtractorAbort,    err)  fatal; stop the chain and propagate the error.
+// Return Extracted on success, ExtractFallback when the next content
+// extractor should try, or AbortExtraction for a fatal error.
 //
 // Optional features:
 //   - Set d.Metadata["author"], d.Metadata["published"], etc. to surface
@@ -126,12 +124,12 @@ func (e *TemplateExtractor) Match(d *document.Document) bool {
 //     (e.g. paginated content, linked sub-pages).
 //   - Set d.SkipIndexing = true when the current document should not be
 //     indexed itself and only its ExtraDocuments matter.
-func (e *TemplateExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *TemplateExtractor) Extract(d *document.Document) types.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		// Return Continue so the next extractor can try; use Abort only when
-		// the error makes any further processing pointless.
-		return types.ExtractorContinue, err
+		// Return ExtractFallback so the next extractor can try. Use
+		// AbortExtraction only when further processing would be unsafe.
+		return types.ExtractFallback(err)
 	}
 
 	// --- Title -----------------------------------------------------------
@@ -148,7 +146,7 @@ func (e *TemplateExtractor) Extract(d *document.Document) (types.ExtractorState,
 	d.Text = strings.TrimSpace(b.String())
 
 	if d.Title == "" && d.Text == "" {
-		return types.ExtractorContinue, fmt.Errorf("no content found")
+		return types.ExtractFallback(fmt.Errorf("no content found"))
 	}
 
 	// --- Metadata (optional) --------------------------------------------
@@ -174,21 +172,19 @@ func (e *TemplateExtractor) Extract(d *document.Document) (types.ExtractorState,
 	//       }
 	//   })
 
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 // Preview returns a rendered representation of the document for the preview
 // panel. Content is typically sanitized HTML. The optional Template field
 // selects a custom Svelte front-end template; leave it empty for the default.
 //
-// Return values follow the same ExtractorState convention as Extract.
-//
-// If you do not need a custom preview, return (PreviewResponse{}, ExtractorContinue, nil)
-// and the generic readability/default extractor will provide one automatically.
-func (e *TemplateExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+// If you do not need a custom preview, return PreviewFallback and the generic
+// readability or basic extractor will provide one automatically.
+func (e *TemplateExtractor) Preview(d *document.Document) types.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -204,13 +200,13 @@ func (e *TemplateExtractor) Preview(d *document.Document) (types.PreviewResponse
 	}
 
 	if b.Len() == 0 {
-		return types.PreviewResponse{}, types.ExtractorContinue, fmt.Errorf("no preview content")
+		return types.PreviewFallback(fmt.Errorf("no preview content"))
 	}
 
 	// Always sanitize HTML before returning it to strip scripts, event
 	// handlers, and other potentially unsafe markup.
-	return types.PreviewResponse{
+	return types.Previewed(types.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(b.String()),
 		// Template: "my_template", // leave empty to use the default layout
-	}, types.ExtractorStop, nil
+	})
 }

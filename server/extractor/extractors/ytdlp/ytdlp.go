@@ -326,10 +326,10 @@ func (e *YtdlpExtractor) downloadThumbnail(thumbnailURL string) string {
 	return fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(data))
 }
 
-func (e *YtdlpExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *YtdlpExtractor) Extract(d *document.Document) types.ExtractResult {
 	info, err := e.getInfo(d.URL)
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	if info.Title != "" {
@@ -395,13 +395,13 @@ func (e *YtdlpExtractor) Extract(d *document.Document) (types.ExtractorState, er
 		d.Metadata["view_count"] = info.ViewCount
 	}
 
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
-func (e *YtdlpExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *YtdlpExtractor) Preview(d *document.Document) types.PreviewResult {
 	info, err := e.getInfo(d.URL)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	// Use cached thumbnail from metadata, or download it.
@@ -459,11 +459,11 @@ func (e *YtdlpExtractor) Preview(d *document.Document) (types.PreviewResponse, t
 
 	data, err := json.Marshal(preview)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
-	return types.PreviewResponse{
+	return types.Previewed(types.PreviewResponse{
 		Content:  string(data),
 		Template: "video",
-	}, types.ExtractorStop, nil
+	})
 }

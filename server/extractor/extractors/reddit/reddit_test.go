@@ -86,12 +86,12 @@ func TestExtractShredditPostAndVisibleComments(t *testing.T) {
 		</body></html>`,
 	}
 
-	state, err := (&RedditExtractor{}).Extract(d)
+	state, err := (&RedditExtractor{}).Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if got, want := d.Title, "A durable parser"; got != want {
 		t.Fatalf("Title = %q, want %q", got, want)
@@ -131,12 +131,12 @@ func TestExtractShredditPostAndVisibleComments(t *testing.T) {
 		}
 	}
 
-	preview, previewState, err := (&RedditExtractor{}).Preview(d)
+	preview, previewState, err := (&RedditExtractor{}).Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview returned an error: %v", err)
 	}
-	if previewState != types.ExtractorStop {
-		t.Fatalf("Preview state = %v, want %v", previewState, types.ExtractorStop)
+	if previewState != types.ExtractorSuccess {
+		t.Fatalf("Preview state = %v, want %v", previewState, types.ExtractorSuccess)
 	}
 	for _, want := range []string{
 		"A durable parser",
@@ -183,8 +183,8 @@ func TestExtractLegacyRedditPost(t *testing.T) {
 		</body></html>`,
 	}
 
-	state, err := (&RedditExtractor{}).Extract(d)
-	if err != nil || state != types.ExtractorStop {
+	state, err := (&RedditExtractor{}).Extract(d).Unpack()
+	if err != nil || state != types.ExtractorSuccess {
 		t.Fatalf("Extract returned state %v and error %v", state, err)
 	}
 	if got, want := d.Title, "Legacy post title"; got != want {
@@ -227,8 +227,8 @@ func TestStructuredDataFallback(t *testing.T) {
 		}</script></head><body></body></html>`,
 	}
 
-	state, err := (&RedditExtractor{}).Extract(d)
-	if err != nil || state != types.ExtractorStop {
+	state, err := (&RedditExtractor{}).Extract(d).Unpack()
+	if err != nil || state != types.ExtractorSuccess {
 		t.Fatalf("Extract returned state %v and error %v", state, err)
 	}
 	if got, want := d.Title, "Schema post"; got != want {
@@ -249,12 +249,12 @@ func TestExtractContinuesWhenPostMarkupIsMissing(t *testing.T) {
 		URL:  "https://www.reddit.com/r/golang/comments/abc123/title/",
 		HTML: `<html><head><title>Reddit block page</title></head><body>blocked</body></html>`,
 	}
-	state, err := (&RedditExtractor{}).Extract(d)
+	state, err := (&RedditExtractor{}).Extract(d).Unpack()
 	if err == nil {
 		t.Fatal("Extract returned no error for missing post markup")
 	}
-	if state != types.ExtractorContinue {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorContinue)
+	if state != types.ExtractorFallback {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorFallback)
 	}
 }
 
@@ -263,12 +263,12 @@ func TestExtractRejectsNonPostRedditPage(t *testing.T) {
 		URL:  "https://www.reddit.com/r/golang/",
 		HTML: `<main><shreddit-post id="t3_abc123" post-title="Feed post"></shreddit-post></main>`,
 	}
-	state, err := (&RedditExtractor{}).Extract(d)
+	state, err := (&RedditExtractor{}).Extract(d).Unpack()
 	if err == nil {
 		t.Fatal("Extract returned no error for a subreddit listing")
 	}
-	if state != types.ExtractorContinue {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorContinue)
+	if state != types.ExtractorFallback {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorFallback)
 	}
 	if d.Title != "" || d.Text != "" {
 		t.Fatalf("non post page was modified: %#v", d)

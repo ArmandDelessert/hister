@@ -21,19 +21,19 @@ type liveManifest struct {
 }
 
 type liveCase struct {
-	Name           string         `json:"name"                      yaml:"name"`
-	URL            string         `json:"url"                       yaml:"url"`
-	DocumentURL    string         `json:"document_url,omitempty"    yaml:"document_url,omitempty"`
-	Fetch          *bool          `json:"fetch,omitempty"           yaml:"fetch,omitempty"`
-	RequiresBinary string         `json:"requires_binary,omitempty" yaml:"requires_binary,omitempty"`
-	Backend        string         `json:"backend"                   yaml:"backend"`
-	BackendOptions map[string]any `json:"backend_options,omitempty" yaml:"backend_options,omitempty"`
-	Extractor      string         `json:"extractor"                 yaml:"extractor"`
-	Timeout        int            `json:"timeout,omitempty"         yaml:"timeout,omitempty"`
-	Match          *bool          `json:"match,omitempty"           yaml:"match,omitempty"`
-	ExtractState   string         `json:"extract_state,omitempty"   yaml:"extract_state,omitempty"`
-	RunChain       *bool          `json:"run_chain,omitempty"       yaml:"run_chain,omitempty"`
-	Expect         liveExpect     `json:"expect,omitzero"           yaml:"expect,omitempty"`
+	Name            string         `json:"name"                      yaml:"name"`
+	URL             string         `json:"url"                       yaml:"url"`
+	DocumentURL     string         `json:"document_url,omitempty"    yaml:"document_url,omitempty"`
+	Fetch           *bool          `json:"fetch,omitempty"           yaml:"fetch,omitempty"`
+	RequiresBinary  string         `json:"requires_binary,omitempty" yaml:"requires_binary,omitempty"`
+	Backend         string         `json:"backend"                   yaml:"backend"`
+	BackendOptions  map[string]any `json:"backend_options,omitempty" yaml:"backend_options,omitempty"`
+	Extractor       string         `json:"extractor"                 yaml:"extractor"`
+	Timeout         int            `json:"timeout,omitempty"         yaml:"timeout,omitempty"`
+	Match           *bool          `json:"match,omitempty"           yaml:"match,omitempty"`
+	ExtractDecision string         `json:"extract_decision,omitempty" yaml:"extract_decision,omitempty"`
+	RunChain        *bool          `json:"run_chain,omitempty"       yaml:"run_chain,omitempty"`
+	Expect          liveExpect     `json:"expect,omitzero"           yaml:"expect,omitempty"`
 }
 
 type liveExpect struct {
@@ -50,7 +50,7 @@ type liveExpect struct {
 	MinExtraDocuments  int                 `json:"min_extra_documents,omitempty" yaml:"min_extra_documents,omitempty"`
 	ExtraTitleContains []string            `json:"extra_title_contains,omitempty" yaml:"extra_title_contains,omitempty"`
 	ExtraTextContains  []string            `json:"extra_text_contains,omitempty" yaml:"extra_text_contains,omitempty"`
-	PreviewState       string              `json:"preview_state,omitempty"      yaml:"preview_state,omitempty"`
+	PreviewDecision    string              `json:"preview_decision,omitempty"   yaml:"preview_decision,omitempty"`
 	PreviewContains    []string            `json:"preview_contains,omitempty"   yaml:"preview_contains,omitempty"`
 	PreviewNotContains []string            `json:"preview_not_contains,omitempty" yaml:"preview_not_contains,omitempty"`
 	MinPreviewLength   int                 `json:"min_preview_length,omitempty"  yaml:"min_preview_length,omitempty"`
@@ -120,10 +120,10 @@ func validateLiveManifest(manifest *liveManifest) error {
 		if liveBool(testCase.Match, true) {
 			covered[strings.ToLower(testCase.Extractor)] = struct{}{}
 		}
-		if _, err := parseLiveState(testCase.ExtractState, types.ExtractorStop); err != nil {
+		if _, err := parseLiveDecision(testCase.ExtractDecision, types.ExtractorSuccess); err != nil {
 			return fmt.Errorf("live extractor case %q: %w", testCase.Name, err)
 		}
-		if _, err := parseLiveState(testCase.Expect.PreviewState, types.ExtractorStop); err != nil {
+		if _, err := parseLiveDecision(testCase.Expect.PreviewDecision, types.ExtractorSuccess); err != nil {
 			return fmt.Errorf("live extractor case %q: %w", testCase.Name, err)
 		}
 	}
@@ -148,18 +148,18 @@ func liveExtractorByName(name string) Extractor {
 	return nil
 }
 
-func parseLiveState(value string, defaultState types.ExtractorState) (types.ExtractorState, error) {
+func parseLiveDecision(value string, defaultDecision types.ExtractorDecision) (types.ExtractorDecision, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "":
-		return defaultState, nil
-	case "stop":
-		return types.ExtractorStop, nil
-	case "continue":
-		return types.ExtractorContinue, nil
+		return defaultDecision, nil
+	case "success":
+		return types.ExtractorSuccess, nil
+	case "fallback":
+		return types.ExtractorFallback, nil
 	case "abort":
 		return types.ExtractorAbort, nil
 	default:
-		return 0, fmt.Errorf("unknown extractor state %q", value)
+		return 0, fmt.Errorf("unknown extractor decision %q", value)
 	}
 }
 

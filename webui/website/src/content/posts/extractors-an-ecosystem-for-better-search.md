@@ -111,9 +111,11 @@ Writing a new extractor is straightforward. You implement a single Go interface:
 ```go
 type Extractor interface {
     Name() string
+    Description() string
+    Capabilities() types.ExtractorCapabilities
     Match(*document.Document) bool
-    Extract(*document.Document) (types.ExtractorState, error)
-    Preview(*document.Document) (types.PreviewResponse, types.ExtractorState, error)
+    Extract(*document.Document) types.ExtractResult
+    Preview(*document.Document) types.PreviewResult
     GetConfig() *config.Extractor
     SetConfig(*config.Extractor) error
 }
@@ -124,15 +126,21 @@ the extractor is skipped entirely for that document. This is the right place to
 check whether the URL belongs to a specific domain or matches a particular path
 pattern.
 
-`Extract` populates or modifies the `Document` object before it goes into
-the search index. Return `ExtractorContinue` here if you only want to customise
-the preview and are happy to let a downstream extractor handle indexing.
-Custom key-value data can be added to the `Document.Metadata` field to use it
-later in the previews.
+`Capabilities` declares whether an implementation enriches metadata, extracts
+searchable content, renders previews, or combines those roles.
+
+`Extract` populates or modifies the `Document` object before it goes into the
+search index. Return `ExtractFallback` when another content extractor should
+try the document. Custom key value data can be added to the
+`Document.Metadata` field for later use in previews.
 
 `Preview` returns the HTML (or plain text) that Hister renders in the preview
 panel. You can also return a custom `Template` name in the `PreviewResponse` to
 apply a Svelte template specifically designed for this content type.
+
+Result constructors make control flow explicit. Extraction uses `Extracted`,
+`ExtractFallback`, and `AbortExtraction`. Preview rendering uses `Previewed`,
+`PreviewFallback`, and `AbortPreview`.
 
 Here is what a minimal extractor looks like in practice:
 
@@ -160,27 +168,35 @@ type MySiteExtractor struct {
 
 func (e *MySiteExtractor) Name() string { return "MySite" }
 
+func (e *MySiteExtractor) Description() string {
+    return "Renders example.com posts"
+}
+
+func (e *MySiteExtractor) Capabilities() types.ExtractorCapabilities {
+    return types.ExtractorCapabilities{Preview: true}
+}
+
 func (e *MySiteExtractor) Match(d *document.Document) bool {
     return strings.HasPrefix(d.URL, matchPrefix)
 }
 
-func (e *MySiteExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *MySiteExtractor) Extract(d *document.Document) types.ExtractResult {
     // Let the generic Readability extractor handle indexing.
-    return types.ExtractorContinue, nil
+    return types.ExtractFallback(nil)
 }
 
-func (e *MySiteExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *MySiteExtractor) Preview(d *document.Document) types.PreviewResult {
     doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
     if err != nil {
-        return types.PreviewResponse{}, types.ExtractorContinue, err
+        return types.PreviewFallback(err)
     }
     content, err := doc.Find("article.post-body").Html()
     if err != nil {
-        return types.PreviewResponse{}, types.ExtractorContinue, err
+        return types.PreviewFallback(err)
     }
-    return types.PreviewResponse{
+    return types.Previewed(types.PreviewResponse{
         Content: sanitizer.SanitizeHTML(content),
-    }, types.ExtractorStop, nil
+    })
 }
 
 func (e *MySiteExtractor) GetConfig() *config.Extractor {

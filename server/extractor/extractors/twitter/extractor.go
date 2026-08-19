@@ -85,19 +85,19 @@ func isTwitterHost(host string) bool {
 	return ok
 }
 
-func (e *TwitterExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *TwitterExtractor) Extract(d *document.Document) types.ExtractResult {
 	if metadataType(d) == tweetType {
-		return types.ExtractorStop, nil
+		return types.Extracted()
 	}
 
 	d.SkipIndexing = true
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 	base, err := url.Parse(d.URL)
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	seen := make(map[string]struct{})
@@ -122,7 +122,7 @@ func (e *TwitterExtractor) Extract(d *document.Document) (types.ExtractorState, 
 		}
 	}
 
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 func findTweetSelections(doc *goquery.Document) *goquery.Selection {
@@ -683,7 +683,7 @@ func pageTweetHTML(text, image string, base *url.URL) string {
 	return b.String()
 }
 
-func (e *TwitterExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *TwitterExtractor) Preview(d *document.Document) types.PreviewResult {
 	var b strings.Builder
 	if title := strings.TrimSpace(d.Title); title != "" {
 		fmt.Fprintf(&b, "<h2>%s</h2>", stdhtml.EscapeString(title))
@@ -693,7 +693,7 @@ func (e *TwitterExtractor) Preview(d *document.Document) (types.PreviewResponse,
 	} else if strings.TrimSpace(d.Text) != "" {
 		b.WriteString(paragraphHTML(d.Text))
 	}
-	return types.PreviewResponse{
+	return types.Previewed(types.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(b.String()),
-	}, types.ExtractorStop, nil
+	})
 }

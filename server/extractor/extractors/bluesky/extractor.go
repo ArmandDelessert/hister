@@ -83,19 +83,19 @@ func isBlueskyHost(host string) bool {
 	return ok
 }
 
-func (e *BlueskyExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *BlueskyExtractor) Extract(d *document.Document) types.ExtractResult {
 	if metadataType(d) == postType {
-		return types.ExtractorStop, nil
+		return types.Extracted()
 	}
 
 	d.SkipIndexing = true
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 	base, err := url.Parse(d.URL)
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	posts := make([]*document.Document, 0)
@@ -113,7 +113,7 @@ func (e *BlueskyExtractor) Extract(d *document.Document) (types.ExtractorState, 
 	}
 
 	d.ExtraDocuments = append(d.ExtraDocuments, posts...)
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 func appendPost(posts *[]*document.Document, byURL map[string]int, candidate *document.Document) {
@@ -880,7 +880,7 @@ func paragraphHTML(text string) string {
 	return "<p>" + strings.ReplaceAll(escaped, "\n", "<br>") + "</p>"
 }
 
-func (e *BlueskyExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *BlueskyExtractor) Preview(d *document.Document) types.PreviewResult {
 	var builder strings.Builder
 	if title := strings.TrimSpace(d.Title); title != "" {
 		fmt.Fprintf(&builder, "<h2>%s</h2>", stdhtml.EscapeString(title))
@@ -890,7 +890,7 @@ func (e *BlueskyExtractor) Preview(d *document.Document) (types.PreviewResponse,
 	} else if strings.TrimSpace(d.Text) != "" {
 		builder.WriteString(paragraphHTML(d.Text))
 	}
-	return types.PreviewResponse{
+	return types.Previewed(types.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(builder.String()),
-	}, types.ExtractorStop, nil
+	})
 }

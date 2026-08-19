@@ -70,11 +70,11 @@ func TestExtractMinimalArticle(t *testing.T) {
 		HTML: minimalArticle,
 	}
 	e := &WikipediaExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "Test Article" {
@@ -128,11 +128,11 @@ func TestExtractInfobox(t *testing.T) {
 		HTML: articleWithInfobox,
 	}
 	e := &WikipediaExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(d.Text, "Capital: Testville") {
@@ -164,11 +164,11 @@ func TestNoiseRemoval(t *testing.T) {
 		HTML: articleWithNoise,
 	}
 	e := &WikipediaExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(d.Text, "Real content here") {
@@ -191,11 +191,11 @@ func TestPreviewMinimalArticle(t *testing.T) {
 		HTML: minimalArticle,
 	}
 	e := &WikipediaExtractor{}
-	resp, state, err := e.Preview(d)
+	resp, state, err := e.Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(resp.Content, "lead paragraph") {
@@ -227,11 +227,11 @@ func TestPreviewInfoboxStyling(t *testing.T) {
 		HTML: articleWithInfobox,
 	}
 	e := &WikipediaExtractor{}
-	resp, state, err := e.Preview(d)
+	resp, state, err := e.Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	// Infobox should be floated right with background.
@@ -265,11 +265,11 @@ func TestPreviewURLRewriting(t *testing.T) {
 		HTML: html,
 	}
 	e := &WikipediaExtractor{}
-	resp, state, err := e.Preview(d)
+	resp, state, err := e.Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(resp.Content, "https://en.wikipedia.org/wiki/Go_(programming_language)") {
@@ -286,8 +286,8 @@ func TestNoContentReturnsContinue(t *testing.T) {
 		HTML: "<html><body><h1 id='firstHeading'></h1></body></html>",
 	}
 	e := &WikipediaExtractor{}
-	state, _ := e.Extract(d)
-	if state != types.ExtractorContinue {
+	state, _ := e.Extract(d).Unpack()
+	if state != types.ExtractorFallback {
 		t.Errorf("state = %v, want Continue for empty page", state)
 	}
 }
@@ -310,11 +310,11 @@ func TestPreviewReferencesPreserved(t *testing.T) {
 
 	d := &document.Document{URL: "https://en.wikipedia.org/wiki/Refs", HTML: html}
 	e := &WikipediaExtractor{}
-	resp, state, err := e.Preview(d)
+	resp, state, err := e.Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	// References should be in the preview.
@@ -354,11 +354,11 @@ func TestPreviewGallery(t *testing.T) {
 
 	d := &document.Document{URL: "https://en.wikipedia.org/wiki/Gallery", HTML: html}
 	e := &WikipediaExtractor{}
-	resp, state, err := e.Preview(d)
+	resp, state, err := e.Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(resp.Content, "display: flex") {
@@ -437,11 +437,11 @@ func TestRealArticles(t *testing.T) {
 			d := &document.Document{URL: tc.url, HTML: string(html)}
 
 			t.Run("Extract", func(t *testing.T) {
-				state, err := e.Extract(d)
+				state, err := e.Extract(d).Unpack()
 				if err != nil {
 					t.Fatalf("Extract error: %v", err)
 				}
-				if state != types.ExtractorStop {
+				if state != types.ExtractorSuccess {
 					t.Fatalf("state = %v, want Stop", state)
 				}
 				if d.Title != tc.title {
@@ -459,11 +459,11 @@ func TestRealArticles(t *testing.T) {
 			})
 
 			t.Run("Preview", func(t *testing.T) {
-				resp, state, err := e.Preview(d)
+				resp, state, err := e.Preview(d).Unpack()
 				if err != nil {
 					t.Fatalf("Preview error: %v", err)
 				}
-				if state != types.ExtractorStop {
+				if state != types.ExtractorSuccess {
 					t.Fatalf("state = %v, want Stop", state)
 				}
 				if len(resp.Content) < 1000 {

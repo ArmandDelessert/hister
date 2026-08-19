@@ -280,12 +280,12 @@ func TestExtract(t *testing.T) {
 	e, _ := newTestExtractor(t, false)
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=jNQXAC9IVRw"}
 
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract returned state %v, want ExtractorStop", state)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract returned state %v, want ExtractorSuccess", state)
 	}
 
 	// Title.
@@ -334,7 +334,7 @@ func TestExtractWithSubtitles(t *testing.T) {
 	e, _ := newTestExtractor(t, true)
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=jNQXAC9IVRw"}
 
-	if _, err := e.Extract(d); err != nil {
+	if _, err := e.Extract(d).Unpack(); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	if !strings.Contains(d.Text, "Transcript:") {
@@ -349,12 +349,12 @@ func TestPreview(t *testing.T) {
 	e, _ := newTestExtractor(t, false)
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=jNQXAC9IVRw"}
 
-	resp, state, err := e.Preview(d)
+	resp, state, err := e.Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview returned error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Preview returned state %v, want ExtractorStop", state)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Preview returned state %v, want ExtractorSuccess", state)
 	}
 	if resp.Template != "video" {
 		t.Errorf("Template = %q, want %q", resp.Template, "video")
@@ -412,7 +412,7 @@ func TestPreviewWithSubtitles(t *testing.T) {
 	e, _ := newTestExtractor(t, true)
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=jNQXAC9IVRw"}
 
-	resp, _, err := e.Preview(d)
+	resp, _, err := e.Preview(d).Unpack()
 	if err != nil {
 		t.Fatalf("Preview returned error: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestExtractWithSubtitlesAuto(t *testing.T) {
 	e := newTestExtractorFr(t, "auto")
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=testFrVideo"}
 
-	if _, err := e.Extract(d); err != nil {
+	if _, err := e.Extract(d).Unpack(); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	if !strings.Contains(d.Text, "Transcript:") {
@@ -490,7 +490,7 @@ func TestExtractWithSubtitlesMultiLangMatch(t *testing.T) {
 	e := newTestExtractorFr(t, "fr,en")
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=testFrVideo"}
 
-	if _, err := e.Extract(d); err != nil {
+	if _, err := e.Extract(d).Unpack(); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	if !strings.Contains(d.Text, "elephants") {
@@ -502,7 +502,7 @@ func TestExtractWithSubtitlesAutoNoLanguage(t *testing.T) {
 	// When the video has no "language" field, auto mode should skip subtitles.
 	e := newTestExtractorNoLang(t, "auto")
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=testNoLang"}
-	if _, err := e.Extract(d); err != nil {
+	if _, err := e.Extract(d).Unpack(); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	if strings.Contains(d.Text, "Transcript:") {
@@ -515,7 +515,7 @@ func TestExtractWithSubtitlesMultiLangNoMatch(t *testing.T) {
 	e := newTestExtractorFr(t, "de,es")
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=testFrVideo"}
 
-	if _, err := e.Extract(d); err != nil {
+	if _, err := e.Extract(d).Unpack(); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	if strings.Contains(d.Text, "Transcript:") {
@@ -549,13 +549,13 @@ func TestCaching(t *testing.T) {
 	url := "https://www.youtube.com/watch?v=test_cache"
 
 	d1 := &document.Document{URL: url}
-	if _, err := e.Extract(d1); err != nil {
+	if _, err := e.Extract(d1).Unpack(); err != nil {
 		t.Fatalf("first Extract failed: %v", err)
 	}
 
 	// Second call should use cache.
 	d2 := &document.Document{URL: url}
-	if _, _, err := e.Preview(d2); err != nil {
+	if _, _, err := e.Preview(d2).Unpack(); err != nil {
 		t.Fatalf("Preview failed: %v", err)
 	}
 
@@ -583,12 +583,12 @@ func TestExtractFailure(t *testing.T) {
 	}
 
 	d := &document.Document{URL: "https://www.youtube.com/watch?v=test"}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err == nil {
 		t.Fatal("expected error from missing binary")
 	}
-	if state != types.ExtractorContinue {
-		t.Errorf("expected ExtractorContinue on failure, got %v", state)
+	if state != types.ExtractorFallback {
+		t.Errorf("expected ExtractorFallback on failure, got %v", state)
 	}
 }
 

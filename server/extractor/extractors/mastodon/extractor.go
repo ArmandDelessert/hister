@@ -61,23 +61,23 @@ func (e *MastodonExtractor) Match(d *document.Document) bool {
 	return false
 }
 
-func (e *MastodonExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *MastodonExtractor) Extract(d *document.Document) types.ExtractResult {
 	if d.Metadata != nil && d.Metadata["type"] == "toot" {
-		return types.ExtractorStop, nil
+		return types.Extracted()
 	}
 	d.SkipIndexing = true
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractorContinue, nil
+		return types.ExtractFallback(nil)
 	}
 	statuses := doc.Find(".status, .detailed-status")
 	if statuses.Length() == 0 {
-		return types.ExtractorStop, nil
+		return types.Extracted()
 	}
 
 	pu, err := url.Parse(d.URL)
 	if err != nil {
-		return types.ExtractorContinue, nil
+		return types.ExtractFallback(nil)
 	}
 
 	statuses.Each(func(_ int, s *goquery.Selection) {
@@ -107,7 +107,7 @@ func (e *MastodonExtractor) Extract(d *document.Document) (types.ExtractorState,
 		d.ExtraDocuments = append(d.ExtraDocuments, td)
 	})
 
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 func originalStatusURL(rawURL string) string {
@@ -156,11 +156,11 @@ func originalStatusURL(rawURL string) string {
 	}).String()
 }
 
-func (e *MastodonExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *MastodonExtractor) Preview(d *document.Document) types.PreviewResult {
 	// TODO enhance the toot preview
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -173,7 +173,7 @@ func (e *MastodonExtractor) Preview(d *document.Document) (types.PreviewResponse
 
 	// Always sanitize HTML before returning it to strip scripts, event
 	// handlers, and other potentially unsafe markup.
-	return types.PreviewResponse{
+	return types.Previewed(types.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(b.String()),
-	}, types.ExtractorStop, nil
+	})
 }

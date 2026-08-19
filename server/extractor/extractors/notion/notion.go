@@ -23,7 +23,7 @@ import (
 // content client-side. The extractor therefore only produces output when the
 // document was fetched with a JavaScript-rendering crawler backend (chromedp
 // or bidi). When the rendered block tree is not present it returns
-// ExtractorAbort to prevent the fallback chain from indexing the SPA shell as
+// AbortExtraction to prevent the fallback chain from indexing the SPA shell as
 // a low-quality "Notion"-titled document, which would later duplicate against
 // a properly rendered crawl in a different language index.
 type NotionExtractor struct {
@@ -101,15 +101,15 @@ func pageTitle(doc *goquery.Document, content *goquery.Selection) string {
 	return ""
 }
 
-func (e *NotionExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *NotionExtractor) Extract(d *document.Document) types.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	content := pageContent(doc)
 	if content.Length() == 0 {
-		return types.ExtractorAbort, fmt.Errorf("notion page content not rendered")
+		return types.AbortExtraction(fmt.Errorf("notion page content not rendered"))
 	}
 
 	d.Title = pageTitle(doc, content)
@@ -119,25 +119,25 @@ func (e *NotionExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	d.Text = strings.TrimSpace(b.String())
 
 	if d.Title == "" && d.Text == "" {
-		return types.ExtractorContinue, fmt.Errorf("no content found")
+		return types.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
-func (e *NotionExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *NotionExtractor) Preview(d *document.Document) types.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	content := pageContent(doc)
 	if content.Length() == 0 {
-		return types.PreviewResponse{}, types.ExtractorAbort, fmt.Errorf("notion page content not rendered")
+		return types.AbortPreview(fmt.Errorf("notion page content not rendered"))
 	}
 
 	pu, err := url.Parse(d.URL)
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 	urlutil.RewriteURLs(content, pu)
 
@@ -148,9 +148,9 @@ func (e *NotionExtractor) Preview(d *document.Document) (types.PreviewResponse, 
 	writeBlocksHTML(&b, content)
 
 	if b.Len() == 0 {
-		return types.PreviewResponse{}, types.ExtractorContinue, fmt.Errorf("no preview content")
+		return types.PreviewFallback(fmt.Errorf("no preview content"))
 	}
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
 // writeBlocksText walks the immediate Notion block children of content and

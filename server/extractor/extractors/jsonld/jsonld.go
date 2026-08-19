@@ -75,12 +75,11 @@ var preferredTypes = []string{
 }
 
 // Extract parses every application/ld+json script block, flattens @graph/array
-// wrappers and writes normalized fields to d.Metadata. Always returns Continue
-// so body-text extractors still run.
-func (e *JSONLDExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+// wrappers and writes normalized fields to d.Metadata.
+func (e *JSONLDExtractor) Extract(d *document.Document) types.ExtractResult {
 	blobs := findJSONLDBlobs(d.HTML)
 	if len(blobs) == 0 {
-		return types.ExtractorContinue, nil
+		return types.ExtractFallback(nil)
 	}
 
 	var nodes []map[string]any
@@ -93,7 +92,7 @@ func (e *JSONLDExtractor) Extract(d *document.Document) (types.ExtractorState, e
 		nodes = append(nodes, flatten(parsed)...)
 	}
 	if len(nodes) == 0 {
-		return types.ExtractorContinue, nil
+		return types.ExtractFallback(nil)
 	}
 
 	sanitizeNodes(nodes)
@@ -116,12 +115,12 @@ func (e *JSONLDExtractor) Extract(d *document.Document) (types.ExtractorState, e
 	setString(d.Metadata, "type", sanitizer.SanitizeText(typeString(best)))
 	setString(d.Metadata, "headline", sanitizer.SanitizeText(firstString(best, "headline", "name")))
 
-	return types.ExtractorContinue, nil
+	return types.Extracted()
 }
 
 // Preview is not implemented; Readability/Default handle rendering.
-func (e *JSONLDExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
-	return types.PreviewResponse{}, types.ExtractorContinue, nil
+func (e *JSONLDExtractor) Preview(d *document.Document) types.PreviewResult {
+	return types.PreviewFallback(nil)
 }
 
 // findJSONLDBlobs returns the raw text content of every

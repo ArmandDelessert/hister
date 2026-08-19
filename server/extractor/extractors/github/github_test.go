@@ -176,11 +176,11 @@ func TestExtractRepo(t *testing.T) {
 		HTML: minimalRepoPage,
 	}
 	e := &GitHubExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "asciimoo/hister: Your own search engine" {
@@ -266,12 +266,12 @@ func TestExtractIssuePage(t *testing.T) {
 		HTML: issuePage,
 	}
 	e := &GitHubExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
 
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "Extractors wanted! · Issue #305 · asciimoo/hister" {
@@ -340,12 +340,12 @@ func TestExtractIssuesPage(t *testing.T) {
 		HTML: issuesPage,
 	}
 	e := &GitHubExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
 
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "Issues · asciimoo/hister" {
@@ -501,12 +501,12 @@ func TestExtractPullRequestPage(t *testing.T) {
 		HTML: prPage,
 	}
 	e := &GitHubExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
 
-	if state != types.ExtractorStop {
+	if state != types.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	wantTitle := "Improve GitHub extractor by RensOliemans · Pull Request #495 · asciimoo/hister · GitHub"

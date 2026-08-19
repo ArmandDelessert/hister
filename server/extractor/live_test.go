@@ -103,13 +103,14 @@ func runLiveExtractorCase(
 	}
 
 	direct = cloneLiveDocument(source)
-	state, extractErr := candidate.Extract(direct)
-	wantState, _ := parseLiveState(testCase.ExtractState, types.ExtractorStop)
+	extractResult := candidate.Extract(direct)
+	decision, extractErr := extractResult.Decision(), extractResult.Err()
+	wantDecision, _ := parseLiveDecision(testCase.ExtractDecision, types.ExtractorSuccess)
 	if extractErr != nil {
 		t.Errorf("direct extraction phase: %s returned %v", candidate.Name(), extractErr)
 	}
-	if state != wantState {
-		t.Errorf("direct extraction phase: state = %v, want %v", state, wantState)
+	if decision != wantDecision {
+		t.Errorf("direct extraction phase: decision = %v, want %v", decision, wantDecision)
 	}
 	assertLiveDocument(t, "direct extraction", direct, testCase.Expect)
 
@@ -123,14 +124,15 @@ func runLiveExtractorCase(
 	}
 
 	if livePreviewExpected(testCase.Expect) {
-		response, state, previewErr := candidate.Preview(cloneLiveDocument(source))
+		previewResult := candidate.Preview(cloneLiveDocument(source))
+		response, decision, previewErr := previewResult.Response(), previewResult.Decision(), previewResult.Err()
 		preview = response.Content
-		wantPreviewState, _ := parseLiveState(testCase.Expect.PreviewState, types.ExtractorStop)
+		wantPreviewDecision, _ := parseLiveDecision(testCase.Expect.PreviewDecision, types.ExtractorSuccess)
 		if previewErr != nil {
 			t.Errorf("preview phase: %s returned %v", candidate.Name(), previewErr)
 		}
-		if state != wantPreviewState {
-			t.Errorf("preview phase: state = %v, want %v", state, wantPreviewState)
+		if decision != wantPreviewDecision {
+			t.Errorf("preview phase: decision = %v, want %v", decision, wantPreviewDecision)
 		}
 		assertLivePreview(t, preview, testCase.Expect)
 	}
@@ -274,7 +276,7 @@ func assertLiveDocument(t *testing.T, phase string, doc *document.Document, expe
 
 func livePreviewExpected(expected liveExpect) bool {
 	return expected.MinPreviewLength > 0 || len(expected.PreviewContains) > 0 ||
-		len(expected.PreviewNotContains) > 0 || expected.PreviewState != ""
+		len(expected.PreviewNotContains) > 0 || expected.PreviewDecision != ""
 }
 
 func assertLivePreview(t *testing.T, preview string, expected liveExpect) {

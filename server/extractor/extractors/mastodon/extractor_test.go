@@ -68,12 +68,12 @@ func TestExtractUsesOriginalRemoteStatusURL(t *testing.T) {
 		</div>`,
 	}
 
-	state, err := (&MastodonExtractor{}).Extract(d)
+	state, err := (&MastodonExtractor{}).Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if len(d.ExtraDocuments) != 1 {
 		t.Fatalf("ExtraDocuments length = %d, want 1", len(d.ExtraDocuments))
@@ -96,12 +96,12 @@ func TestExtractRenderedDetailedStatus(t *testing.T) {
 		</div>`,
 	}
 
-	state, err := (&MastodonExtractor{}).Extract(d)
+	state, err := (&MastodonExtractor{}).Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if len(d.ExtraDocuments) != 1 {
 		t.Fatalf("ExtraDocuments length = %d, want 1", len(d.ExtraDocuments))
@@ -121,12 +121,12 @@ func TestExtractSkipsDocumentWhenNoTootsFound(t *testing.T) {
 		HTML: `<meta content='{"repository":"mastodon/mastodon"}'>`,
 	}
 
-	state, err := (&MastodonExtractor{}).Extract(d)
+	state, err := (&MastodonExtractor{}).Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorStop)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
 	}
 	if !d.SkipIndexing {
 		t.Fatal("source document was not marked to skip indexing")

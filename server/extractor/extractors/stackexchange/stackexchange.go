@@ -176,10 +176,10 @@ func setMetadata(d *document.Document, doc *goquery.Document) {
 	}
 }
 
-func (e *StackExchangeExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *StackExchangeExtractor) Extract(d *document.Document) types.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	question := doc.Find(".question .js-post-body").First()
@@ -187,7 +187,7 @@ func (e *StackExchangeExtractor) Extract(d *document.Document) (types.ExtractorS
 		question = doc.Find(".js-post-body").First()
 	}
 	if question.Length() == 0 {
-		return types.ExtractorContinue, fmt.Errorf("no question body found")
+		return types.ExtractFallback(fmt.Errorf("no question body found"))
 	}
 
 	d.Title = questionTitle(doc)
@@ -209,13 +209,13 @@ func (e *StackExchangeExtractor) Extract(d *document.Document) (types.ExtractorS
 
 	setMetadata(d, doc)
 
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
-func (e *StackExchangeExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *StackExchangeExtractor) Preview(d *document.Document) types.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 	base, _ := url.Parse(d.URL)
 
@@ -227,12 +227,12 @@ func (e *StackExchangeExtractor) Preview(d *document.Document) (types.PreviewRes
 		qSel = doc.Find(".js-post-body").First()
 	}
 	if qSel.Length() == 0 {
-		return types.PreviewResponse{}, types.ExtractorContinue, fmt.Errorf("no question body found")
+		return types.PreviewFallback(fmt.Errorf("no question body found"))
 	}
 	urlutil.RewriteURLs(qSel, base)
 	question, err := qSel.Html()
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -267,5 +267,5 @@ func (e *StackExchangeExtractor) Preview(d *document.Document) (types.PreviewRes
 		b.WriteString(h)
 	})
 
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }

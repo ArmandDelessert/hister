@@ -5,9 +5,62 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/types"
 )
+
+type stubExtractor struct {
+	name         string
+	capabilities types.ExtractorCapabilities
+	cfg          *config.Extractor
+	match        func(*document.Document) bool
+	extract      func(*document.Document) types.ExtractResult
+	preview      func(*document.Document) types.PreviewResult
+}
+
+func (e *stubExtractor) Name() string { return e.name }
+
+func (e *stubExtractor) Description() string { return e.name }
+
+func (e *stubExtractor) Capabilities() types.ExtractorCapabilities { return e.capabilities }
+
+func (e *stubExtractor) Match(d *document.Document) bool {
+	return e.match == nil || e.match(d)
+}
+
+func (e *stubExtractor) Extract(d *document.Document) types.ExtractResult {
+	if e.extract == nil {
+		return types.ExtractFallback(nil)
+	}
+	return e.extract(d)
+}
+
+func (e *stubExtractor) Preview(d *document.Document) types.PreviewResult {
+	if e.preview == nil {
+		return types.PreviewFallback(nil)
+	}
+	return e.preview(d)
+}
+
+func (e *stubExtractor) GetConfig() *config.Extractor {
+	if e.cfg == nil {
+		return &config.Extractor{Enable: true, Options: map[string]any{}}
+	}
+	return e.cfg
+}
+
+func (e *stubExtractor) SetConfig(cfg *config.Extractor) error {
+	e.cfg = cfg
+	return nil
+}
+
+func useExtractors(t *testing.T, replacements ...Extractor) {
+	t.Helper()
+	original := extractors
+	extractors = replacements
+	t.Cleanup(func() { extractors = original })
+}
 
 func TestReadabilityPreviewSanitizesMetaRefresh(t *testing.T) {
 	doc := &document.Document{
@@ -28,13 +81,14 @@ func TestReadabilityPreviewSanitizesMetaRefresh(t *testing.T) {
 </html>`,
 	}
 
-	resp, state, err := (&readabilityExtractor{}).Preview(doc)
-	if err != nil {
-		t.Fatalf("Preview failed: %v", err)
+	result := (&readabilityExtractor{}).Preview(doc)
+	if result.Err() != nil {
+		t.Fatalf("Preview failed: %v", result.Err())
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("state = %v, want %v", state, types.ExtractorStop)
+	if result.Decision() != types.ExtractorSuccess {
+		t.Fatalf("decision = %v, want %v", result.Decision(), types.ExtractorSuccess)
 	}
+	resp := result.Response()
 	lower := strings.ToLower(resp.Content)
 	for _, disallowed := range []string{"http-equiv", "refresh", "eex.html"} {
 		if strings.Contains(lower, disallowed) {
@@ -51,13 +105,14 @@ func TestBasicPreviewEscapesMarkup(t *testing.T) {
 		Text: `<p>safe text</p><meta http-equiv="refresh" content="0; url=EEx.html">`,
 	}
 
-	resp, state, err := (&basicExtractor{}).Preview(doc)
-	if err != nil {
-		t.Fatalf("Preview failed: %v", err)
+	result := (&basicExtractor{}).Preview(doc)
+	if result.Err() != nil {
+		t.Fatalf("Preview failed: %v", result.Err())
 	}
-	if state != types.ExtractorStop {
-		t.Fatalf("state = %v, want %v", state, types.ExtractorStop)
+	if result.Decision() != types.ExtractorSuccess {
+		t.Fatalf("decision = %v, want %v", result.Decision(), types.ExtractorSuccess)
 	}
+	resp := result.Response()
 	for _, disallowed := range []string{"<p>", "<meta", `http-equiv="refresh"`} {
 		if strings.Contains(resp.Content, disallowed) {
 			t.Fatalf("preview content contains %q:\n%s", disallowed, resp.Content)
@@ -168,4 +223,75 @@ func TestExplicitPreviewRejectsExtractorWithoutPreviewCapability(t *testing.T) {
 	if !errors.Is(err, ErrNoExtractor) {
 		t.Fatalf("Preview error = %v, want ErrNoExtractor", err)
 	}
+}
+
+func TestInvalidExtractionResultStopsTheChain(t *testing.T) {
+	invalid := &stubExtractor{
+		name:         "Invalid",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+		extract: func(*document.Document) types.ExtractResult {
+			return types.ExtractResult{}
+		},
+	}
+	useExtractors(t, invalid)
+
+	err := Extract(&document.Document{URL: "https://example.com"})
+	if !errors.Is(err, ErrInvalidExtractorResult) {
+		t.Fatalf("Extract error = %v, want ErrInvalidExtractorResult", err)
+	}
+}
+
+func TestExplicitPreviewFallsBack(t *testing.T) {
+	first := &stubExtractor{
+		name:         "First",
+		capabilities: types.ExtractorCapabilities{Preview: true},
+		preview: func(*document.Document) types.PreviewResult {
+			return types.PreviewFallback(errors.New("preview declined"))
+		},
+	}
+	second := &stubExtractor{
+		name:         "Second",
+		capabilities: types.ExtractorCapabilities{Preview: true},
+		preview: func(*document.Document) types.PreviewResult {
+			return types.Previewed(types.PreviewResponse{Content: "fallback preview"})
+		},
+	}
+	useExtractors(t, first, second)
+	doc := &document.Document{URL: "https://example.com"}
+
+	response, err := Preview(doc, "First")
+	if err != nil {
+		t.Fatalf("Preview failed: %v", err)
+	}
+	if response.Content != "fallback preview" {
+		t.Fatalf("Preview content = %q, want fallback preview", response.Content)
+	}
+}
+
+func TestExplicitPreviewRequiresEnabledMatchingExtractor(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		candidate := &stubExtractor{
+			name:         "Disabled",
+			capabilities: types.ExtractorCapabilities{Preview: true},
+			cfg:          &config.Extractor{Enable: false, Options: map[string]any{}},
+		}
+		useExtractors(t, candidate)
+		_, err := Preview(&document.Document{URL: "https://example.com"}, candidate.Name())
+		if !errors.Is(err, ErrNoExtractor) {
+			t.Fatalf("Preview error = %v, want ErrNoExtractor", err)
+		}
+	})
+
+	t.Run("not matching", func(t *testing.T) {
+		candidate := &stubExtractor{
+			name:         "NotMatching",
+			capabilities: types.ExtractorCapabilities{Preview: true},
+			match:        func(*document.Document) bool { return false },
+		}
+		useExtractors(t, candidate)
+		_, err := Preview(&document.Document{URL: "https://example.com"}, candidate.Name())
+		if !errors.Is(err, ErrNoExtractor) {
+			t.Fatalf("Preview error = %v, want ErrNoExtractor", err)
+		}
+	})
 }

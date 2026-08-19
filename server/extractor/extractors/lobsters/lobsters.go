@@ -53,10 +53,10 @@ func (e *LobstersExtractor) Match(d *document.Document) bool {
 
 // Extract populates the document's Title and Text with the story metadata and
 // the full comment tree so they are searchable from the index.
-func (e *LobstersExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *LobstersExtractor) Extract(d *document.Document) types.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	story := doc.Find("li.story").First()
@@ -74,17 +74,17 @@ func (e *LobstersExtractor) Extract(d *document.Document) (types.ExtractorState,
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractorContinue, fmt.Errorf("no content found")
+		return types.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 // Preview renders the story header, body and nested comment tree as sanitized
 // HTML suitable for the preview pane.
-func (e *LobstersExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *LobstersExtractor) Preview(d *document.Document) types.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	story := doc.Find("li.story").First()
@@ -141,7 +141,7 @@ func (e *LobstersExtractor) Preview(d *document.Document) (types.PreviewResponse
 		b.WriteString("</ol>")
 	}
 
-	return types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
 // commentAuthor returns the commenter's username. The byline contains two

@@ -12,12 +12,12 @@ func extract(t *testing.T, html string) *document.Document {
 	t.Helper()
 	d := &document.Document{URL: "https://example.com/", HTML: html}
 	e := &JSONLDExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	if state != types.ExtractorContinue {
-		t.Fatalf("Extract state = %v, want Continue", state)
+	if state != types.ExtractorSuccess {
+		t.Fatalf("Extract decision = %v, want Success", state)
 	}
 	return d
 }
@@ -141,12 +141,12 @@ func TestMalformedJSONContinues(t *testing.T) {
 func TestNoJSONLD(t *testing.T) {
 	d := &document.Document{URL: "https://example.com/", HTML: "<html><body><p>hi</p></body></html>"}
 	e := &JSONLDExtractor{}
-	state, err := e.Extract(d)
+	state, err := e.Extract(d).Unpack()
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	if state != types.ExtractorContinue {
-		t.Fatalf("state = %v, want Continue", state)
+	if state != types.ExtractorFallback {
+		t.Fatalf("decision = %v, want Fallback", state)
 	}
 	if _, ok := d.Metadata["jsonld"]; ok {
 		t.Errorf("Metadata[jsonld] should not be set, got %v", d.Metadata)

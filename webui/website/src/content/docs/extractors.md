@@ -102,16 +102,26 @@ Indexing first runs every matching enricher in registration order. It then tries
 matching content extractors in registration order until one succeeds. Preview
 selection considers only extractors that declare the preview capability.
 
-Calls to `Extract` or `Preview` return an `ExtractorState` value that signals
-how the current phase should proceed:
+`Extract` and `Preview` return explicit result values. Each result records one
+of three decisions:
 
-| State               | Meaning                                                                                                                     |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `ExtractorStop`     | The extractor handled the document successfully; stop the chain and return a successful result.                             |
-| `ExtractorContinue` | The extractor was inconclusive; try the next matching extractor in the chain.                                               |
-| `ExtractorAbort`    | A fatal error occurred; stop the chain immediately and propagate the error to the caller without trying further extractors. |
+| Decision | Meaning                                                                                              |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| Success  | The extractor handled the document successfully.                                                     |
+| Fallback | The extractor was inconclusive, so the next matching extractor should be tried.                      |
+| Abort    | A fatal error occurred. The chain stops immediately and returns the error without trying a fallback. |
 
-If no extractor returns `ExtractorStop`, `ErrNoExtractor` is returned.
+Use `Extracted`, `ExtractFallback`, or `AbortExtraction` for extraction
+results. Use `Previewed`, `PreviewFallback`, or `AbortPreview` for preview
+results. The result fields are private, so an implementation cannot return a
+contradictory decision and error combination. The zero value is invalid.
+
+When a caller names a preview extractor explicitly, that extractor must be
+enabled, preview capable, and matched to the document. Selection starts there.
+If it returns `PreviewFallback`, later matching preview extractors may still
+provide the response.
+
+If no extractor succeeds, `ErrNoExtractor` is returned.
 
 ## The Extractor interface
 
@@ -134,14 +144,12 @@ type Extractor interface {
     Match(*document.Document) bool
 
     // Extract rewrites the document before it is added to the index.
-    // Return ExtractorStop on success, ExtractorContinue to fall through to
-    // the next extractor, or ExtractorAbort to stop with a fatal error.
-    Extract(*document.Document) (types.ExtractorState, error)
+    // Return an explicit success, fallback, or abort result.
+    Extract(*document.Document) types.ExtractResult
 
     // Preview returns a rendered representation suitable for display.
-    // Return ExtractorStop on success, ExtractorContinue to fall through to
-    // the next extractor, or ExtractorAbort to stop with a fatal error.
-    Preview(*document.Document) (types.PreviewResponse, types.ExtractorState, error)
+    // Return an explicit success, fallback, or abort result.
+    Preview(*document.Document) types.PreviewResult
 
     // GetConfig returns the extractor's current configuration.
     // Must return sensible defaults before SetConfig is called.
@@ -171,20 +179,25 @@ the searchable body. A content extractor can populate the title and text. A
 preview extractor can render the stored document. Most specialist extractors
 declare both content and preview capabilities.
 
-### `ExtractorState`
+### Result types
 
-[`types.ExtractorState`](https://github.com/asciimoo/hister/blob/main/server/types/types.go)
-is defined in the `server/types` package:
+[`types.ExtractResult`](https://github.com/asciimoo/hister/blob/main/server/types/types.go)
+and `types.PreviewResult` are defined in the `server/types` package. Construct
+them with the helpers below:
 
 ```go
-type ExtractorState int
+return types.Extracted()
+return types.ExtractFallback(err)
+return types.AbortExtraction(err)
 
-const (
-    ExtractorStop     ExtractorState = iota // success, stop the chain
-    ExtractorContinue                       // inconclusive, try next extractor
-    ExtractorAbort                          // fatal error, stop immediately
-)
+return types.Previewed(types.PreviewResponse{Content: html})
+return types.PreviewFallback(err)
+return types.AbortPreview(err)
 ```
+
+Fallback errors are optional diagnostics. Abort helpers always carry an error.
+Passing `nil` to an abort helper produces a descriptive error rather than an
+ambiguous result.
 
 ### `Document`
 
@@ -226,7 +239,7 @@ builds, but the file itself is valid, fully-commented Go.
 4. Update `matchURLPrefix` and the `Match` function for your target site.
 5. Update `Capabilities` to declare the phases the extractor supports.
 6. Implement `Extract` to populate `d.Title`, `d.Text`, and optionally `d.Metadata`.
-7. Implement `Preview` to return sanitized HTML (or return `ExtractorContinue`
+7. Implement `Preview` to return sanitized HTML (or return `PreviewFallback`
    to reuse the generic readability preview).
 8. Add an import and a `&MyExtractor{}` entry to the `extractors` slice in
    `server/extractor/extractor.go`, before the `&readabilityExtractor{}` line.
@@ -306,7 +319,7 @@ the fully resolved configuration.
 
 The extractors below are registered in the order listed. Every matching
 enricher runs first. The first matching content extractor that returns
-`ExtractorStop` selects the searchable body. Preview selection follows the
+`Extracted()` selects the searchable body. Preview selection follows the
 same registration order but includes only preview capable extractors.
 
 ### `markdown`
@@ -330,8 +343,8 @@ extractor leaves indexed text unchanged and handles the preview.
 
 Scans `iframe`, `video`, `embed`, and `object` elements for embedded video URLs.
 Discovered entries are stored as JSON in the document's `videos` metadata. It
-always returns `ExtractorContinue`, allowing a later extractor to produce the
-searchable body and preview.
+returns `Extracted()` after enriching the document. A later content extractor
+still produces the searchable body and preview.
 
 **Matches:** pages whose raw HTML contains a supported embedding element.
 
@@ -342,9 +355,9 @@ normalised [schema.org](https://schema.org) metadata to `d.Metadata`. Captures
 the `@type` (content classification) and `headline` fields that the Readability
 extractor does not expose.
 
-Always returns `ExtractorContinue`, it enriches metadata but never produces
-body text on its own. The `Readability` or `Basic` extractor further down the
-chain handles text extraction.
+It returns `Extracted()` after enriching metadata but never produces body text
+on its own. The `Readability` or `Basic` extractor further down the chain
+handles text extraction.
 
 **Matches:** any page that contains the `application/ld+json` substring.
 

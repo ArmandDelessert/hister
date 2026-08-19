@@ -54,17 +54,17 @@ func (e *WikipediaExtractor) Match(d *document.Document) bool {
 
 // Extract populates the document's Title, Text, and Metadata from Wikipedia
 // article HTML so that article content, infoboxes, and tables are searchable.
-func (e *WikipediaExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+func (e *WikipediaExtractor) Extract(d *document.Document) types.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractorContinue, err
+		return types.ExtractFallback(err)
 	}
 
 	d.Title = articleTitle(doc)
 
 	content := articleContent(doc)
 	if content.Length() == 0 {
-		return types.ExtractorContinue, fmt.Errorf("no mw-parser-output found")
+		return types.ExtractFallback(fmt.Errorf("no mw-parser-output found"))
 	}
 
 	if d.Metadata == nil {
@@ -92,23 +92,23 @@ func (e *WikipediaExtractor) Extract(d *document.Document) (types.ExtractorState
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractorContinue, fmt.Errorf("no content found")
+		return types.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.ExtractorStop, nil
+	return types.Extracted()
 }
 
 // Preview returns sanitized HTML of the article body with navigation and
 // reference noise stripped, inline styles applied for rich rendering, and
 // relative URLs rewritten to absolute.
-func (e *WikipediaExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
+func (e *WikipediaExtractor) Preview(d *document.Document) types.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
 
 	content := articleContent(doc)
 	if content.Length() == 0 {
-		return types.PreviewResponse{}, types.ExtractorContinue, fmt.Errorf("no mw-parser-output found")
+		return types.PreviewFallback(fmt.Errorf("no mw-parser-output found"))
 	}
 
 	base, _ := url.Parse(d.URL)
@@ -120,9 +120,9 @@ func (e *WikipediaExtractor) Preview(d *document.Document) (types.PreviewRespons
 
 	html, err := content.Html()
 	if err != nil {
-		return types.PreviewResponse{}, types.ExtractorContinue, err
+		return types.PreviewFallback(err)
 	}
-	return types.PreviewResponse{Content: sanitizer.SanitizeTrustedHTML(html)}, types.ExtractorStop, nil
+	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeTrustedHTML(html)})
 }
 
 // Non-content Wikipedia namespaces to exclude from extraction.

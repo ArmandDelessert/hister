@@ -58,8 +58,8 @@ var knownVideoHosts = []string{
 var htmlQuickCheck = []string{"<iframe", "<video", "<embed", "<object"}
 
 // EmbeddedVideoExtractor scans HTML for embedded video elements and stores
-// their URLs in d.Metadata["videos"]. It always returns ExtractorContinue so
-// the rest of the extractor chain runs normally.
+// their URLs in d.Metadata["videos"]. Its enrichment capability keeps body
+// extraction independent from this metadata pass.
 type EmbeddedVideoExtractor struct {
 	cfg *config.Extractor
 }
@@ -107,22 +107,23 @@ func (e *EmbeddedVideoExtractor) Match(d *document.Document) bool {
 }
 
 // Extract scans d.HTML for video embedding elements and appends any
-// discovered videos to d.Metadata["videos"]. It always returns
-// ExtractorContinue so that text-extraction extractors still run.
-func (e *EmbeddedVideoExtractor) Extract(d *document.Document) (types.ExtractorState, error) {
+// discovered videos to d.Metadata["videos"].
+func (e *EmbeddedVideoExtractor) Extract(d *document.Document) types.ExtractResult {
 	videos := extractVideos(d.HTML)
 	if len(videos) > 0 {
 		raw, err := json.Marshal(videos)
-		if err == nil {
-			d.AddMetadata("videos", string(raw))
+		if err != nil {
+			return types.ExtractFallback(err)
 		}
+		d.AddMetadata("videos", string(raw))
+		return types.Extracted()
 	}
-	return types.ExtractorContinue, nil
+	return types.ExtractFallback(nil)
 }
 
 // Preview does not provide a custom rendering; let the chain continue.
-func (e *EmbeddedVideoExtractor) Preview(d *document.Document) (types.PreviewResponse, types.ExtractorState, error) {
-	return types.PreviewResponse{}, types.ExtractorContinue, nil
+func (e *EmbeddedVideoExtractor) Preview(d *document.Document) types.PreviewResult {
+	return types.PreviewFallback(nil)
 }
 
 // extractVideos tokenizes raw HTML and returns all embedded video entries

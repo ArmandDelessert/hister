@@ -5,6 +5,8 @@ title: 'Data Storage and Lifecycle'
 description: 'Learn where Hister stores data and how updates, previews, deletion, cleanup, and backups behave.'
 ---
 
+On average, storing one page requires around 100 KB of disk space.
+
 Hister keeps current searchable documents until you replace or delete them. It does not apply an automatic expiry period, a maximum document count, or a total disk quota. Some related SQL records can remain after current document deletion. The server operator is responsible for monitoring storage, creating backups, and applying any required deletion schedule.
 
 ## Lifecycle at a Glance

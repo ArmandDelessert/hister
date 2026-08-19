@@ -46,6 +46,9 @@ type Extractor interface {
 	// Description returns a short human-readable summary of what the extractor does.
 	Description() string
 
+	// Capabilities declares which extractor phases this implementation joins.
+	Capabilities() types.ExtractorCapabilities
+
 	// Match reports whether this extractor is applicable to the given document.
 	// Extract and Preview will only be called when Match returns true.
 	Match(*document.Document) bool
@@ -80,10 +83,11 @@ var ErrExtractorAbort = errors.New("extractor aborted")
 
 // ExtractorInfo holds a summary of an extractor's identity and current state.
 type ExtractorInfo struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Enabled     bool           `json:"enabled"`
-	Options     map[string]any `json:"options,omitempty"`
+	Name         string                      `json:"name"`
+	Description  string                      `json:"description"`
+	Enabled      bool                        `json:"enabled"`
+	Capabilities types.ExtractorCapabilities `json:"capabilities"`
+	Options      map[string]any              `json:"options,omitempty"`
 }
 
 // ListMatching returns an ExtractorInfo entry for every enabled extractor that
@@ -97,9 +101,30 @@ func ListMatching(d *document.Document) []ExtractorInfo {
 		}
 		if e.Match(d) {
 			infos = append(infos, ExtractorInfo{
-				Name:        e.Name(),
-				Description: e.Description(),
-				Enabled:     true,
+				Name:         e.Name(),
+				Description:  e.Description(),
+				Enabled:      true,
+				Capabilities: e.Capabilities(),
+			})
+		}
+	}
+	return infos
+}
+
+// ListMatchingPreview returns every enabled preview extractor matching d in
+// chain order. Metadata-only enrichers and content-only extractors are omitted.
+func ListMatchingPreview(d *document.Document) []ExtractorInfo {
+	infos := make([]ExtractorInfo, 0)
+	for _, e := range extractors {
+		if !e.GetConfig().Enable || !e.Capabilities().Preview {
+			continue
+		}
+		if e.Match(d) {
+			infos = append(infos, ExtractorInfo{
+				Name:         e.Name(),
+				Description:  e.Description(),
+				Enabled:      true,
+				Capabilities: e.Capabilities(),
 			})
 		}
 	}
@@ -115,9 +140,10 @@ func ListEnabled() []ExtractorInfo {
 			continue
 		}
 		infos = append(infos, ExtractorInfo{
-			Name:        e.Name(),
-			Description: e.Description(),
-			Enabled:     true,
+			Name:         e.Name(),
+			Description:  e.Description(),
+			Enabled:      true,
+			Capabilities: e.Capabilities(),
 		})
 	}
 	return infos
@@ -131,10 +157,11 @@ func List() []ExtractorInfo {
 	for _, e := range extractors {
 		cfg := e.GetConfig()
 		infos = append(infos, ExtractorInfo{
-			Name:        e.Name(),
-			Description: e.Description(),
-			Enabled:     cfg.Enable,
-			Options:     cfg.Options,
+			Name:         e.Name(),
+			Description:  e.Description(),
+			Enabled:      cfg.Enable,
+			Capabilities: e.Capabilities(),
+			Options:      cfg.Options,
 		})
 	}
 	return infos
@@ -183,11 +210,27 @@ func Init(cfgs map[string]*config.Extractor) error {
 	return nil
 }
 
-// Extract tries each registered extractor in order and returns the first
-// successful result. Returns ErrNoExtractor if none succeed.
+// Extract first runs every matching enricher, then tries matching content
+// extractors in registration order and returns the first successful result.
+// Returns ErrNoExtractor if no content extractor succeeds.
 func Extract(d *document.Document) error {
 	for _, e := range extractors {
-		if !e.GetConfig().Enable {
+		if !e.GetConfig().Enable || !e.Capabilities().Enrich {
+			continue
+		}
+		if e.Match(d) {
+			state, err := e.Extract(d)
+			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Enriching document")
+			if state == types.ExtractorAbort {
+				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, err)
+			}
+			if err != nil {
+				log.Warn().Err(err).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to enrich document")
+			}
+		}
+	}
+	for _, e := range extractors {
+		if !e.GetConfig().Enable || !e.Capabilities().Extract {
 			continue
 		}
 		if e.Match(d) {
@@ -218,6 +261,9 @@ func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
 		lower := strings.ToLower(name)
 		for _, e := range extractors {
 			if strings.ToLower(e.Name()) == lower {
+				if !e.Capabilities().Preview {
+					return types.PreviewResponse{}, fmt.Errorf("%w: %s does not provide previews", ErrNoExtractor, name)
+				}
 				log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Creating preview with explicit extractor")
 				resp, state, err := e.Preview(d)
 				if state == types.ExtractorAbort {
@@ -229,7 +275,7 @@ func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
 		return types.PreviewResponse{}, fmt.Errorf("%w: %s", ErrNoExtractor, name)
 	}
 	for _, e := range extractors {
-		if !e.GetConfig().Enable {
+		if !e.GetConfig().Enable || !e.Capabilities().Preview {
 			continue
 		}
 		if e.Match(d) {
@@ -294,6 +340,10 @@ func (e *basicExtractor) Name() string {
 
 func (e *basicExtractor) Description() string {
 	return "Fallback extractor that strips HTML tags and extracts plain text from any web page."
+}
+
+func (e *basicExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
 }
 
 func (e *basicExtractor) Match(_ *document.Document) bool {
@@ -364,6 +414,10 @@ func (e *readabilityExtractor) Name() string {
 
 func (e *readabilityExtractor) Description() string {
 	return "Extracts the main article content from any web page using the go-readability library, filtering out navigation, ads, and other boilerplate."
+}
+
+func (e *readabilityExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
 }
 
 func (e *readabilityExtractor) Match(_ *document.Document) bool {

@@ -23,6 +23,10 @@ func (e *OrgModeExtractor) Description() string {
 	return "Renders locally indexed Org files (.org) as HTML for preview."
 }
 
+func (e *OrgModeExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Preview: true}
+}
+
 func (e *OrgModeExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

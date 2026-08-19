@@ -33,6 +33,16 @@ type PreviewResponse struct {
 	Template string
 }
 
+// ExtractorCapabilities declares the roles an extractor participates in.
+// Enrichers annotate a document without selecting its searchable body.
+// Content extractors compete to produce the searchable title and text.
+// Preview extractors compete to render the stored document.
+type ExtractorCapabilities struct {
+	Enrich  bool `json:"enrich"`
+	Extract bool `json:"extract"`
+	Preview bool `json:"preview"`
+}
+
 // ExtractorState signals to the extractor chain how processing should proceed
 // after an extractor returns.
 type ExtractorState int

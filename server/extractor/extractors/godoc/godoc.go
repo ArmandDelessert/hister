@@ -37,6 +37,10 @@ func (e *GoDocExtractor) Description() string {
 	return "Extracts and renders Go package documentation from pkg.go.dev pages."
 }
 
+func (e *GoDocExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Preview: true}
+}
+
 // GetConfig returns the extractor's current configuration.
 func (e *GoDocExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {

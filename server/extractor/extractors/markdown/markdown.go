@@ -26,6 +26,10 @@ func (e *MarkdownExtractor) Description() string {
 	return "Renders locally indexed Markdown files (.md, .markdown) as HTML for preview."
 }
 
+func (e *MarkdownExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Preview: true}
+}
+
 func (e *MarkdownExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

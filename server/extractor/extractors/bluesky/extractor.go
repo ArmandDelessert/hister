@@ -40,6 +40,10 @@ func (e *BlueskyExtractor) Description() string {
 	return "Extracts Bluesky posts as individual documents from profiles, feeds, and post pages."
 }
 
+func (e *BlueskyExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *BlueskyExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

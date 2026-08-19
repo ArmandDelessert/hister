@@ -72,6 +72,10 @@ func (e *EmbeddedVideoExtractor) Description() string {
 	return "Scans HTML for embedded video tags (iframe, video, embed, object) and stores discovered video URLs in document metadata."
 }
 
+func (e *EmbeddedVideoExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Enrich: true}
+}
+
 func (e *EmbeddedVideoExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

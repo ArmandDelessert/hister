@@ -50,6 +50,12 @@ func (e *TemplateExtractor) Description() string {
 	return "Template extractor. Replace this with a description of what your extractor does."
 }
 
+// Capabilities declares which phases this extractor participates in. Set
+// Enrich when it only annotates documents and should never select their body.
+func (e *TemplateExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 // GetConfig returns the extractor's current configuration, or built-in
 // defaults when SetConfig has not been called yet.
 //

@@ -29,6 +29,10 @@ func (e *MastodonExtractor) Description() string {
 	return "Extracts toots as individual documents from Mastodon websites."
 }
 
+func (e *MastodonExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *MastodonExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{

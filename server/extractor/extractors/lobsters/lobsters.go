@@ -28,6 +28,10 @@ func (e *LobstersExtractor) Description() string {
 	return "Extracts the submission metadata, story body and full nested comment tree from lobste.rs story pages."
 }
 
+func (e *LobstersExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *LobstersExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

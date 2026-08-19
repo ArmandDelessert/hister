@@ -761,13 +761,13 @@ func init() {
 			NoAuth:       true,
 			Public:       true,
 			Handler:      serveExtractors,
-			Description:  "List all registered extractors, or just those matching a specific document URL",
+			Description:  "List all registered extractors, or preview extractors matching a specific document URL",
 			Args: []*EndpointArg{
 				{
 					Name:        "url",
 					Type:        "string",
 					Required:    false,
-					Description: "If provided, return only extractors that match this indexed document URL",
+					Description: "If provided, return only preview extractors that match this indexed document URL",
 				},
 			},
 		},

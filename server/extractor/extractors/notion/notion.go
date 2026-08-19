@@ -38,6 +38,10 @@ func (e *NotionExtractor) Description() string {
 	return "Extracts the title and block content of Notion pages on notion.so and *.notion.site. Requires a JavaScript-rendering crawler backend (chromedp or bidi) because Notion renders content client-side."
 }
 
+func (e *NotionExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *NotionExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

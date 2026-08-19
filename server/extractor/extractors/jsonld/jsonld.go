@@ -38,6 +38,10 @@ func (e *JSONLDExtractor) Description() string {
 	return "Parses application/ld+json script tags and stores normalized schema.org metadata on the document."
 }
 
+func (e *JSONLDExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Enrich: true}
+}
+
 // GetConfig returns the extractor's current configuration.
 func (e *JSONLDExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {

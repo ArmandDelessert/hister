@@ -46,6 +46,10 @@ func (e *YtdlpExtractor) Description() string {
 	return "Extracts video metadata (title, description, chapters, subtitles, thumbnail) from video hosting sites using the yt-dlp tool."
 }
 
+func (e *YtdlpExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *YtdlpExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{

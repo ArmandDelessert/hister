@@ -42,6 +42,10 @@ func (e *TwitterExtractor) Description() string {
 	return "Extracts tweets as individual documents from Twitter and X feeds, profiles, and tweet pages."
 }
 
+func (e *TwitterExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *TwitterExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

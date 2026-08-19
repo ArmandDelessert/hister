@@ -88,6 +88,10 @@ func (e *DiscourseExtractor) Description() string {
 	return "Extracts a Discourse topic and every post already present in the page."
 }
 
+func (e *DiscourseExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *DiscourseExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

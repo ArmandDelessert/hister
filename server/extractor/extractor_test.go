@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestBasicPreviewEscapesMarkup(t *testing.T) {
 	}
 }
 
-func TestDiscourseRunsBeforeJSONLD(t *testing.T) {
+func TestEnrichersRunBeforeContentExtractor(t *testing.T) {
 	doc := &document.Document{
 		URL: "https://forum.example.com/t/topic/42",
 		HTML: `<html><head>
@@ -101,7 +102,70 @@ func TestDiscourseRunsBeforeJSONLD(t *testing.T) {
 	if got := doc.Metadata["type"]; got != "discourse" {
 		t.Fatalf("metadata type = %#v, want discourse", got)
 	}
-	if _, exists := doc.Metadata["jsonld"]; exists {
-		t.Fatal("JSON LD metadata was extracted before Discourse stopped the chain")
+	if _, exists := doc.Metadata["jsonld"]; !exists {
+		t.Fatal("JSON LD enricher did not run before Discourse selected the content")
+	}
+}
+
+func TestRegisteredExtractorCapabilities(t *testing.T) {
+	for _, candidate := range extractors {
+		caps := candidate.Capabilities()
+		if !caps.Enrich && !caps.Extract && !caps.Preview {
+			t.Errorf("%s declares no capabilities", candidate.Name())
+		}
+
+		switch candidate.Name() {
+		case "EmbeddedVideo", "JSONLD":
+			if !caps.Enrich || caps.Extract || caps.Preview {
+				t.Errorf("%s capabilities = %+v, want enrichment only", candidate.Name(), caps)
+			}
+		case "Markdown", "OrgMode", "GoDoc":
+			if caps.Enrich || caps.Extract || !caps.Preview {
+				t.Errorf("%s capabilities = %+v, want preview only", candidate.Name(), caps)
+			}
+		default:
+			if caps.Enrich || !caps.Extract || !caps.Preview {
+				t.Errorf("%s capabilities = %+v, want content and preview", candidate.Name(), caps)
+			}
+		}
+	}
+}
+
+func TestListMatchingPreviewOmitsEnrichers(t *testing.T) {
+	doc := &document.Document{
+		URL: "https://example.com/article",
+		HTML: `<html><head><script type="application/ld+json">{"@type":"Article"}</script></head>
+			<body><iframe src="https://www.youtube.com/embed/example"></iframe></body></html>`,
+	}
+
+	all := make(map[string]bool)
+	for _, info := range ListMatching(doc) {
+		all[info.Name] = true
+	}
+	for _, name := range []string{"EmbeddedVideo", "JSONLD"} {
+		if !all[name] {
+			t.Fatalf("ListMatching omitted matching enricher %s", name)
+		}
+	}
+
+	for _, info := range ListMatchingPreview(doc) {
+		if !info.Capabilities.Preview {
+			t.Errorf("ListMatchingPreview returned non-preview extractor %s", info.Name)
+		}
+		if info.Name == "EmbeddedVideo" || info.Name == "JSONLD" {
+			t.Errorf("ListMatchingPreview returned enricher %s", info.Name)
+		}
+	}
+}
+
+func TestExplicitPreviewRejectsExtractorWithoutPreviewCapability(t *testing.T) {
+	doc := &document.Document{
+		URL:  "https://example.com/article",
+		HTML: `<script type="application/ld+json">{"@type":"Article"}</script>`,
+	}
+
+	_, err := Preview(doc, "JSONLD")
+	if !errors.Is(err, ErrNoExtractor) {
+		t.Fatalf("Preview error = %v, want ErrNoExtractor", err)
 	}
 }

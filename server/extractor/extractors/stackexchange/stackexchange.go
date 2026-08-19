@@ -40,6 +40,10 @@ func (e *StackExchangeExtractor) Description() string {
 	return "Extracts the question and all answers from Stack Exchange network question pages (Stack Overflow, Server Fault, Super User, Ask Ubuntu, *.stackexchange.com, and more)."
 }
 
+func (e *StackExchangeExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *StackExchangeExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

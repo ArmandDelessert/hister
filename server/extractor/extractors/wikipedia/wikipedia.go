@@ -29,6 +29,10 @@ func (e *WikipediaExtractor) Description() string {
 	return "Extracts article content, infoboxes, tables, and metadata from Wikipedia pages."
 }
 
+func (e *WikipediaExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *WikipediaExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

@@ -56,6 +56,10 @@ func (e *RedditExtractor) Description() string {
 	return "Extracts a Reddit post and every comment already present on its post page."
 }
 
+func (e *RedditExtractor) Capabilities() types.ExtractorCapabilities {
+	return types.ExtractorCapabilities{Extract: true, Preview: true}
+}
+
 func (e *RedditExtractor) GetConfig() *config.Extractor {
 	if e.cfg == nil {
 		return &config.Extractor{Enable: true, Options: map[string]any{}}

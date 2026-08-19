@@ -1442,7 +1442,7 @@ func serveExtractors(c *webContext) {
 			serve500(c)
 			return
 		}
-		c.JSON(extractor.ListMatching(doc))
+		c.JSON(extractor.ListMatchingPreview(doc))
 		return
 	}
 	infos := extractor.List()

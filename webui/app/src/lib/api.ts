@@ -29,6 +29,11 @@ export interface ExtractorInfo {
   name: string;
   description: string;
   enabled: boolean;
+  capabilities: {
+    enrich: boolean;
+    extract: boolean;
+    preview: boolean;
+  };
   options?: Record<string, unknown>;
 }
 

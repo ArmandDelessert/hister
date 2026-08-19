@@ -97,8 +97,13 @@ processed to provide a full `Document` object.
 
 ## Extractor chain
 
-Extractors are tried in registration order. Each call to `Extract` or `Preview`
-returns an `ExtractorState` value that signals how the chain should proceed:
+Extractor capabilities place each implementation into one or more phases.
+Indexing first runs every matching enricher in registration order. It then tries
+matching content extractors in registration order until one succeeds. Preview
+selection considers only extractors that declare the preview capability.
+
+Calls to `Extract` or `Preview` return an `ExtractorState` value that signals
+how the current phase should proceed:
 
 | State               | Meaning                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -120,6 +125,9 @@ type Extractor interface {
 
     // Description returns a short human-readable summary for clients.
     Description() string
+
+    // Capabilities declares the extractor phases this implementation joins.
+    Capabilities() types.ExtractorCapabilities
 
     // Match reports whether this extractor applies to the given document.
     // Extract and Preview are only called when Match returns true.
@@ -144,6 +152,24 @@ type Extractor interface {
     SetConfig(*config.Extractor) error
 }
 ```
+
+### `ExtractorCapabilities`
+
+Capabilities keep metadata enrichment, searchable content extraction, and
+preview rendering independent:
+
+```go
+type ExtractorCapabilities struct {
+    Enrich  bool
+    Extract bool
+    Preview bool
+}
+```
+
+An enricher annotates every matching document and does not compete to select
+the searchable body. A content extractor can populate the title and text. A
+preview extractor can render the stored document. Most specialist extractors
+declare both content and preview capabilities.
 
 ### `ExtractorState`
 
@@ -198,10 +224,11 @@ builds, but the file itself is valid, fully-commented Go.
 2. Change the `package` declaration to match the new directory name.
 3. Rename `TemplateExtractor` to something descriptive (e.g. `HackerNewsExtractor`).
 4. Update `matchURLPrefix` and the `Match` function for your target site.
-5. Implement `Extract` to populate `d.Title`, `d.Text`, and optionally `d.Metadata`.
-6. Implement `Preview` to return sanitized HTML (or return `ExtractorContinue`
+5. Update `Capabilities` to declare the phases the extractor supports.
+6. Implement `Extract` to populate `d.Title`, `d.Text`, and optionally `d.Metadata`.
+7. Implement `Preview` to return sanitized HTML (or return `ExtractorContinue`
    to reuse the generic readability preview).
-7. Add an import and a `&MyExtractor{}` entry to the `extractors` slice in
+8. Add an import and a `&MyExtractor{}` entry to the `extractors` slice in
    `server/extractor/extractor.go`, before the `&readabilityExtractor{}` line.
 
 ## Configuration
@@ -277,10 +304,10 @@ the fully resolved configuration.
 
 ## Built-in extractors
 
-The extractors below are tried in the order listed. The first one that returns
-`ExtractorStop` wins; the rest are skipped. Extractors that always return
-`ExtractorContinue` act as metadata enrichers, they annotate the document
-and then pass control to the next extractor in the chain.
+The extractors below are registered in the order listed. Every matching
+enricher runs first. The first matching content extractor that returns
+`ExtractorStop` selects the searchable body. Preview selection follows the
+same registration order but includes only preview capable extractors.
 
 ### `markdown`
 

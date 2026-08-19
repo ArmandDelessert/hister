@@ -26,6 +26,15 @@
   <title>Hister - Extractors</title>
 </svelte:head>
 
+{#snippet capabilityBadge(enabled: boolean, label: string, colorClass: string)}
+  {#if enabled}
+    <span
+      class="{colorClass} font-space rounded px-2 py-0.5 text-[11px] font-semibold tracking-wider uppercase"
+      >{label}</span
+    >
+  {/if}
+{/snippet}
+
 <div class="flex-1 overflow-y-auto px-4 py-6 md:px-12 md:py-10">
   <PageHeader color="hister-green" class="mx-auto mb-8 max-w-3xl">Extractors</PageHeader>
 
@@ -55,6 +64,21 @@
                   >Disabled</span
                 >
               {/if}
+              {@render capabilityBadge(
+                ext.capabilities.enrich,
+                'Enricher',
+                'bg-hister-teal/15 text-hister-teal',
+              )}
+              {@render capabilityBadge(
+                ext.capabilities.extract,
+                'Content',
+                'bg-hister-amber/15 text-hister-amber',
+              )}
+              {@render capabilityBadge(
+                ext.capabilities.preview,
+                'Preview',
+                'bg-hister-indigo/15 text-hister-indigo',
+              )}
             </div>
             <p class="font-inter text-text-brand-secondary text-sm leading-relaxed">
               {ext.description}

@@ -426,7 +426,7 @@ func downloadServiceContent(
 	if err != nil {
 		return err
 	}
-	return applyServiceContent(d, fetched, request.PrefixText, request.SourceTitle, languageDetector)
+	return applyServiceContent(ctx, d, fetched, request.PrefixText, request.SourceTitle, languageDetector)
 }
 
 func loadServiceContent(
@@ -439,6 +439,7 @@ func loadServiceContent(
 	var embeddedErr error
 	if strings.TrimSpace(request.HTML) != "" {
 		embeddedErr = applyServiceHTML(
+			ctx,
 			d,
 			request.URL,
 			request.HTML,
@@ -457,6 +458,7 @@ func loadServiceContent(
 }
 
 func applyServiceHTML(
+	ctx context.Context,
 	d *document.Document,
 	rawURL string,
 	htmlContent string,
@@ -465,10 +467,11 @@ func applyServiceHTML(
 	languageDetector document.LanguageDetector,
 ) error {
 	fetched := &document.Document{URL: rawURL, HTML: htmlContent}
-	return applyServiceContent(d, fetched, prefixText, sourceTitle, languageDetector)
+	return applyServiceContent(ctx, d, fetched, prefixText, sourceTitle, languageDetector)
 }
 
 func applyServiceContent(
+	ctx context.Context,
 	d *document.Document,
 	fetched *document.Document,
 	prefixText string,
@@ -478,7 +481,7 @@ func applyServiceContent(
 	if fetched == nil {
 		return errors.New("downloaded page is missing")
 	}
-	if err := fetched.Process(languageDetector, extractor.Extract); err != nil {
+	if err := fetched.ProcessContext(ctx, languageDetector, extractor.ExtractContext); err != nil {
 		return fmt.Errorf("process downloaded content: %w", err)
 	}
 	if strings.TrimSpace(fetched.Text) == "" {

@@ -713,7 +713,7 @@ func serveAdd(c *webContext) {
 		if rules.IsVersioning(d.URL) {
 			existingDoc = c.Indexer.GetByURLAndUser(d.URL, d.UserID)
 		}
-		err := c.Indexer.Add(d)
+		err := c.Indexer.AddContext(c.Request.Context(), d)
 		if err != nil {
 			if errors.Is(err, document.ErrSensitiveContent) {
 				log.Warn().Str("URL", d.URL).Msg("rejected document: sensitive content")
@@ -1268,7 +1268,7 @@ func servePreview(c *webContext) {
 	if doc.HTML == "" {
 		resp = types.PreviewResponse{Content: doc.Text}
 	} else {
-		resp, err = extractor.Preview(doc, extractorName)
+		resp, err = extractor.PreviewContext(c.Request.Context(), doc, extractorName)
 		if err != nil {
 			if errors.Is(err, extractor.ErrNoExtractor) {
 				http.Error(c.Response, err.Error(), http.StatusBadRequest)
@@ -1677,7 +1677,7 @@ func serveBatch(c *webContext) {
 				results[i] = batchOpResult{Status: http.StatusNotAcceptable, Error: "url skipped by rules"}
 				continue
 			}
-			if err := batch.Add(d); err != nil {
+			if err := batch.AddContext(c.Request.Context(), d); err != nil {
 				if errors.Is(err, document.ErrSensitiveContent) {
 					log.Warn().Str("URL", op.URL).Msg("rejected document: sensitive content")
 					results[i] = batchOpResult{Status: http.StatusUnprocessableEntity, Error: document.ErrSensitiveContent.Error()}
@@ -1738,7 +1738,7 @@ func serveReindex(c *webContext) {
 		serve500(c)
 		return
 	}
-	if err := c.Indexer.Reindex(c.Config.Rules, req.SkipSensitive, req.DetectLanguages, c.Config.Indexer.KeepStopwords, c.Config.Indexer.Directories); err != nil {
+	if err := c.Indexer.ReindexContext(c.Request.Context(), c.Config.Rules, req.SkipSensitive, req.DetectLanguages, c.Config.Indexer.KeepStopwords, c.Config.Indexer.Directories); err != nil {
 		log.Error().Err(err).Msg("reindex failed")
 		serve500(c)
 		return

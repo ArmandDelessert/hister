@@ -1,6 +1,8 @@
 package indexer
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -19,6 +21,17 @@ func newTestIndexer(t *testing.T, cfg *config.Config) *Indexer {
 		t.Fatalf("New indexer: %v", err)
 	}
 	return idx
+}
+
+func TestAddContextRejectsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	idx := &Indexer{}
+
+	err := idx.AddContext(ctx, &document.Document{URL: "https://example.com", Processed: true})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("AddContext error = %v, want context.Canceled", err)
+	}
 }
 
 func TestIndexerInstancesAreIndependent(t *testing.T) {

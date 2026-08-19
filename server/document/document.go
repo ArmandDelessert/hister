@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -123,6 +124,27 @@ func (d *Document) Process(ld LanguageDetector, extractFn func(*Document) error)
 // sensitive content pattern. It allows callers with instance scoped
 // configuration to avoid relying on the package default pattern.
 func (d *Document) ProcessWithSensitivePattern(ld LanguageDetector, extractFn func(*Document) error, sensitivePattern *regexp.Regexp) error {
+	var contextExtractFn func(context.Context, *Document) error
+	if extractFn != nil {
+		contextExtractFn = func(_ context.Context, document *Document) error {
+			return extractFn(document)
+		}
+	}
+	return d.ProcessWithSensitivePatternContext(context.Background(), ld, contextExtractFn, sensitivePattern)
+}
+
+// ProcessContext processes the document and propagates cancellation to its
+// extractor.
+func (d *Document) ProcessContext(ctx context.Context, ld LanguageDetector, extractFn func(context.Context, *Document) error) error {
+	return d.ProcessWithSensitivePatternContext(ctx, ld, extractFn, sensitiveContentRe)
+}
+
+// ProcessWithSensitivePatternContext processes the document with caller
+// cancellation and an explicit sensitive content pattern.
+func (d *Document) ProcessWithSensitivePatternContext(ctx context.Context, ld LanguageDetector, extractFn func(context.Context, *Document) error, sensitivePattern *regexp.Regexp) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if d.Processed {
 		return nil
 	}
@@ -155,7 +177,7 @@ func (d *Document) ProcessWithSensitivePattern(ld LanguageDetector, extractFn fu
 	d.Type = types.Web
 	d.Domain = pu.Hostname()
 	if d.HTML != "" {
-		if err := extractFn(d); err != nil {
+		if err := extractFn(ctx, d); err != nil {
 			return err
 		}
 	}

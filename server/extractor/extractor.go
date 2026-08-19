@@ -3,6 +3,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	stdhtml "html"
@@ -69,6 +70,32 @@ type Extractor interface {
 	// SetConfig applies cfg to the extractor, overwriting defaults.
 	// Implementations should return an error for unrecognised option keys.
 	SetConfig(*config.Extractor) error
+}
+
+// ContextExtractor is implemented by extractors whose extraction work can be
+// canceled. The chain uses ExtractContext instead of Extract when available.
+type ContextExtractor interface {
+	ExtractContext(context.Context, *document.Document) types.ExtractResult
+}
+
+// ContextPreviewer is implemented by extractors whose preview work can be
+// canceled. The chain uses PreviewContext instead of Preview when available.
+type ContextPreviewer interface {
+	PreviewContext(context.Context, *document.Document) types.PreviewResult
+}
+
+func extractWithContext(ctx context.Context, e Extractor, d *document.Document) types.ExtractResult {
+	if contextual, ok := e.(ContextExtractor); ok {
+		return contextual.ExtractContext(ctx, d)
+	}
+	return e.Extract(d)
+}
+
+func previewWithContext(ctx context.Context, e Extractor, d *document.Document) types.PreviewResult {
+	if contextual, ok := e.(ContextPreviewer); ok {
+		return contextual.PreviewContext(ctx, d)
+	}
+	return e.Preview(d)
 }
 
 // ErrNoExtractor is returned when no extractor can handle the document.
@@ -214,12 +241,23 @@ func Init(cfgs map[string]*config.Extractor) error {
 // extractors in registration order and returns the first successful result.
 // Returns ErrNoExtractor if no content extractor succeeds.
 func Extract(d *document.Document) error {
+	return ExtractContext(context.Background(), d)
+}
+
+// ExtractContext runs the extraction chain with caller cancellation.
+func ExtractContext(ctx context.Context, d *document.Document) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for _, e := range extractors {
 		if !e.GetConfig().Enable || !e.Capabilities().Enrich {
 			continue
 		}
 		if e.Match(d) {
-			result := e.Extract(d)
+			result := extractWithContext(ctx, e, d)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Enriching document")
 			switch result.Decision() {
 			case types.ExtractorSuccess:
@@ -239,7 +277,10 @@ func Extract(d *document.Document) error {
 			continue
 		}
 		if e.Match(d) {
-			result := e.Extract(d)
+			result := extractWithContext(ctx, e, d)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Extracting data")
 			switch result.Decision() {
 			case types.ExtractorSuccess:
@@ -264,6 +305,14 @@ func Extract(d *document.Document) error {
 // fallbacks. Explicit selection still requires the extractor to be enabled,
 // preview capable, and matched to the document.
 func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
+	return PreviewContext(context.Background(), d, name)
+}
+
+// PreviewContext renders a preview with caller cancellation.
+func PreviewContext(ctx context.Context, d *document.Document, name string) (types.PreviewResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return types.PreviewResponse{}, err
+	}
 	start := 0
 	if name != "" {
 		lower := strings.ToLower(name)
@@ -294,7 +343,10 @@ func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
 		}
 		if e.Match(d) {
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Creating preview")
-			result := e.Preview(d)
+			result := previewWithContext(ctx, e, d)
+			if err := ctx.Err(); err != nil {
+				return types.PreviewResponse{}, err
+			}
 			switch result.Decision() {
 			case types.ExtractorSuccess:
 				return result.Response(), nil

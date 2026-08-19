@@ -481,7 +481,7 @@ func mcpToolGetPreview(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 
 	var renderedHTML string
 	if doc.HTML != "" {
-		resp, err := extractor.Preview(doc, args.Extractor)
+		resp, err := extractor.PreviewContext(c.Request.Context(), doc, args.Extractor)
 		if err != nil {
 			log.Warn().Err(err).Str("url", args.URL).Msg("MCP get_preview extractor failed")
 		} else {

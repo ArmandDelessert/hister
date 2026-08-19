@@ -14,14 +14,14 @@ import (
 //   - single value (e.g. "de"): download subtitles in that language if available
 //   - comma-separated list (e.g. "fr,en"): try each language in order, return the
 //     first one for which subtitles are available
-func (e *YtdlpExtractor) fetchSubtitleText(info *videoInfo) string {
+func (e *YtdlpExtractor) fetchSubtitleText(ctx context.Context, info *videoInfo) string {
 	langSpec := e.subLanguage()
 
 	if langSpec == "auto" {
 		if info.Language == "" {
 			return ""
 		}
-		return downloadSubtitleForLang(e, info, info.Language)
+		return downloadSubtitleForLang(ctx, e, info, info.Language)
 	}
 
 	langs := strings.Split(langSpec, ",")
@@ -33,7 +33,7 @@ func (e *YtdlpExtractor) fetchSubtitleText(info *videoInfo) string {
 		if lang == "" {
 			continue
 		}
-		if text := downloadSubtitleForLang(e, info, lang); text != "" {
+		if text := downloadSubtitleForLang(ctx, e, info, lang); text != "" {
 			return text
 		}
 	}
@@ -42,7 +42,10 @@ func (e *YtdlpExtractor) fetchSubtitleText(info *videoInfo) string {
 
 // downloadSubtitleForLang downloads subtitles for a single language code and returns
 // the plain transcript text. It prefers manual subtitles over auto-captions.
-func downloadSubtitleForLang(e *YtdlpExtractor, info *videoInfo, lang string) string {
+func downloadSubtitleForLang(ctx context.Context, e *YtdlpExtractor, info *videoInfo, lang string) string {
+	if ctx.Err() != nil {
+		return ""
+	}
 	// Check whether any subtitles are available at all.
 	hasManual := len(info.Subtitles[lang]) > 0
 	hasAuto := len(info.AutomaticCaptions[lang]) > 0
@@ -73,8 +76,8 @@ func downloadSubtitleForLang(e *YtdlpExtractor, info *videoInfo, lang string) st
 	args = append(args, e.cookieArgs()...)
 	args = append(args, info.WebpageURL)
 
-	err = e.runJob(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), e.timeout())
+	err = e.runJob(ctx, func() error {
+		ctx, cancel := context.WithTimeout(ctx, e.timeout())
 		defer cancel()
 
 		// #nosec G204 -- binary path and args are admin-configured, not user input.

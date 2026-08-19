@@ -76,7 +76,7 @@ func TestApplyServiceContentPreservesFetchedFavicon(t *testing.T) {
 		HTML:    `<html><head><title>Article</title></head><body><main><p>Downloaded contents.</p></main></body></html>`,
 		Favicon: "data:image/png;base64,bGlua2VkIGljb24=",
 	}
-	if err := applyServiceContent(d, fetched, "", "", document.NewNullLanguageDetector()); err != nil {
+	if err := applyServiceContent(context.Background(), d, fetched, "", "", document.NewNullLanguageDetector()); err != nil {
 		t.Fatal(err)
 	}
 	if d.Favicon != fetched.Favicon {

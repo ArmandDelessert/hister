@@ -1,7 +1,9 @@
 package ytdlp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -648,7 +650,7 @@ func TestConcurrentJobLimit(t *testing.T) {
 
 	for range 3 {
 		go func() {
-			if err := e.runJob(func() error {
+			if err := e.runJob(context.Background(), func() error {
 				started <- struct{}{}
 				<-release
 				return nil
@@ -687,6 +689,58 @@ func TestConcurrentJobLimit(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("job did not finish")
 		}
+	}
+}
+
+func TestRunJobCancelsWhileWaitingForSlot(t *testing.T) {
+	e := &YtdlpExtractor{}
+	if err := e.SetConfig(&config.Extractor{
+		Enable:  true,
+		Options: map[string]any{"max_concurrent_jobs": 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	e.jobSlots <- struct{}{}
+	defer func() { <-e.jobSlots }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	called := false
+	go func() {
+		done <- e.runJob(ctx, func() error {
+			called = true
+			return nil
+		})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("runJob() returned before cancellation: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("runJob() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runJob() did not return after cancellation")
+	}
+	if called {
+		t.Fatal("canceled queued job ran")
+	}
+}
+
+func TestExtractRejectsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result := (&YtdlpExtractor{}).ExtractContext(ctx, &document.Document{URL: "https://www.youtube.com/watch?v=test"})
+	if result.Decision() != types.ExtractorAbort {
+		t.Fatalf("Extract decision = %v, want ExtractorAbort", result.Decision())
+	}
+	if !errors.Is(result.Err(), context.Canceled) {
+		t.Fatalf("Extract error = %v, want context.Canceled", result.Err())
 	}
 }
 

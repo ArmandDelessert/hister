@@ -93,7 +93,7 @@ var indexCmd = &cobra.Command{
 				return
 			}
 			fmt.Println("Starting crawl job:", jobID)
-			if err := runPersistentIndexJob(jobID, args[0], validatorRules, label, robotsCache, force, clientOpts...); err != nil {
+			if err := runPersistentIndexJob(cmd.Context(), jobID, args[0], validatorRules, label, robotsCache, force, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -167,7 +167,7 @@ var indexCmd = &cobra.Command{
 				fmt.Println("Resuming crawl job:", jobID)
 			}
 
-			if err := runPersistentIndexJob(jobID, startURL, validatorRules, label, robotsCache, force, clientOpts...); err != nil {
+			if err := runPersistentIndexJob(cmd.Context(), jobID, startURL, validatorRules, label, robotsCache, force, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -205,7 +205,7 @@ var indexCmd = &cobra.Command{
 			}
 			fmt.Println("Resuming crawl job:", jobID)
 
-			if err := runPersistentIndexJob(jobID, existingJob.StartURL, validatorRules, label, robotsCache, force, clientOpts...); err != nil {
+			if err := runPersistentIndexJob(cmd.Context(), jobID, existingJob.StartURL, validatorRules, label, robotsCache, force, clientOpts...); err != nil {
 				exit(1, "Crawl failed: "+err.Error())
 			}
 			return
@@ -241,7 +241,7 @@ var indexCmd = &cobra.Command{
 					continue
 				}
 			}
-			if err := indexURL(cr, u, label, clientOpts...); err != nil {
+			if err := indexURL(cmd.Context(), cr, u, label, clientOpts...); err != nil {
 				log.Warn().Err(err).Str("URL", u).Msg("Failed to index URL")
 			}
 		}
@@ -359,6 +359,7 @@ func crawlValidatorRules(cmd *cobra.Command) *crawler.ValidatorRules {
 }
 
 func runPersistentIndexJob(
+	ctx context.Context,
 	jobID string,
 	startURL string,
 	validatorRules *crawler.ValidatorRules,
@@ -392,7 +393,7 @@ func runPersistentIndexJob(
 		}
 	}()
 
-	return crawlAndIndex(jobID, startURL, cr, validator, label, clientOpts...)
+	return crawlAndIndex(ctx, jobID, startURL, cr, validator, label, clientOpts...)
 }
 
 func init() {
@@ -421,7 +422,7 @@ func init() {
 	indexCmd.Flags().Bool("allow-sensitive", false, "Skip sensitive content checks, allowing matching documents to be indexed")
 }
 
-func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.Option) error {
+func indexURL(ctx context.Context, cr crawler.Crawler, u string, label string, clientOpts ...client.Option) error {
 	if u == "" {
 		log.Warn().Msg("URL must not be empty")
 		return nil
@@ -430,7 +431,7 @@ func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.O
 	if err != nil {
 		return fmt.Errorf("failed to create validator: %w", err)
 	}
-	ch, err := cr.Crawl(context.Background(), u, v)
+	ch, err := cr.Crawl(ctx, u, v)
 	if err != nil {
 		return fmt.Errorf("failed to fetch %s: %w", u, err)
 	}
@@ -438,7 +439,7 @@ func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.O
 	if !ok {
 		return fmt.Errorf("failed to fetch %s: no response", u)
 	}
-	if err := d.Process(nil, extractor.Extract); err != nil {
+	if err := d.ProcessContext(ctx, nil, extractor.ExtractContext); err != nil {
 		return fmt.Errorf("failed to process document: %w", err)
 	}
 	if d.Favicon == "" {
@@ -454,14 +455,14 @@ func indexURL(cr crawler.Crawler, u string, label string, clientOpts ...client.O
 	return nil
 }
 
-func crawlAndIndex(jobID string, startURL string, cr crawler.Crawler, v *crawler.Validator, label string, clientOpts ...client.Option) error {
-	ch, err := cr.Crawl(context.Background(), startURL, v)
+func crawlAndIndex(ctx context.Context, jobID string, startURL string, cr crawler.Crawler, v *crawler.Validator, label string, clientOpts ...client.Option) error {
+	ch, err := cr.Crawl(ctx, startURL, v)
 	if err != nil {
 		return err
 	}
 	c := newClient(clientOpts...)
 	for doc := range ch {
-		if err := doc.Process(nil, extractor.Extract); err != nil {
+		if err := doc.ProcessContext(ctx, nil, extractor.ExtractContext); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to process crawled document")
 			markPersistentIndexFailure(jobID, doc.URL, err)
 			continue

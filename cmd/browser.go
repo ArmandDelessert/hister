@@ -395,7 +395,7 @@ func importDB(databases []DBToImport, cmd *cobra.Command, startDate *time.Time) 
 	}
 	validator.SetVisited(int(done + failed))
 
-	if err := crawlAndIndex(job.id, job.startURL, cr, validator, job.label); err != nil {
+	if err := crawlAndIndex(cmd.Context(), job.id, job.startURL, cr, validator, job.label); err != nil {
 		log.Fatal().Err(err).Msg("Browser import crawl failed")
 	}
 }

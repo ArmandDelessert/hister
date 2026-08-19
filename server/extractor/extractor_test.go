@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -17,6 +18,12 @@ type stubExtractor struct {
 	match        func(*document.Document) bool
 	extract      func(*document.Document) types.ExtractResult
 	preview      func(*document.Document) types.PreviewResult
+}
+
+type contextStubExtractor struct {
+	*stubExtractor
+	extractContext func(context.Context, *document.Document) types.ExtractResult
+	previewContext func(context.Context, *document.Document) types.PreviewResult
 }
 
 func (e *stubExtractor) Name() string { return e.name }
@@ -41,6 +48,20 @@ func (e *stubExtractor) Preview(d *document.Document) types.PreviewResult {
 		return types.PreviewFallback(nil)
 	}
 	return e.preview(d)
+}
+
+func (e *contextStubExtractor) ExtractContext(ctx context.Context, d *document.Document) types.ExtractResult {
+	if e.extractContext == nil {
+		return e.Extract(d)
+	}
+	return e.extractContext(ctx, d)
+}
+
+func (e *contextStubExtractor) PreviewContext(ctx context.Context, d *document.Document) types.PreviewResult {
+	if e.previewContext == nil {
+		return e.Preview(d)
+	}
+	return e.previewContext(ctx, d)
 }
 
 func (e *stubExtractor) GetConfig() *config.Extractor {
@@ -294,4 +315,71 @@ func TestExplicitPreviewRequiresEnabledMatchingExtractor(t *testing.T) {
 			t.Fatalf("Preview error = %v, want ErrNoExtractor", err)
 		}
 	})
+}
+
+func TestExtractorContextPropagation(t *testing.T) {
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "request value")
+	content := &contextStubExtractor{
+		stubExtractor: &stubExtractor{
+			name:         "Content",
+			capabilities: types.ExtractorCapabilities{Extract: true},
+		},
+		extractContext: func(received context.Context, _ *document.Document) types.ExtractResult {
+			if got := received.Value(contextKey{}); got != "request value" {
+				t.Fatalf("extract context value = %v, want request value", got)
+			}
+			return types.Extracted()
+		},
+	}
+	preview := &contextStubExtractor{
+		stubExtractor: &stubExtractor{
+			name:         "Preview",
+			capabilities: types.ExtractorCapabilities{Preview: true},
+		},
+		previewContext: func(received context.Context, _ *document.Document) types.PreviewResult {
+			if got := received.Value(contextKey{}); got != "request value" {
+				t.Fatalf("preview context value = %v, want request value", got)
+			}
+			return types.Previewed(types.PreviewResponse{Content: "preview"})
+		},
+	}
+	useExtractors(t, content, preview)
+
+	if err := ExtractContext(ctx, &document.Document{URL: "https://example.com"}); err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+	if _, err := PreviewContext(ctx, &document.Document{URL: "https://example.com"}, ""); err != nil {
+		t.Fatalf("Preview failed: %v", err)
+	}
+}
+
+func TestCanceledContextStopsExtractorFallback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	first := &stubExtractor{
+		name:         "First",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+		extract: func(*document.Document) types.ExtractResult {
+			cancel()
+			return types.ExtractFallback(context.Canceled)
+		},
+	}
+	secondCalled := false
+	second := &stubExtractor{
+		name:         "Second",
+		capabilities: types.ExtractorCapabilities{Extract: true},
+		extract: func(*document.Document) types.ExtractResult {
+			secondCalled = true
+			return types.Extracted()
+		},
+	}
+	useExtractors(t, first, second)
+
+	err := ExtractContext(ctx, &document.Document{URL: "https://example.com"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Extract error = %v, want context.Canceled", err)
+	}
+	if secondCalled {
+		t.Fatal("fallback extractor ran after cancellation")
+	}
 }

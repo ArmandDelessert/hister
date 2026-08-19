@@ -571,10 +571,18 @@ func openReindexSources(basePath string, current map[string]bleve.Index) (map[st
 }
 
 func (i *Indexer) Reindex(rules *config.Rules, skipSensitiveChecks bool, detectLanguages, keepStopwords bool, dirs []*config.Directory) error {
-	return i.reindex(i.dir, rules, skipSensitiveChecks, detectLanguages, keepStopwords, dirs)
+	return i.ReindexContext(context.Background(), rules, skipSensitiveChecks, detectLanguages, keepStopwords, dirs)
 }
 
-func (idx *Indexer) reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages, keepStopwords bool, dirs []*config.Directory) (retErr error) {
+// ReindexContext rebuilds indexes while honoring caller cancellation.
+func (i *Indexer) ReindexContext(ctx context.Context, rules *config.Rules, skipSensitiveChecks bool, detectLanguages, keepStopwords bool, dirs []*config.Directory) error {
+	return i.reindex(ctx, i.dir, rules, skipSensitiveChecks, detectLanguages, keepStopwords, dirs)
+}
+
+func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.Rules, skipSensitiveChecks bool, detectLanguages, keepStopwords bool, dirs []*config.Directory) (retErr error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// TODO store new documents in both indexes while running reindex to guarantee not losing any data.
 	if !idx.reindexInProgress.CompareAndSwap(false, true) {
 		return errors.New("Reindex is already running")
@@ -656,6 +664,9 @@ func (idx *Indexer) reindex(basePath string, rules *config.Rules, skipSensitiveC
 	batchSize := 50
 	processed := 0
 	for subIdxName, subIdx := range sourceIndexes {
+		if err := ctx.Err(); err != nil {
+			return abortReindex(err)
+		}
 		log.Info().Str("sub-index", subIdxName).Msg("Reindexing sub-index")
 		var sortKey []string
 		req := bleve.NewSearchRequest(q)
@@ -663,6 +674,9 @@ func (idx *Indexer) reindex(basePath string, rules *config.Rules, skipSensitiveC
 		req.Size = batchSize
 		req.SortBy([]string{"_id"})
 		for {
+			if err := ctx.Err(); err != nil {
+				return abortReindex(err)
+			}
 			if len(sortKey) > 0 {
 				req.SetSearchAfter(sortKey)
 			}
@@ -698,7 +712,7 @@ func (idx *Indexer) reindex(basePath string, rules *config.Rules, skipSensitiveC
 				d.SetSkipSensitiveCheck(skipSensitiveChecks)
 				origAdded := d.Added
 				origUpdated := d.Updated
-				if err := tmpIdx.processDocument(d); err != nil {
+				if err := tmpIdx.processDocument(ctx, d); err != nil {
 					if errors.Is(err, document.ErrSensitiveContent) {
 						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, sensitive content")
 						continue
@@ -933,14 +947,20 @@ func embedDocumentChunks(ctx context.Context, idx *Indexer, d *document.Document
 }
 
 func (i *Indexer) Add(d *document.Document) error {
+	return i.AddContext(context.Background(), d)
+}
+
+// AddContext validates and indexes a document while honoring caller
+// cancellation during document processing.
+func (i *Indexer) AddContext(ctx context.Context, d *document.Document) error {
 	if err := i.validateFileDocument(d); err != nil {
 		return err
 	}
-	return i.AddDocument(d)
+	return i.AddDocumentContext(ctx, d)
 }
 
-func (i *Indexer) processDocument(d *document.Document) error {
-	return d.ProcessWithSensitivePattern(i.langDetector, extractor.Extract, i.sensitivePattern)
+func (i *Indexer) processDocument(ctx context.Context, d *document.Document) error {
+	return d.ProcessWithSensitivePatternContext(ctx, i.langDetector, extractor.ExtractContext, i.sensitivePattern)
 }
 
 func (i *Indexer) validateFileDocument(d *document.Document) error {
@@ -995,12 +1015,21 @@ func (i *Indexer) TotalByUser(userID uint) uint64 {
 }
 
 func (i *Indexer) AddDocument(d *document.Document) error {
-	return i.addDocument(d, true, i.applyDocumentWrite)
+	return i.AddDocumentContext(context.Background(), d)
 }
 
-func (i *Indexer) addDocument(d *document.Document, incrementAddCount bool, write documentWriteFunc) error {
-	plan, err := i.prepareDocumentWrite(d, incrementAddCount)
+// AddDocumentContext indexes a document while honoring caller cancellation
+// during document processing.
+func (i *Indexer) AddDocumentContext(ctx context.Context, d *document.Document) error {
+	return i.addDocument(ctx, d, true, i.applyDocumentWrite)
+}
+
+func (i *Indexer) addDocument(ctx context.Context, d *document.Document, incrementAddCount bool, write documentWriteFunc) error {
+	plan, err := i.prepareDocumentWrite(ctx, d, incrementAddCount)
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if plan != nil {
@@ -1009,16 +1038,28 @@ func (i *Indexer) addDocument(d *document.Document, incrementAddCount bool, writ
 		}
 	}
 	for _, extra := range d.ExtraDocuments {
-		if err := i.addDocument(extra, false, write); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := i.addDocument(ctx, extra, false, write); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			log.Warn().Err(err).Str("url", extra.URL).Msg("failed to index extra document")
 		}
 	}
 	return nil
 }
 
-func (i *Indexer) prepareDocumentWrite(d *document.Document, incrementAddCount bool) (*documentWritePlan, error) {
+func (i *Indexer) prepareDocumentWrite(ctx context.Context, d *document.Document, incrementAddCount bool) (*documentWritePlan, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !d.IsProcessed() {
-		if err := i.processDocument(d); err != nil {
+		if err := i.processDocument(ctx, d); err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 	}
@@ -1399,10 +1440,16 @@ func (b *MultiBatch) getOrCreateBatch(name string, idx bleve.Index) *bleve.Batch
 }
 
 func (b *MultiBatch) Add(d *document.Document) error {
+	return b.AddContext(context.Background(), d)
+}
+
+// AddContext stages a document while honoring caller cancellation during
+// document processing.
+func (b *MultiBatch) AddContext(ctx context.Context, d *document.Document) error {
 	if err := b.indexer.validateFileDocument(d); err != nil {
 		return err
 	}
-	return b.indexer.addDocument(d, b.incrementAddCount, b.applyDocumentWrite)
+	return b.indexer.addDocument(ctx, d, b.incrementAddCount, b.applyDocumentWrite)
 }
 
 func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWritePlan) error {

@@ -111,12 +111,19 @@ func maxConcurrentJobs(options map[string]any) (int, error) {
 	return jobs, nil
 }
 
-func (e *YtdlpExtractor) runJob(job func() error) error {
+func (e *YtdlpExtractor) runJob(ctx context.Context, job func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	jobSlots := e.jobSlots
 	if jobSlots == nil {
 		return job()
 	}
-	jobSlots <- struct{}{}
+	select {
+	case jobSlots <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	defer func() { <-jobSlots }()
 	return job()
 }
@@ -197,7 +204,10 @@ func (e *YtdlpExtractor) Match(d *document.Document) bool {
 }
 
 // getInfo returns cached videoInfo or fetches it via yt-dlp.
-func (e *YtdlpExtractor) getInfo(videoURL string) (*videoInfo, error) {
+func (e *YtdlpExtractor) getInfo(ctx context.Context, videoURL string) (*videoInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if cached, ok := e.cache.Load(videoURL); ok {
 		ci := cached.(*cachedInfo)
 		if time.Since(ci.fetchedAt) < cacheTTL {
@@ -206,7 +216,7 @@ func (e *YtdlpExtractor) getInfo(videoURL string) (*videoInfo, error) {
 		e.cache.Delete(videoURL)
 	}
 
-	info, err := e.fetchInfo(videoURL)
+	info, err := e.fetchInfo(ctx, videoURL)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +251,7 @@ func (e *YtdlpExtractor) pruneCache() {
 	}
 }
 
-func (e *YtdlpExtractor) fetchInfo(videoURL string) (*videoInfo, error) {
+func (e *YtdlpExtractor) fetchInfo(ctx context.Context, videoURL string) (*videoInfo, error) {
 	args := []string{
 		"--dump-json",
 		"--no-download",
@@ -260,8 +270,8 @@ func (e *YtdlpExtractor) fetchInfo(videoURL string) (*videoInfo, error) {
 
 	var out []byte
 	var stderr bytes.Buffer
-	err := e.runJob(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), e.timeout())
+	err := e.runJob(ctx, func() error {
+		ctx, cancel := context.WithTimeout(ctx, e.timeout())
 		defer cancel()
 
 		// #nosec G204 -- binary path and args are admin-configured, not user input.
@@ -287,12 +297,12 @@ func (e *YtdlpExtractor) fetchInfo(videoURL string) (*videoInfo, error) {
 }
 
 // downloadThumbnail fetches the thumbnail image and returns it as a base64 data URI.
-func (e *YtdlpExtractor) downloadThumbnail(thumbnailURL string) string {
+func (e *YtdlpExtractor) downloadThumbnail(ctx context.Context, thumbnailURL string) string {
 	if thumbnailURL == "" {
 		return ""
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), e.timeout())
+	ctx, cancel := context.WithTimeout(ctx, e.timeout())
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, thumbnailURL, nil)
@@ -327,8 +337,17 @@ func (e *YtdlpExtractor) downloadThumbnail(thumbnailURL string) string {
 }
 
 func (e *YtdlpExtractor) Extract(d *document.Document) types.ExtractResult {
-	info, err := e.getInfo(d.URL)
+	return e.ExtractContext(context.Background(), d)
+}
+
+// ExtractContext extracts video metadata and cancels blocking work when ctx
+// is canceled.
+func (e *YtdlpExtractor) ExtractContext(ctx context.Context, d *document.Document) types.ExtractResult {
+	info, err := e.getInfo(ctx, d.URL)
 	if err != nil {
+		if ctx.Err() != nil {
+			return types.AbortExtraction(ctx.Err())
+		}
 		return types.ExtractFallback(err)
 	}
 
@@ -367,7 +386,7 @@ func (e *YtdlpExtractor) Extract(d *document.Document) types.ExtractResult {
 	}
 
 	if e.fetchSubtitlesEnabled() {
-		if transcript := e.fetchSubtitleText(info); transcript != "" {
+		if transcript := e.fetchSubtitleText(ctx, info); transcript != "" {
 			text.WriteString("\n\nTranscript:\n")
 			text.WriteString(transcript)
 		}
@@ -379,7 +398,7 @@ func (e *YtdlpExtractor) Extract(d *document.Document) types.ExtractResult {
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
-	if thumb := e.downloadThumbnail(info.Thumbnail); thumb != "" {
+	if thumb := e.downloadThumbnail(ctx, info.Thumbnail); thumb != "" {
 		d.Metadata["thumbnail"] = thumb
 	}
 	if info.Duration > 0 {
@@ -394,13 +413,25 @@ func (e *YtdlpExtractor) Extract(d *document.Document) types.ExtractResult {
 	if info.ViewCount > 0 {
 		d.Metadata["view_count"] = info.ViewCount
 	}
+	if err := ctx.Err(); err != nil {
+		return types.AbortExtraction(err)
+	}
 
 	return types.Extracted()
 }
 
 func (e *YtdlpExtractor) Preview(d *document.Document) types.PreviewResult {
-	info, err := e.getInfo(d.URL)
+	return e.PreviewContext(context.Background(), d)
+}
+
+// PreviewContext renders video metadata and cancels blocking work when ctx is
+// canceled.
+func (e *YtdlpExtractor) PreviewContext(ctx context.Context, d *document.Document) types.PreviewResult {
+	info, err := e.getInfo(ctx, d.URL)
 	if err != nil {
+		if ctx.Err() != nil {
+			return types.AbortPreview(ctx.Err())
+		}
 		return types.PreviewFallback(err)
 	}
 
@@ -412,7 +443,7 @@ func (e *YtdlpExtractor) Preview(d *document.Document) types.PreviewResult {
 		}
 	}
 	if thumbDataURI == "" {
-		thumbDataURI = e.downloadThumbnail(info.Thumbnail)
+		thumbDataURI = e.downloadThumbnail(ctx, info.Thumbnail)
 	}
 
 	// Build structured preview data for the frontend.
@@ -454,7 +485,10 @@ func (e *YtdlpExtractor) Preview(d *document.Document) types.PreviewResult {
 	}
 
 	if e.fetchSubtitlesEnabled() {
-		preview.Transcript = e.fetchSubtitleText(info)
+		preview.Transcript = e.fetchSubtitleText(ctx, info)
+	}
+	if err := ctx.Err(); err != nil {
+		return types.AbortPreview(err)
 	}
 
 	data, err := json.Marshal(preview)

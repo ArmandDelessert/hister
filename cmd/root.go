@@ -269,6 +269,7 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(reindexCmd)
 	rootCmd.AddCommand(cleanupCmd)
+	rootCmd.AddCommand(checkUpdateCmd)
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(createUserCmd)
 	rootCmd.AddCommand(deleteUserCmd)

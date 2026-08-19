@@ -54,6 +54,20 @@ View all available commands:
 ./hister help
 ```
 
+### Check for Updates
+
+Check whether a newer Hister release is available:
+
+```bash
+hister check-update
+```
+
+The command displays the installed version and the latest published version when an update is
+available. It also provides a link to the release. When Hister is current, the command reports
+that it is up to date.
+
+This check requires internet access. It does not download or install the update.
+
 ### Index a URL Manually
 
 To manually index a specific URL:

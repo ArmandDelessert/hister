@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,6 +69,12 @@ type importHistoryMultipleChoicePrompt struct {
 	c       *client.Client
 }
 
+type browserImportPreparationIssue struct {
+	databaseFile string
+	query        string
+	err          error
+}
+
 type DBToImport struct {
 	name         string
 	table        string
@@ -89,6 +96,8 @@ type browserImportJob struct {
 }
 
 const browserImportJobPrefix = "browser-import-"
+
+var errNoBrowserURLs = errors.New("no URLs found to import")
 
 func importHistory(cmd *cobra.Command, args []string) {
 	// TODO: get skip rules from server
@@ -195,68 +204,50 @@ func importHistoryFile(file_path string, cmd *cobra.Command, startDate *time.Tim
 }
 
 func importDB(databases []DBToImport, cmd *cobra.Command, startDate *time.Time) {
-	var dbsToImport []importHistoryMultipleChoicePrompt
-	for _, database := range databases {
-		dbFile := database.databaseFile
-		table := database.table
-
-		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?immutable=1&mode=ro", dbFile))
-		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to open database")
+	// Fetch skip rules from the server.
+	c := newClient()
+	resp, err := c.FetchRules()
+	if err != nil {
+		log.Error().Err(err).Msg("Unable to obtain skip rules from server; using local ones instead")
+	} else {
+		// TODO: let the user know that their local rules are being overwritten?
+		cfg.Rules.Skip.ReStrs = resp.Skip
+		if err := cfg.Rules.Skip.Compile(); err != nil {
+			log.Error().Err(err).Msg("Unable to compile skip rules from server")
+			return
 		}
+	}
+
+	minVisit, err := cmd.Flags().GetInt("min-visit")
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read minimum visit count")
+		return
+	}
+	dbsToImport, issues := prepareBrowserImports(databases, minVisit, startDate, func(u string) bool {
+		return !cfg.App.UserHandling && cfg.Rules.IsSkip(u)
+	})
+	for _, issue := range issues {
+		event := log.Warn().Str("file", issue.databaseFile)
+		if issue.query != "" {
+			event.Str("query", issue.query)
+		}
+		if errors.Is(issue.err, errNoBrowserURLs) {
+			event.Msg("Skipping browser database with no URLs to import")
+		} else {
+			event.Err(issue.err).Msg("Skipping browser database")
+		}
+	}
+	if len(dbsToImport) == 0 {
+		exit(1, "No URLs found to import")
+	}
+	for i := range dbsToImport {
+		dbsToImport[i].c = c
+		db := dbsToImport[i].db
 		defer func() {
 			if err := db.Close(); err != nil {
 				log.Warn().Err(err).Msg("failed to close database")
 			}
 		}()
-
-		// Fetch skip rules from the server.
-		c := newClient()
-		resp, err := c.FetchRules()
-		if err != nil {
-			log.Error().Err(err).Msg("Unable to obtain skip rules from server; using local ones instead")
-		} else {
-			// TODO: let the user know that their local rules are being overwritten?
-			cfg.Rules.Skip.ReStrs = resp.Skip
-			if err := cfg.Rules.Skip.Compile(); err != nil {
-				log.Error().Err(err).Msg("Unable to compile skip rules from server")
-				return
-			}
-		}
-
-		minVisit, err := cmd.Flags().GetInt("min-visit")
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to read minimum visit count")
-			return
-		}
-		q, err := browserImportURLQuery(table, minVisit, startDate)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to create browser history query")
-			return
-		}
-		count, skipped, err := countBrowserImportURLs(db, q, func(u string) bool {
-			return !cfg.App.UserHandling && cfg.Rules.IsSkip(u)
-		})
-		if err != nil {
-			log.Debug().Str("query", q).Msg("count query")
-			log.Error().Err(err).Msg("Failed to execute counting query")
-			return
-		}
-
-		if count < 1 {
-			exit(1, "No URLs found to import")
-		}
-		dbsToImport = append(dbsToImport, importHistoryMultipleChoicePrompt{
-			choice:  dbFile,
-			urls:    count,
-			skipped: skipped,
-			db:      db,
-			q:       q,
-			c:       c,
-		})
-		// if !yesNoPrompt(fmt.Sprintf("%d URLs found. Start import form "+dbFile, count), true) {
-		// 	return
-		// }
 	}
 
 	chosen := multipleChoiceImport(dbsToImport)
@@ -420,6 +411,65 @@ var browserHistoryTimestampSchemas = map[string]browserHistoryTimestampSchema{
 		unitsPerSecond:     1_000_000,
 		epochOffsetSeconds: 11_644_473_600,
 	},
+}
+
+func prepareBrowserImports(
+	databases []DBToImport,
+	minVisit int,
+	startDate *time.Time,
+	isSkip func(string) bool,
+) ([]importHistoryMultipleChoicePrompt, []browserImportPreparationIssue) {
+	choices := make([]importHistoryMultipleChoicePrompt, 0, len(databases))
+	var issues []browserImportPreparationIssue
+	for _, database := range databases {
+		q, err := browserImportURLQuery(database.table, minVisit, startDate)
+		if err != nil {
+			issues = append(issues, browserImportPreparationIssue{
+				databaseFile: database.databaseFile,
+				err:          fmt.Errorf("create browser history query: %w", err),
+			})
+			continue
+		}
+
+		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?immutable=1&mode=ro", database.databaseFile))
+		if err != nil {
+			issues = append(issues, browserImportPreparationIssue{
+				databaseFile: database.databaseFile,
+				query:        q,
+				err:          fmt.Errorf("open database: %w", err),
+			})
+			continue
+		}
+
+		count, skipped, err := countBrowserImportURLs(db, q, isSkip)
+		if err != nil {
+			_ = db.Close()
+			issues = append(issues, browserImportPreparationIssue{
+				databaseFile: database.databaseFile,
+				query:        q,
+				err:          fmt.Errorf("execute counting query: %w", err),
+			})
+			continue
+		}
+		if count < 1 {
+			_ = db.Close()
+			issues = append(issues, browserImportPreparationIssue{
+				databaseFile: database.databaseFile,
+				query:        q,
+				err:          errNoBrowserURLs,
+			})
+			continue
+		}
+
+		choices = append(choices, importHistoryMultipleChoicePrompt{
+			choice:  database.databaseFile,
+			urls:    count,
+			skipped: skipped,
+			db:      db,
+			q:       q,
+		})
+	}
+	return choices, issues
 }
 
 func browserImportStartDate(cmd *cobra.Command) (*time.Time, error) {

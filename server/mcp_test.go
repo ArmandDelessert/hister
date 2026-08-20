@@ -9,7 +9,6 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/testutil"
-	"github.com/asciimoo/hister/server/types"
 )
 
 func TestMCPBuildSearchResultMarksAndNormalizesUntrustedContent(t *testing.T) {
@@ -29,7 +28,7 @@ func TestMCPBuildSearchResultMarksAndNormalizesUntrustedContent(t *testing.T) {
 					HTML:     maliciousHTML,
 					Language: "en",
 					Label:    "research",
-					Type:     types.Web,
+					Type:     document.Web,
 				},
 			},
 		},

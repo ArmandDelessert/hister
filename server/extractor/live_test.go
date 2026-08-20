@@ -18,7 +18,7 @@ import (
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/crawler"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 const liveUserAgent = "HisterLiveExtractorTest/1.0 (+https://github.com/asciimoo/hister)"
@@ -105,7 +105,7 @@ func runLiveExtractorCase(
 	direct = cloneLiveDocument(source)
 	extractResult := candidate.Extract(direct)
 	decision, extractErr := extractResult.Decision(), extractResult.Err()
-	wantDecision, _ := parseLiveDecision(testCase.ExtractDecision, types.ExtractorSuccess)
+	wantDecision, _ := parseLiveDecision(testCase.ExtractDecision, sdk.ExtractorSuccess)
 	if extractErr != nil {
 		t.Errorf("direct extraction phase: %s returned %v", candidate.Name(), extractErr)
 	}
@@ -127,7 +127,7 @@ func runLiveExtractorCase(
 		previewResult := candidate.Preview(cloneLiveDocument(source))
 		response, decision, previewErr := previewResult.Response(), previewResult.Decision(), previewResult.Err()
 		preview = response.Content
-		wantPreviewDecision, _ := parseLiveDecision(testCase.Expect.PreviewDecision, types.ExtractorSuccess)
+		wantPreviewDecision, _ := parseLiveDecision(testCase.Expect.PreviewDecision, sdk.ExtractorSuccess)
 		if previewErr != nil {
 			t.Errorf("preview phase: %s returned %v", candidate.Name(), previewErr)
 		}

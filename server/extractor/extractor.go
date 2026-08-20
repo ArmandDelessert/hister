@@ -20,7 +20,6 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // Extractor is retained as an alias for the stable SDK contract.
@@ -32,14 +31,14 @@ type ContextExtractor = sdk.ContextExtractor
 // ContextPreviewer is retained as an alias for the stable SDK contract.
 type ContextPreviewer = sdk.ContextPreviewer
 
-func extractWithContext(ctx context.Context, e Extractor, d *document.Document) types.ExtractResult {
+func extractWithContext(ctx context.Context, e Extractor, d *document.Document) sdk.ExtractResult {
 	if contextual, ok := e.(ContextExtractor); ok {
 		return contextual.ExtractContext(ctx, d)
 	}
 	return e.Extract(d)
 }
 
-func previewWithContext(ctx context.Context, e Extractor, d *document.Document) types.PreviewResult {
+func previewWithContext(ctx context.Context, e Extractor, d *document.Document) sdk.PreviewResult {
 	if contextual, ok := e.(ContextPreviewer); ok {
 		return contextual.PreviewContext(ctx, d)
 	}
@@ -58,11 +57,11 @@ var ErrInvalidExtractorResult = errors.New("invalid extractor result")
 
 // ExtractorInfo holds a summary of an extractor's identity and current state.
 type ExtractorInfo struct {
-	Name         string                      `json:"name"`
-	Description  string                      `json:"description"`
-	Enabled      bool                        `json:"enabled"`
-	Capabilities types.ExtractorCapabilities `json:"capabilities"`
-	Options      map[string]any              `json:"options,omitempty"`
+	Name         string           `json:"name"`
+	Description  string           `json:"description"`
+	Enabled      bool             `json:"enabled"`
+	Capabilities sdk.Capabilities `json:"capabilities"`
+	Options      map[string]any   `json:"options,omitempty"`
 }
 
 // ListMatching returns an ExtractorInfo entry for every enabled extractor that
@@ -207,12 +206,12 @@ func (r *Registry) ExtractContext(ctx context.Context, d *document.Document) err
 			}
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Enriching document")
 			switch result.Decision() {
-			case types.ExtractorSuccess:
-			case types.ExtractorFallback:
+			case sdk.ExtractorSuccess:
+			case sdk.ExtractorFallback:
 				if result.Err() != nil {
 					log.Warn().Err(result.Err()).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to enrich document")
 				}
-			case types.ExtractorAbort:
+			case sdk.ExtractorAbort:
 				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, result.Err())
 			default:
 				return fmt.Errorf("extractor %s: %w", e.Name(), ErrInvalidExtractorResult)
@@ -230,11 +229,11 @@ func (r *Registry) ExtractContext(ctx context.Context, d *document.Document) err
 			}
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Extracting data")
 			switch result.Decision() {
-			case types.ExtractorSuccess:
+			case sdk.ExtractorSuccess:
 				return nil
-			case types.ExtractorAbort:
+			case sdk.ExtractorAbort:
 				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, result.Err())
-			case types.ExtractorFallback:
+			case sdk.ExtractorFallback:
 				if result.Err() != nil {
 					log.Warn().Err(result.Err()).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to extract content")
 				}
@@ -251,24 +250,24 @@ func (r *Registry) ExtractContext(ctx context.Context, d *document.Document) err
 // starting extractor, with later matching preview extractors acting as
 // fallbacks. Explicit selection still requires the extractor to be enabled,
 // preview capable, and matched to the document.
-func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
+func Preview(d *document.Document, name string) (sdk.PreviewResponse, error) {
 	return defaultRegistry.Preview(d, name)
 }
 
 // Preview runs this registry's preview chain.
-func (r *Registry) Preview(d *document.Document, name string) (types.PreviewResponse, error) {
+func (r *Registry) Preview(d *document.Document, name string) (sdk.PreviewResponse, error) {
 	return r.PreviewContext(context.Background(), d, name)
 }
 
 // PreviewContext renders a preview with caller cancellation.
-func PreviewContext(ctx context.Context, d *document.Document, name string) (types.PreviewResponse, error) {
+func PreviewContext(ctx context.Context, d *document.Document, name string) (sdk.PreviewResponse, error) {
 	return defaultRegistry.PreviewContext(ctx, d, name)
 }
 
 // PreviewContext runs this registry's preview chain with caller cancellation.
-func (r *Registry) PreviewContext(ctx context.Context, d *document.Document, name string) (types.PreviewResponse, error) {
+func (r *Registry) PreviewContext(ctx context.Context, d *document.Document, name string) (sdk.PreviewResponse, error) {
 	if err := ctx.Err(); err != nil {
-		return types.PreviewResponse{}, err
+		return sdk.PreviewResponse{}, err
 	}
 	extractors := r.Extractors()
 	start := 0
@@ -279,20 +278,20 @@ func (r *Registry) PreviewContext(ctx context.Context, d *document.Document, nam
 			if strings.ToLower(e.Name()) == lower {
 				found = true
 				if !e.GetConfig().Enable {
-					return types.PreviewResponse{}, fmt.Errorf("%w: %s is disabled", ErrNoExtractor, name)
+					return sdk.PreviewResponse{}, fmt.Errorf("%w: %s is disabled", ErrNoExtractor, name)
 				}
 				if !e.Capabilities().Preview {
-					return types.PreviewResponse{}, fmt.Errorf("%w: %s does not provide previews", ErrNoExtractor, name)
+					return sdk.PreviewResponse{}, fmt.Errorf("%w: %s does not provide previews", ErrNoExtractor, name)
 				}
 				if !e.Match(d) {
-					return types.PreviewResponse{}, fmt.Errorf("%w: %s does not match document", ErrNoExtractor, name)
+					return sdk.PreviewResponse{}, fmt.Errorf("%w: %s does not match document", ErrNoExtractor, name)
 				}
 				start = i
 				break
 			}
 		}
 		if !found {
-			return types.PreviewResponse{}, fmt.Errorf("%w: %s", ErrNoExtractor, name)
+			return sdk.PreviewResponse{}, fmt.Errorf("%w: %s", ErrNoExtractor, name)
 		}
 	}
 	for _, e := range extractors[start:] {
@@ -303,23 +302,23 @@ func (r *Registry) PreviewContext(ctx context.Context, d *document.Document, nam
 			log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Creating preview")
 			result := previewWithContext(ctx, e, d)
 			if err := ctx.Err(); err != nil {
-				return types.PreviewResponse{}, err
+				return sdk.PreviewResponse{}, err
 			}
 			switch result.Decision() {
-			case types.ExtractorSuccess:
+			case sdk.ExtractorSuccess:
 				return result.Response(), nil
-			case types.ExtractorAbort:
-				return types.PreviewResponse{}, fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, result.Err())
-			case types.ExtractorFallback:
+			case sdk.ExtractorAbort:
+				return sdk.PreviewResponse{}, fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, result.Err())
+			case sdk.ExtractorFallback:
 				if result.Err() != nil {
 					log.Warn().Err(result.Err()).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to preview content")
 				}
 			default:
-				return types.PreviewResponse{}, fmt.Errorf("extractor %s: %w", e.Name(), ErrInvalidExtractorResult)
+				return sdk.PreviewResponse{}, fmt.Errorf("extractor %s: %w", e.Name(), ErrInvalidExtractorResult)
 			}
 		}
 	}
-	return types.PreviewResponse{}, ErrNoExtractor
+	return sdk.PreviewResponse{}, ErrNoExtractor
 }
 
 type basicExtractor struct {

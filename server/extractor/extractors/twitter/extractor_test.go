@@ -9,7 +9,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 func TestSetConfigRejectsUnknownOptions(t *testing.T) {
@@ -156,8 +156,8 @@ func TestExtractSemanticFeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if !d.SkipIndexing {
 		t.Fatal("source feed was not marked to skip indexing")
@@ -206,8 +206,8 @@ func TestExtractSemanticFeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview returned an error: %v", err)
 	}
-	if previewState != types.ExtractorSuccess {
-		t.Fatalf("Preview state = %v, want %v", previewState, types.ExtractorSuccess)
+	if previewState != sdk.ExtractorSuccess {
+		t.Fatalf("Preview state = %v, want %v", previewState, sdk.ExtractorSuccess)
 	}
 	if !strings.Contains(preview.Content, `<a href="https://githubstatus.com/incidents/123">`) {
 		t.Fatalf("tweet preview is missing the expanded link: %s", preview.Content)
@@ -236,8 +236,8 @@ func TestExtractRenderedTweet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if len(d.ExtraDocuments) != 1 {
 		t.Fatalf("ExtraDocuments length = %d, want 1", len(d.ExtraDocuments))
@@ -282,7 +282,7 @@ func TestExtractRenderedEmbedTweet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(d.ExtraDocuments))
 	}
 	tweet := d.ExtraDocuments[0]
@@ -312,7 +312,7 @@ func TestRenderedTweetBodyOverridesSemanticShortLinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(d.ExtraDocuments))
 	}
 
@@ -343,7 +343,7 @@ func TestRenderedTruncatedLinkIsNotExpanded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(d.ExtraDocuments))
 	}
 	if strings.Contains(d.ExtraDocuments[0].HTML, `href="https://example.com/a/very/long`) {
@@ -365,7 +365,7 @@ func TestRenderedLabelIsNotTreatedAsURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(d.ExtraDocuments))
 	}
 	if strings.Contains(d.ExtraDocuments[0].HTML, `href="https://details"`) {
@@ -387,7 +387,7 @@ func TestUnexpandedTCOURLIsNotClickable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(d.ExtraDocuments))
 	}
 	if strings.Contains(d.ExtraDocuments[0].HTML, `href="https://t.co/unknown"`) {
@@ -410,7 +410,7 @@ func TestExternalAnchorIsNotPairedWithSemanticShortURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(d.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(d.ExtraDocuments))
 	}
 	tweet := d.ExtraDocuments[0]
@@ -438,8 +438,8 @@ func TestExtractDirectTweetMetadataFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if len(d.ExtraDocuments) != 1 {
 		t.Fatalf("ExtraDocuments length = %d, want 1", len(d.ExtraDocuments))
@@ -479,8 +479,8 @@ func TestExtractSkipsFeedWhenNoTweetsFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if !d.SkipIndexing {
 		t.Fatal("source feed was not marked to skip indexing")
@@ -501,8 +501,8 @@ func TestExtractStopsForExtractedTweet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if d.SkipIndexing {
 		t.Fatal("extracted tweet was marked to skip indexing")
@@ -522,8 +522,8 @@ func TestPreviewSanitizesTweetHTML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Preview state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Preview state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	for _, disallowed := range []string{"<script", "onclick", "javascript:"} {
 		if strings.Contains(strings.ToLower(resp.Content), disallowed) {

@@ -8,56 +8,56 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 type stubExtractor struct {
 	name         string
-	capabilities types.ExtractorCapabilities
+	capabilities sdk.Capabilities
 	cfg          *config.Extractor
 	match        func(*document.Document) bool
-	extract      func(*document.Document) types.ExtractResult
-	preview      func(*document.Document) types.PreviewResult
+	extract      func(*document.Document) sdk.ExtractResult
+	preview      func(*document.Document) sdk.PreviewResult
 }
 
 type contextStubExtractor struct {
 	*stubExtractor
-	extractContext func(context.Context, *document.Document) types.ExtractResult
-	previewContext func(context.Context, *document.Document) types.PreviewResult
+	extractContext func(context.Context, *document.Document) sdk.ExtractResult
+	previewContext func(context.Context, *document.Document) sdk.PreviewResult
 }
 
 func (e *stubExtractor) Name() string { return e.name }
 
 func (e *stubExtractor) Description() string { return e.name }
 
-func (e *stubExtractor) Capabilities() types.ExtractorCapabilities { return e.capabilities }
+func (e *stubExtractor) Capabilities() sdk.Capabilities { return e.capabilities }
 
 func (e *stubExtractor) Match(d *document.Document) bool {
 	return e.match == nil || e.match(d)
 }
 
-func (e *stubExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *stubExtractor) Extract(d *document.Document) sdk.ExtractResult {
 	if e.extract == nil {
-		return types.ExtractFallback(nil)
+		return sdk.ExtractFallback(nil)
 	}
 	return e.extract(d)
 }
 
-func (e *stubExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *stubExtractor) Preview(d *document.Document) sdk.PreviewResult {
 	if e.preview == nil {
-		return types.PreviewFallback(nil)
+		return sdk.PreviewFallback(nil)
 	}
 	return e.preview(d)
 }
 
-func (e *contextStubExtractor) ExtractContext(ctx context.Context, d *document.Document) types.ExtractResult {
+func (e *contextStubExtractor) ExtractContext(ctx context.Context, d *document.Document) sdk.ExtractResult {
 	if e.extractContext == nil {
 		return e.Extract(d)
 	}
 	return e.extractContext(ctx, d)
 }
 
-func (e *contextStubExtractor) PreviewContext(ctx context.Context, d *document.Document) types.PreviewResult {
+func (e *contextStubExtractor) PreviewContext(ctx context.Context, d *document.Document) sdk.PreviewResult {
 	if e.previewContext == nil {
 		return e.Preview(d)
 	}
@@ -108,8 +108,8 @@ func TestReadabilityPreviewSanitizesMetaRefresh(t *testing.T) {
 	if result.Err() != nil {
 		t.Fatalf("Preview failed: %v", result.Err())
 	}
-	if result.Decision() != types.ExtractorSuccess {
-		t.Fatalf("decision = %v, want %v", result.Decision(), types.ExtractorSuccess)
+	if result.Decision() != sdk.ExtractorSuccess {
+		t.Fatalf("decision = %v, want %v", result.Decision(), sdk.ExtractorSuccess)
 	}
 	resp := result.Response()
 	lower := strings.ToLower(resp.Content)
@@ -132,8 +132,8 @@ func TestBasicPreviewEscapesMarkup(t *testing.T) {
 	if result.Err() != nil {
 		t.Fatalf("Preview failed: %v", result.Err())
 	}
-	if result.Decision() != types.ExtractorSuccess {
-		t.Fatalf("decision = %v, want %v", result.Decision(), types.ExtractorSuccess)
+	if result.Decision() != sdk.ExtractorSuccess {
+		t.Fatalf("decision = %v, want %v", result.Decision(), sdk.ExtractorSuccess)
 	}
 	resp := result.Response()
 	for _, disallowed := range []string{"<p>", "<meta", `http-equiv="refresh"`} {
@@ -283,9 +283,9 @@ func TestExplicitPreviewRejectsExtractorWithoutPreviewCapability(t *testing.T) {
 func TestInvalidExtractionResultStopsTheChain(t *testing.T) {
 	invalid := &stubExtractor{
 		name:         "Invalid",
-		capabilities: types.ExtractorCapabilities{Extract: true},
-		extract: func(*document.Document) types.ExtractResult {
-			return types.ExtractResult{}
+		capabilities: sdk.Capabilities{Extract: true},
+		extract: func(*document.Document) sdk.ExtractResult {
+			return sdk.ExtractResult{}
 		},
 	}
 	registry := useExtractors(t, invalid)
@@ -299,16 +299,16 @@ func TestInvalidExtractionResultStopsTheChain(t *testing.T) {
 func TestExplicitPreviewFallsBack(t *testing.T) {
 	first := &stubExtractor{
 		name:         "First",
-		capabilities: types.ExtractorCapabilities{Preview: true},
-		preview: func(*document.Document) types.PreviewResult {
-			return types.PreviewFallback(errors.New("preview declined"))
+		capabilities: sdk.Capabilities{Preview: true},
+		preview: func(*document.Document) sdk.PreviewResult {
+			return sdk.PreviewFallback(errors.New("preview declined"))
 		},
 	}
 	second := &stubExtractor{
 		name:         "Second",
-		capabilities: types.ExtractorCapabilities{Preview: true},
-		preview: func(*document.Document) types.PreviewResult {
-			return types.Previewed(types.PreviewResponse{Content: "fallback preview"})
+		capabilities: sdk.Capabilities{Preview: true},
+		preview: func(*document.Document) sdk.PreviewResult {
+			return sdk.Previewed(sdk.PreviewResponse{Content: "fallback preview"})
 		},
 	}
 	registry := useExtractors(t, first, second)
@@ -327,7 +327,7 @@ func TestExplicitPreviewRequiresEnabledMatchingExtractor(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		candidate := &stubExtractor{
 			name:         "Disabled",
-			capabilities: types.ExtractorCapabilities{Preview: true},
+			capabilities: sdk.Capabilities{Preview: true},
 			cfg:          &config.Extractor{Enable: false, Options: map[string]any{}},
 		}
 		registry := useExtractors(t, candidate)
@@ -340,7 +340,7 @@ func TestExplicitPreviewRequiresEnabledMatchingExtractor(t *testing.T) {
 	t.Run("not matching", func(t *testing.T) {
 		candidate := &stubExtractor{
 			name:         "NotMatching",
-			capabilities: types.ExtractorCapabilities{Preview: true},
+			capabilities: sdk.Capabilities{Preview: true},
 			match:        func(*document.Document) bool { return false },
 		}
 		registry := useExtractors(t, candidate)
@@ -357,25 +357,25 @@ func TestExtractorContextPropagation(t *testing.T) {
 	content := &contextStubExtractor{
 		stubExtractor: &stubExtractor{
 			name:         "Content",
-			capabilities: types.ExtractorCapabilities{Extract: true},
+			capabilities: sdk.Capabilities{Extract: true},
 		},
-		extractContext: func(received context.Context, _ *document.Document) types.ExtractResult {
+		extractContext: func(received context.Context, _ *document.Document) sdk.ExtractResult {
 			if got := received.Value(contextKey{}); got != "request value" {
 				t.Fatalf("extract context value = %v, want request value", got)
 			}
-			return types.Extracted()
+			return sdk.Extracted()
 		},
 	}
 	preview := &contextStubExtractor{
 		stubExtractor: &stubExtractor{
 			name:         "Preview",
-			capabilities: types.ExtractorCapabilities{Preview: true},
+			capabilities: sdk.Capabilities{Preview: true},
 		},
-		previewContext: func(received context.Context, _ *document.Document) types.PreviewResult {
+		previewContext: func(received context.Context, _ *document.Document) sdk.PreviewResult {
 			if got := received.Value(contextKey{}); got != "request value" {
 				t.Fatalf("preview context value = %v, want request value", got)
 			}
-			return types.Previewed(types.PreviewResponse{Content: "preview"})
+			return sdk.Previewed(sdk.PreviewResponse{Content: "preview"})
 		},
 	}
 	registry := useExtractors(t, content, preview)
@@ -392,19 +392,19 @@ func TestCanceledContextStopsExtractorFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	first := &stubExtractor{
 		name:         "First",
-		capabilities: types.ExtractorCapabilities{Extract: true},
-		extract: func(*document.Document) types.ExtractResult {
+		capabilities: sdk.Capabilities{Extract: true},
+		extract: func(*document.Document) sdk.ExtractResult {
 			cancel()
-			return types.ExtractFallback(context.Canceled)
+			return sdk.ExtractFallback(context.Canceled)
 		},
 	}
 	secondCalled := false
 	second := &stubExtractor{
 		name:         "Second",
-		capabilities: types.ExtractorCapabilities{Extract: true},
-		extract: func(*document.Document) types.ExtractResult {
+		capabilities: sdk.Capabilities{Extract: true},
+		extract: func(*document.Document) sdk.ExtractResult {
 			secondCalled = true
-			return types.Extracted()
+			return sdk.Extracted()
 		},
 	}
 	registry := useExtractors(t, first, second)
@@ -421,18 +421,18 @@ func TestCanceledContextStopsExtractorFallback(t *testing.T) {
 func TestRegisterBeforeControlsChainOrder(t *testing.T) {
 	fallback := &stubExtractor{
 		name:         "Fallback",
-		capabilities: types.ExtractorCapabilities{Extract: true},
-		extract: func(d *document.Document) types.ExtractResult {
+		capabilities: sdk.Capabilities{Extract: true},
+		extract: func(d *document.Document) sdk.ExtractResult {
 			d.Text = "fallback"
-			return types.Extracted()
+			return sdk.Extracted()
 		},
 	}
 	preferred := &stubExtractor{
 		name:         "Preferred",
-		capabilities: types.ExtractorCapabilities{Extract: true},
-		extract: func(d *document.Document) types.ExtractResult {
+		capabilities: sdk.Capabilities{Extract: true},
+		extract: func(d *document.Document) sdk.ExtractResult {
 			d.Text = "preferred"
-			return types.Extracted()
+			return sdk.Extracted()
 		},
 	}
 	registry := useExtractors(t, fallback)
@@ -452,13 +452,13 @@ func TestRegisterBeforeControlsChainOrder(t *testing.T) {
 func TestRegistryRejectsInvalidRegistration(t *testing.T) {
 	registered := &stubExtractor{
 		name:         "Registered",
-		capabilities: types.ExtractorCapabilities{Extract: true},
+		capabilities: sdk.Capabilities{Extract: true},
 	}
 	registry := useExtractors(t, registered)
 
 	duplicate := &stubExtractor{
 		name:         "registered",
-		capabilities: types.ExtractorCapabilities{Preview: true},
+		capabilities: sdk.Capabilities{Preview: true},
 	}
 	if err := registry.Register(duplicate); !errors.Is(err, ErrDuplicateExtractor) {
 		t.Fatalf("duplicate registration error = %v, want ErrDuplicateExtractor", err)
@@ -478,7 +478,7 @@ func TestRegistryRejectsInvalidRegistration(t *testing.T) {
 func TestRegistryExtractorSnapshotIsIndependent(t *testing.T) {
 	registered := &stubExtractor{
 		name:         "Registered",
-		capabilities: types.ExtractorCapabilities{Extract: true},
+		capabilities: sdk.Capabilities{Extract: true},
 	}
 	registry := useExtractors(t, registered)
 
@@ -492,11 +492,11 @@ func TestRegistryExtractorSnapshotIsIndependent(t *testing.T) {
 func TestRegistryInstancesHaveIndependentConfiguration(t *testing.T) {
 	first := &stubExtractor{
 		name:         "Custom",
-		capabilities: types.ExtractorCapabilities{Extract: true},
+		capabilities: sdk.Capabilities{Extract: true},
 	}
 	second := &stubExtractor{
 		name:         "Custom",
-		capabilities: types.ExtractorCapabilities{Extract: true},
+		capabilities: sdk.Capabilities{Extract: true},
 	}
 	firstRegistry := useExtractors(t, first)
 	_ = useExtractors(t, second)

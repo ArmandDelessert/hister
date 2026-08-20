@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/document"
 )
 
 const Version = 1
@@ -110,15 +110,15 @@ var timeValues = []ValueDefinition{
 var valueSets = map[string][]ValueDefinition{
 	"document_types": {
 		{
-			Value: types.Web.String(),
-			Min:   new(float64(types.Web)),
-			Max:   new(float64(types.Local)),
+			Value: document.Web.String(),
+			Min:   new(float64(document.Web)),
+			Max:   new(float64(document.Local)),
 		},
 		{
-			Value:   types.Local.String(),
+			Value:   document.Local.String(),
 			Aliases: []string{"file"},
-			Min:     new(float64(types.Local)),
-			Max:     new(float64(types.Local) + 1),
+			Min:     new(float64(document.Local)),
+			Max:     new(float64(document.Local) + 1),
 		},
 	},
 	"visit_counts": {

@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 const liveManifestPath = "live_cases.yaml"
@@ -121,10 +121,10 @@ func validateLiveManifest(manifest *liveManifest) error {
 		if liveBool(testCase.Match, true) {
 			covered[strings.ToLower(testCase.Extractor)] = struct{}{}
 		}
-		if _, err := parseLiveDecision(testCase.ExtractDecision, types.ExtractorSuccess); err != nil {
+		if _, err := parseLiveDecision(testCase.ExtractDecision, sdk.ExtractorSuccess); err != nil {
 			return fmt.Errorf("live extractor case %q: %w", testCase.Name, err)
 		}
-		if _, err := parseLiveDecision(testCase.Expect.PreviewDecision, types.ExtractorSuccess); err != nil {
+		if _, err := parseLiveDecision(testCase.Expect.PreviewDecision, sdk.ExtractorSuccess); err != nil {
 			return fmt.Errorf("live extractor case %q: %w", testCase.Name, err)
 		}
 	}
@@ -149,16 +149,16 @@ func liveExtractorByName(name string) Extractor {
 	return nil
 }
 
-func parseLiveDecision(value string, defaultDecision types.ExtractorDecision) (types.ExtractorDecision, error) {
+func parseLiveDecision(value string, defaultDecision sdk.Decision) (sdk.Decision, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "":
 		return defaultDecision, nil
 	case "success":
-		return types.ExtractorSuccess, nil
+		return sdk.ExtractorSuccess, nil
 	case "fallback":
-		return types.ExtractorFallback, nil
+		return sdk.ExtractorFallback, nil
 	case "abort":
-		return types.ExtractorAbort, nil
+		return sdk.ExtractorAbort, nil
 	default:
 		return 0, fmt.Errorf("unknown extractor decision %q", value)
 	}

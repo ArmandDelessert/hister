@@ -23,11 +23,11 @@ import (
 	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/indexer/searchschema"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/timeline"
-	"github.com/asciimoo/hister/server/types"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -1263,10 +1263,10 @@ func servePreview(c *webContext) {
 			}
 		}
 	}
-	var resp types.PreviewResponse
+	var resp sdk.PreviewResponse
 	var err error
 	if doc.HTML == "" {
-		resp = types.PreviewResponse{Content: doc.Text}
+		resp = sdk.PreviewResponse{Content: doc.Text}
 	} else {
 		resp, err = extractor.PreviewContext(c.Request.Context(), doc, extractorName)
 		if err != nil {
@@ -1345,7 +1345,7 @@ func serveFile(c *webContext) {
 }
 
 func authorizedFilePath(c *webContext, id string, doc *document.Document) (string, *config.Directory, bool) {
-	if doc == nil || doc.Type != types.Local || document.GetDocID(doc.UserID, doc.URL) != id {
+	if doc == nil || doc.Type != document.Local || document.GetDocID(doc.UserID, doc.URL) != id {
 		return "", nil, false
 	}
 	if doc.UserID != 0 && doc.UserID != c.UserID {

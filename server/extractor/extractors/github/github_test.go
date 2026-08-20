@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 func TestMatchGitHubURLs(t *testing.T) {
@@ -180,7 +180,7 @@ func TestExtractRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "asciimoo/hister: Your own search engine" {
@@ -271,7 +271,7 @@ func TestExtractIssuePage(t *testing.T) {
 		t.Fatalf("Extract error: %v", err)
 	}
 
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "Extractors wanted! · Issue #305 · asciimoo/hister" {
@@ -345,7 +345,7 @@ func TestExtractIssuesPage(t *testing.T) {
 		t.Fatalf("Extract error: %v", err)
 	}
 
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "Issues · asciimoo/hister" {
@@ -506,7 +506,7 @@ func TestExtractPullRequestPage(t *testing.T) {
 		t.Fatalf("Extract error: %v", err)
 	}
 
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	wantTitle := "Improve GitHub extractor by RensOliemans · Pull Request #495 · asciimoo/hister · GitHub"

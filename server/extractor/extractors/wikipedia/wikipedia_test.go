@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 func TestMatchWikipediaURLs(t *testing.T) {
@@ -74,7 +74,7 @@ func TestExtractMinimalArticle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if d.Title != "Test Article" {
@@ -132,7 +132,7 @@ func TestExtractInfobox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(d.Text, "Capital: Testville") {
@@ -168,7 +168,7 @@ func TestNoiseRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(d.Text, "Real content here") {
@@ -195,7 +195,7 @@ func TestPreviewMinimalArticle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(resp.Content, "lead paragraph") {
@@ -231,7 +231,7 @@ func TestPreviewInfoboxStyling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	// Infobox should be floated right with background.
@@ -269,7 +269,7 @@ func TestPreviewURLRewriting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(resp.Content, "https://en.wikipedia.org/wiki/Go_(programming_language)") {
@@ -287,7 +287,7 @@ func TestNoContentReturnsContinue(t *testing.T) {
 	}
 	e := &WikipediaExtractor{}
 	state, _ := e.Extract(d).Unpack()
-	if state != types.ExtractorFallback {
+	if state != sdk.ExtractorFallback {
 		t.Errorf("state = %v, want Continue for empty page", state)
 	}
 }
@@ -314,7 +314,7 @@ func TestPreviewReferencesPreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	// References should be in the preview.
@@ -358,7 +358,7 @@ func TestPreviewGallery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("state = %v, want Stop", state)
 	}
 	if !strings.Contains(resp.Content, "display: flex") {
@@ -441,7 +441,7 @@ func TestRealArticles(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Extract error: %v", err)
 				}
-				if state != types.ExtractorSuccess {
+				if state != sdk.ExtractorSuccess {
 					t.Fatalf("state = %v, want Stop", state)
 				}
 				if d.Title != tc.title {
@@ -463,7 +463,7 @@ func TestRealArticles(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Preview error: %v", err)
 				}
-				if state != types.ExtractorSuccess {
+				if state != sdk.ExtractorSuccess {
 					t.Fatalf("state = %v, want Stop", state)
 				}
 				if len(resp.Content) < 1000 {

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 func extract(t *testing.T, html string) *document.Document {
@@ -16,7 +16,7 @@ func extract(t *testing.T, html string) *document.Document {
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("Extract decision = %v, want Success", state)
 	}
 	return d
@@ -145,7 +145,7 @@ func TestNoJSONLD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	if state != types.ExtractorFallback {
+	if state != sdk.ExtractorFallback {
 		t.Fatalf("decision = %v, want Fallback", state)
 	}
 	if _, ok := d.Metadata["jsonld"]; ok {

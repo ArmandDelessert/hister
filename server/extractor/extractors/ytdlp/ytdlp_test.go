@@ -15,7 +15,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 // sampleJSONTemplate is based on real yt-dlp --dump-json output from
@@ -286,7 +286,7 @@ func TestExtract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("Extract returned state %v, want ExtractorSuccess", state)
 	}
 
@@ -355,7 +355,7 @@ func TestPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview returned error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
+	if state != sdk.ExtractorSuccess {
 		t.Fatalf("Preview returned state %v, want ExtractorSuccess", state)
 	}
 	if resp.Template != "video" {
@@ -589,7 +589,7 @@ func TestExtractFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from missing binary")
 	}
-	if state != types.ExtractorFallback {
+	if state != sdk.ExtractorFallback {
 		t.Errorf("expected ExtractorFallback on failure, got %v", state)
 	}
 }
@@ -736,7 +736,7 @@ func TestExtractRejectsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	result := (&YtdlpExtractor{}).ExtractContext(ctx, &document.Document{URL: "https://www.youtube.com/watch?v=test"})
-	if result.Decision() != types.ExtractorAbort {
+	if result.Decision() != sdk.ExtractorAbort {
 		t.Fatalf("Extract decision = %v, want ExtractorAbort", result.Decision())
 	}
 	if !errors.Is(result.Err(), context.Canceled) {

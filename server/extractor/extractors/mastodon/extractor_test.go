@@ -7,7 +7,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 func TestSetConfigRejectsUnknownOptions(t *testing.T) {
@@ -72,8 +72,8 @@ func TestExtractUsesOriginalRemoteStatusURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if len(d.ExtraDocuments) != 1 {
 		t.Fatalf("ExtraDocuments length = %d, want 1", len(d.ExtraDocuments))
@@ -100,8 +100,8 @@ func TestExtractRenderedDetailedStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if len(d.ExtraDocuments) != 1 {
 		t.Fatalf("ExtraDocuments length = %d, want 1", len(d.ExtraDocuments))
@@ -125,8 +125,8 @@ func TestExtractSkipsDocumentWhenNoTootsFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if !d.SkipIndexing {
 		t.Fatal("source document was not marked to skip indexing")

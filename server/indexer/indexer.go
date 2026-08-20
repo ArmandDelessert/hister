@@ -24,7 +24,6 @@ import (
 	"github.com/asciimoo/hister/server/indexer/querybuilder"
 	"github.com/asciimoo/hister/server/indexer/searchschema"
 	"github.com/asciimoo/hister/server/model"
-	"github.com/asciimoo/hister/server/types"
 	"github.com/asciimoo/hister/server/vectorstore"
 
 	"github.com/blevesearch/bleve/v2"
@@ -688,7 +687,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 			b := newMultiBatch(tmpIdx)
 			for _, h := range res.Hits {
 				d := idx.resFromHit(h, resultIncludeAll)
-				if d.Type == types.Local {
+				if d.Type == document.Local {
 					filePath := filepath.Clean(files.FileURLToPath(d.URL))
 					dir := files.FindMatchingDir(dirs, filePath)
 					if !files.DirectoryMatchesPath(dir, filePath) {
@@ -1930,7 +1929,7 @@ func (idx *Indexer) resFromHit(h *search.DocumentMatch, include resultInclude) *
 		d.Updated = d.Added
 	}
 	if t, ok := h.Fields["type"].(float64); ok {
-		d.Type = types.DocType(t)
+		d.Type = document.DocType(t)
 	}
 	if t, ok := h.Fields["user_id"].(float64); ok {
 		d.UserID = uint(t)

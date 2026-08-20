@@ -13,7 +13,6 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
-	"github.com/asciimoo/hister/server/types"
 
 	"github.com/blevesearch/bleve/v2"
 )
@@ -351,7 +350,7 @@ func TestCleanupLocalDocumentsDeletesMultipleBatches(t *testing.T) {
 		doc := &document.Document{
 			URL:       files.PathToFileURL(filepath.Join(testDir, fmt.Sprintf("file-%03d.go", n))),
 			Text:      "indexed code file",
-			Type:      types.Local,
+			Type:      document.Local,
 			Processed: true,
 		}
 		if err := batch.Add(doc); err != nil {

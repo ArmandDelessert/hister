@@ -17,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/asciimoo/hister/files"
-	"github.com/asciimoo/hister/server/types"
 
 	"github.com/rs/zerolog/log"
 )
@@ -35,7 +34,7 @@ type Document struct {
 	Score      float64        `json:"score"`
 	Added      int64          `json:"added"`
 	Updated    int64          `json:"updated"`
-	Type       types.DocType  `json:"type"`
+	Type       DocType        `json:"type"`
 	Language   string         `json:"language"`
 	UserID     uint           `json:"user_id"`
 	Label      string         `json:"label"`
@@ -174,7 +173,7 @@ func (d *Document) ProcessWithSensitivePatternContext(ctx context.Context, ld La
 		d.Added = now
 	}
 	d.Updated = now
-	d.Type = types.Web
+	d.Type = Web
 	d.Domain = pu.Hostname()
 	if d.HTML != "" {
 		if err := extractFn(ctx, d); err != nil {
@@ -222,7 +221,7 @@ func (d *Document) processFile(ld LanguageDetector, sensitivePattern *regexp.Reg
 	if !d.SkipSensitiveCheck && sensitivePattern != nil && sensitivePattern.MatchString(d.Text) {
 		return ErrSensitiveContent
 	}
-	d.Type = types.Local
+	d.Type = Local
 	d.Domain = "local"
 	if d.Title == "" {
 		base := filepath.Base(osPath)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 func TestSetConfigRejectsUnknownOptions(t *testing.T) {
@@ -150,8 +150,8 @@ func TestExtractPreloadedAndRenderedPosts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if got, want := d.Title, "How should this work?"; got != want {
 		t.Fatalf("Title = %q, want %q", got, want)
@@ -197,8 +197,8 @@ func TestExtractPreloadedAndRenderedPosts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview returned an error: %v", err)
 	}
-	if previewState != types.ExtractorSuccess {
-		t.Fatalf("Preview state = %v, want %v", previewState, types.ExtractorSuccess)
+	if previewState != sdk.ExtractorSuccess {
+		t.Fatalf("Preview state = %v, want %v", previewState, sdk.ExtractorSuccess)
 	}
 	for _, want := range []string{
 		"Original post",
@@ -244,7 +244,7 @@ func TestExtractCrawlerMarkup(t *testing.T) {
 	}
 
 	state, err := (&DiscourseExtractor{}).Extract(d).Unpack()
-	if err != nil || state != types.ExtractorSuccess {
+	if err != nil || state != sdk.ExtractorSuccess {
 		t.Fatalf("Extract returned state %v and error %v", state, err)
 	}
 	for _, want := range []string{"Crawler question.", "Crawler accepted answer.", "[Accepted Solution]"} {
@@ -291,7 +291,7 @@ func TestSchemaFallback(t *testing.T) {
 	}
 
 	state, err := (&DiscourseExtractor{}).Extract(d).Unpack()
-	if err != nil || state != types.ExtractorSuccess {
+	if err != nil || state != sdk.ExtractorSuccess {
 		t.Fatalf("Extract returned state %v and error %v", state, err)
 	}
 	for _, want := range []string{"Schema question.", "Another answer.", "Schema solution.", "[4 likes]"} {
@@ -313,8 +313,8 @@ func TestExtractRejectsNonTopicPage(t *testing.T) {
 	if err == nil {
 		t.Fatal("Extract returned no error for a category page")
 	}
-	if state != types.ExtractorFallback {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorFallback)
+	if state != sdk.ExtractorFallback {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorFallback)
 	}
 	if d.Title != "" || d.Text != "" {
 		t.Fatalf("category page was modified: %#v", d)

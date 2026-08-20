@@ -9,7 +9,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 func TestSetConfigRejectsUnknownOptions(t *testing.T) {
@@ -174,8 +174,8 @@ func TestExtractProfileSchemaPosts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract returned an error: %v", err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if !doc.SkipIndexing {
 		t.Fatal("source profile was not marked to skip indexing")
@@ -251,7 +251,7 @@ func TestExtractSchemaThreadIncludesComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 2 {
+	if state != sdk.ExtractorSuccess || len(doc.ExtraDocuments) != 2 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	if got, want := doc.ExtraDocuments[0].Text, "Root post"; got != want {
@@ -295,7 +295,7 @@ func TestExtractRenderedFeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 2 {
+	if state != sdk.ExtractorSuccess || len(doc.ExtraDocuments) != 2 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 
@@ -352,7 +352,7 @@ func TestRenderedMarkupOverridesSchemaContentAndDeduplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	post := doc.ExtraDocuments[0]
@@ -381,7 +381,7 @@ func TestGenericPostAnchorFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	if got, want := doc.ExtraDocuments[0].Text, "Future markup post"; got != want {
@@ -404,7 +404,7 @@ func TestExtractDirectPostMetadataFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
+	if state != sdk.ExtractorSuccess || len(doc.ExtraDocuments) != 1 {
 		t.Fatalf("Extract returned state %v and %d documents", state, len(doc.ExtraDocuments))
 	}
 	post := doc.ExtraDocuments[0]
@@ -435,8 +435,8 @@ func TestExtractSkipsPageWhenNoPostsFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if !doc.SkipIndexing {
 		t.Fatal("source page was not marked to skip indexing")
@@ -457,8 +457,8 @@ func TestExtractStopsForExtractedPost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Extract state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Extract state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	if doc.SkipIndexing {
 		t.Fatal("extracted post was marked to skip indexing")
@@ -478,8 +478,8 @@ func TestPreviewSanitizesPostHTML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state != types.ExtractorSuccess {
-		t.Fatalf("Preview state = %v, want %v", state, types.ExtractorSuccess)
+	if state != sdk.ExtractorSuccess {
+		t.Fatalf("Preview state = %v, want %v", state, sdk.ExtractorSuccess)
 	}
 	for _, disallowed := range []string{"<script", "onclick", "javascript:"} {
 		if strings.Contains(strings.ToLower(response.Content), disallowed) {

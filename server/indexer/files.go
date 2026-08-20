@@ -18,7 +18,6 @@ import (
 	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/model"
-	"github.com/asciimoo/hister/server/types"
 )
 
 var (
@@ -270,7 +269,7 @@ func (i *Indexer) CleanupLocalDocuments(dirs []*config.Directory) (LocalDocument
 }
 
 func (i *Indexer) pruneStaleLocalDocuments(dirs []*config.Directory, owners map[*config.Directory]directoryOwner) (int, int, int, error) {
-	docType := float64(types.Local)
+	docType := float64(document.Local)
 	localQuery := bleve.NewNumericRangeInclusiveQuery(&docType, &docType, new(true), new(true))
 	localQuery.SetField("type")
 	req := bleve.NewSearchRequest(localQuery)

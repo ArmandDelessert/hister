@@ -1,6 +1,9 @@
 package sdk
 
-import "fmt"
+import (
+	"fmt"
+	"maps"
+)
 
 // ConfigSupport provides the standard configuration behavior for an extractor.
 // Its zero value is enabled by default and rejects every option key.
@@ -55,9 +58,7 @@ func (s *ConfigSupport) SetConfig(config *Config) error {
 
 func copyConfig(config Config) Config {
 	options := make(map[string]any, len(config.Options))
-	for key, value := range config.Options {
-		options[key] = value
-	}
+	maps.Copy(options, config.Options)
 	config.Options = options
 	return config
 }

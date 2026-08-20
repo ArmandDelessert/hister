@@ -38,6 +38,9 @@ type TemplateExtractor struct {
 	sdk.ConfigSupport
 }
 
+// Keep this assertion so missing or mismatched SDK methods fail compilation.
+var _ sdk.Extractor = (*TemplateExtractor)(nil)
+
 // Name returns a short human-readable identifier used in log messages and as
 // the YAML config key (lowercased). "MyExtractor" → yaml key "myextractor".
 func (e *TemplateExtractor) Name() string {

@@ -12,11 +12,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // Notion serves an empty SPA shell over plain HTTP and only renders the page
@@ -27,7 +25,7 @@ import (
 // a low-quality "Notion"-titled document, which would later duplicate against
 // a properly rendered crawl in a different language index.
 type NotionExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *NotionExtractor) Name() string {
@@ -38,18 +36,18 @@ func (e *NotionExtractor) Description() string {
 	return "Extracts the title and block content of Notion pages on notion.so and *.notion.site. Requires a JavaScript-rendering crawler backend (chromedp or bidi) because Notion renders content client-side."
 }
 
-func (e *NotionExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *NotionExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *NotionExtractor) GetConfig() *config.Extractor {
+func (e *NotionExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *NotionExtractor) SetConfig(c *config.Extractor) error {
+func (e *NotionExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -60,7 +58,7 @@ func (e *NotionExtractor) SetConfig(c *config.Extractor) error {
 // Match accepts URLs on notion.so / www.notion.so and any *.notion.site
 // subdomain (used for publicly shared pages). The path must have at least one
 // non-empty segment so the workspace root and the login page are skipped.
-func (e *NotionExtractor) Match(d *document.Document) bool {
+func (e *NotionExtractor) Match(d *sdk.Document) bool {
 	u, err := url.Parse(d.URL)
 	if err != nil {
 		return false
@@ -101,15 +99,15 @@ func pageTitle(doc *goquery.Document, content *goquery.Selection) string {
 	return ""
 }
 
-func (e *NotionExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *NotionExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	content := pageContent(doc)
 	if content.Length() == 0 {
-		return types.AbortExtraction(fmt.Errorf("notion page content not rendered"))
+		return sdk.AbortExtraction(fmt.Errorf("notion page content not rendered"))
 	}
 
 	d.Title = pageTitle(doc, content)
@@ -119,25 +117,25 @@ func (e *NotionExtractor) Extract(d *document.Document) types.ExtractResult {
 	d.Text = strings.TrimSpace(b.String())
 
 	if d.Title == "" && d.Text == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
-func (e *NotionExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *NotionExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	content := pageContent(doc)
 	if content.Length() == 0 {
-		return types.AbortPreview(fmt.Errorf("notion page content not rendered"))
+		return sdk.AbortPreview(fmt.Errorf("notion page content not rendered"))
 	}
 
 	pu, err := url.Parse(d.URL)
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 	urlutil.RewriteURLs(content, pu)
 
@@ -148,9 +146,9 @@ func (e *NotionExtractor) Preview(d *document.Document) types.PreviewResult {
 	writeBlocksHTML(&b, content)
 
 	if b.Len() == 0 {
-		return types.PreviewFallback(fmt.Errorf("no preview content"))
+		return sdk.PreviewFallback(fmt.Errorf("no preview content"))
 	}
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
 // writeBlocksText walks the immediate Notion block children of content and

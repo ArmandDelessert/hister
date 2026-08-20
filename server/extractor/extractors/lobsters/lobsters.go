@@ -8,16 +8,14 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 const matchURLPrefix = "https://lobste.rs/s/"
 
 type LobstersExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *LobstersExtractor) Name() string {
@@ -28,18 +26,18 @@ func (e *LobstersExtractor) Description() string {
 	return "Extracts the submission metadata, story body and full nested comment tree from lobste.rs story pages."
 }
 
-func (e *LobstersExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *LobstersExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *LobstersExtractor) GetConfig() *config.Extractor {
+func (e *LobstersExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *LobstersExtractor) SetConfig(c *config.Extractor) error {
+func (e *LobstersExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -47,16 +45,16 @@ func (e *LobstersExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *LobstersExtractor) Match(d *document.Document) bool {
+func (e *LobstersExtractor) Match(d *sdk.Document) bool {
 	return strings.HasPrefix(d.URL, matchURLPrefix) && len(d.URL) > len(matchURLPrefix)
 }
 
 // Extract populates the document's Title and Text with the story metadata and
 // the full comment tree so they are searchable from the index.
-func (e *LobstersExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *LobstersExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	story := doc.Find("li.story").First()
@@ -74,17 +72,17 @@ func (e *LobstersExtractor) Extract(d *document.Document) types.ExtractResult {
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 // Preview renders the story header, body and nested comment tree as sanitized
 // HTML suitable for the preview pane.
-func (e *LobstersExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *LobstersExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	story := doc.Find("li.story").First()
@@ -141,7 +139,7 @@ func (e *LobstersExtractor) Preview(d *document.Document) types.PreviewResult {
 		b.WriteString("</ol>")
 	}
 
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
 // commentAuthor returns the commenter's username. The byline contains two

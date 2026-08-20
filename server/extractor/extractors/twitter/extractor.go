@@ -11,11 +11,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 const tweetType = "tweet"
@@ -31,7 +29,7 @@ var twitterHosts = map[string]struct{}{
 }
 
 type TwitterExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *TwitterExtractor) Name() string {
@@ -42,18 +40,18 @@ func (e *TwitterExtractor) Description() string {
 	return "Extracts tweets as individual documents from Twitter and X feeds, profiles, and tweet pages."
 }
 
-func (e *TwitterExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *TwitterExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *TwitterExtractor) GetConfig() *config.Extractor {
+func (e *TwitterExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *TwitterExtractor) SetConfig(c *config.Extractor) error {
+func (e *TwitterExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -61,7 +59,7 @@ func (e *TwitterExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *TwitterExtractor) Match(d *document.Document) bool {
+func (e *TwitterExtractor) Match(d *sdk.Document) bool {
 	if metadataType(d) == tweetType {
 		return true
 	}
@@ -72,7 +70,7 @@ func (e *TwitterExtractor) Match(d *document.Document) bool {
 	return isTwitterHost(u.Hostname())
 }
 
-func metadataType(d *document.Document) string {
+func metadataType(d *sdk.Document) string {
 	if d.Metadata == nil {
 		return ""
 	}
@@ -85,19 +83,19 @@ func isTwitterHost(host string) bool {
 	return ok
 }
 
-func (e *TwitterExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *TwitterExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	if metadataType(d) == tweetType {
-		return types.Extracted()
+		return sdk.Extracted()
 	}
 
 	d.SkipIndexing = true
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 	base, err := url.Parse(d.URL)
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	seen := make(map[string]struct{})
@@ -122,7 +120,7 @@ func (e *TwitterExtractor) Extract(d *document.Document) types.ExtractResult {
 		}
 	}
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 func findTweetSelections(doc *goquery.Document) *goquery.Selection {
@@ -135,7 +133,7 @@ func findTweetSelections(doc *goquery.Document) *goquery.Selection {
 	}, ", "))
 }
 
-func tweetDocument(post *goquery.Selection, base *url.URL, userID uint) *document.Document {
+func tweetDocument(post *goquery.Selection, base *url.URL, userID uint) *sdk.Document {
 	name, handle := tweetAuthor(post)
 	tweetURL, urlHandle, ok := tweetStatusURL(post, base, handle)
 	if !ok {
@@ -166,7 +164,7 @@ func tweetDocument(post *goquery.Selection, base *url.URL, userID uint) *documen
 	if author != "" {
 		title += ": " + author
 	}
-	return &document.Document{
+	return &sdk.Document{
 		URL:      tweetURL,
 		Title:    title,
 		Text:     text,
@@ -564,7 +562,7 @@ func formatAuthor(name, handle string) string {
 	return ""
 }
 
-func tweetDocumentFromPage(doc *goquery.Document, base *url.URL, userID uint) *document.Document {
+func tweetDocumentFromPage(doc *goquery.Document, base *url.URL, userID uint) *sdk.Document {
 	if base == nil {
 		return nil
 	}
@@ -626,7 +624,7 @@ func tweetDocumentFromPage(doc *goquery.Document, base *url.URL, userID uint) *d
 	if author != "" {
 		title += ": " + author
 	}
-	return &document.Document{
+	return &sdk.Document{
 		URL:      statusURL,
 		Title:    title,
 		Text:     text,
@@ -683,7 +681,7 @@ func pageTweetHTML(text, image string, base *url.URL) string {
 	return b.String()
 }
 
-func (e *TwitterExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *TwitterExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	var b strings.Builder
 	if title := strings.TrimSpace(d.Title); title != "" {
 		fmt.Fprintf(&b, "<h2>%s</h2>", stdhtml.EscapeString(title))
@@ -693,7 +691,7 @@ func (e *TwitterExtractor) Preview(d *document.Document) types.PreviewResult {
 	} else if strings.TrimSpace(d.Text) != "" {
 		b.WriteString(paragraphHTML(d.Text))
 	}
-	return types.Previewed(types.PreviewResponse{
+	return sdk.Previewed(sdk.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(b.String()),
 	})
 }

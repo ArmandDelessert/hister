@@ -7,18 +7,16 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/rs/zerolog/log"
 )
 
 type MastodonExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *MastodonExtractor) Name() string {
@@ -29,13 +27,13 @@ func (e *MastodonExtractor) Description() string {
 	return "Extracts toots as individual documents from Mastodon websites."
 }
 
-func (e *MastodonExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *MastodonExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *MastodonExtractor) GetConfig() *config.Extractor {
+func (e *MastodonExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{
+		return &sdk.Config{
 			Enable:  true,
 			Options: map[string]any{},
 		}
@@ -43,7 +41,7 @@ func (e *MastodonExtractor) GetConfig() *config.Extractor {
 	return e.cfg
 }
 
-func (e *MastodonExtractor) SetConfig(c *config.Extractor) error {
+func (e *MastodonExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -51,7 +49,7 @@ func (e *MastodonExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *MastodonExtractor) Match(d *document.Document) bool {
+func (e *MastodonExtractor) Match(d *sdk.Document) bool {
 	if strings.Contains(d.HTML, `"repository":"mastodon/mastodon"`) {
 		return true
 	}
@@ -61,23 +59,23 @@ func (e *MastodonExtractor) Match(d *document.Document) bool {
 	return false
 }
 
-func (e *MastodonExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *MastodonExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	if d.Metadata != nil && d.Metadata["type"] == "toot" {
-		return types.Extracted()
+		return sdk.Extracted()
 	}
 	d.SkipIndexing = true
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(nil)
+		return sdk.ExtractFallback(nil)
 	}
 	statuses := doc.Find(".status, .detailed-status")
 	if statuses.Length() == 0 {
-		return types.Extracted()
+		return sdk.Extracted()
 	}
 
 	pu, err := url.Parse(d.URL)
 	if err != nil {
-		return types.ExtractFallback(nil)
+		return sdk.ExtractFallback(nil)
 	}
 
 	statuses.Each(func(_ int, s *goquery.Selection) {
@@ -94,7 +92,7 @@ func (e *MastodonExtractor) Extract(d *document.Document) types.ExtractResult {
 			return
 		}
 		statusURL := urlutil.ResolveURL(pu, u)
-		td := &document.Document{
+		td := &sdk.Document{
 			URL:    originalStatusURL(statusURL),
 			Title:  "Mastodon toot: " + s.Find(".display-name").Text(),
 			Text:   c.Text(),
@@ -107,7 +105,7 @@ func (e *MastodonExtractor) Extract(d *document.Document) types.ExtractResult {
 		d.ExtraDocuments = append(d.ExtraDocuments, td)
 	})
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 func originalStatusURL(rawURL string) string {
@@ -156,11 +154,11 @@ func originalStatusURL(rawURL string) string {
 	}).String()
 }
 
-func (e *MastodonExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *MastodonExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	// TODO enhance the toot preview
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -173,7 +171,7 @@ func (e *MastodonExtractor) Preview(d *document.Document) types.PreviewResult {
 
 	// Always sanitize HTML before returning it to strip scripts, event
 	// handlers, and other potentially unsafe markup.
-	return types.Previewed(types.PreviewResponse{
+	return sdk.Previewed(sdk.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(b.String()),
 	})
 }

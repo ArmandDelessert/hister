@@ -10,10 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -52,7 +50,7 @@ var githubSystemPaths = map[string]bool{
 
 // GitHubExtractor extracts project details and README content from GitHub repository pages.
 type GitHubExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *GitHubExtractor) Name() string { return "GitHub" }
@@ -61,18 +59,18 @@ func (e *GitHubExtractor) Description() string {
 	return "Extracts repository, issue, issue list, and pull request content from GitHub project pages."
 }
 
-func (e *GitHubExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *GitHubExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *GitHubExtractor) GetConfig() *config.Extractor {
+func (e *GitHubExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *GitHubExtractor) SetConfig(c *config.Extractor) error {
+func (e *GitHubExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -100,7 +98,7 @@ var (
 
 type githubPattern = struct {
 	re      *regexp.Regexp
-	handler func(*document.Document) types.ExtractResult
+	handler func(*sdk.Document) sdk.ExtractResult
 }
 
 var githubPatterns = []githubPattern{
@@ -111,7 +109,7 @@ var githubPatterns = []githubPattern{
 }
 
 // Match returns true for known github URLs, defined in githubPatterns
-func (e *GitHubExtractor) Match(d *document.Document) bool {
+func (e *GitHubExtractor) Match(d *sdk.Document) bool {
 	parts := urlParts(d.URL)
 
 	if githubSystemPaths[strings.ToLower(parts[0])] {
@@ -138,27 +136,27 @@ func urlParts(url string) []string {
 
 // Extract populates d.Title and d.Text with repository metadata and README
 // plain text, making the content fully searchable.
-func (e *GitHubExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *GitHubExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	for _, p := range githubPatterns {
 		if p.re.MatchString(d.URL) {
 			return p.handler(d)
 		}
 	}
 
-	return types.ExtractFallback(fmt.Errorf("no extractor matched for %s", d.URL))
+	return sdk.ExtractFallback(fmt.Errorf("no extractor matched for %s", d.URL))
 }
 
 // Preview renders a summary card (description, stars, topics, languages) and
 // the sanitized README HTML suitable for the preview panel.
-func (e *GitHubExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *GitHubExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	info := parseRepoPage(doc, d.HTML)
 	if info == nil {
-		return types.PreviewFallback(nil)
+		return sdk.PreviewFallback(nil)
 	}
 
 	var b strings.Builder
@@ -198,7 +196,7 @@ func (e *GitHubExtractor) Preview(d *document.Document) types.PreviewResult {
 		b.WriteString(sanitizer.SanitizeHTML(info.readmeHTML))
 	}
 
-	return types.Previewed(types.PreviewResponse{Content: b.String()})
+	return sdk.Previewed(sdk.PreviewResponse{Content: b.String()})
 }
 
 // --- Repositories --------------------------------------------------------
@@ -210,15 +208,15 @@ func getRepo(url string) (string, error) {
 	return m[1] + "/" + m[2], nil
 }
 
-func extractRepo(d *document.Document) types.ExtractResult {
+func extractRepo(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	info := parseRepoPage(doc, d.HTML)
 	if info == nil {
-		return types.ExtractFallback(nil)
+		return sdk.ExtractFallback(nil)
 	}
 
 	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
@@ -266,9 +264,9 @@ func extractRepo(d *document.Document) types.ExtractResult {
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 // repoInfo holds the extracted fields from a GitHub repository page.
@@ -411,10 +409,10 @@ func richTextFromFiles(v any) string {
 }
 
 // --- Issues --------------------------------------------------------------
-func extractIssue(d *document.Document) types.ExtractResult {
+func extractIssue(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
@@ -451,15 +449,15 @@ func extractIssue(d *document.Document) types.ExtractResult {
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
-func extractIssues(d *document.Document) types.ExtractResult {
+func extractIssues(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
@@ -492,16 +490,16 @@ func extractIssues(d *document.Document) types.ExtractResult {
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 // --- Pull Requests -------------------------------------------------------
-func extractPull(d *document.Document) types.ExtractResult {
+func extractPull(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	d.Title = strings.TrimSpace(doc.Find("title").First().Text())
@@ -539,8 +537,8 @@ func extractPull(d *document.Document) types.ExtractResult {
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
 
-	return types.Extracted()
+	return sdk.Extracted()
 }

@@ -18,9 +18,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 const (
@@ -32,7 +30,7 @@ const (
 
 // YtdlpExtractor extracts video metadata using yt-dlp.
 type YtdlpExtractor struct {
-	cfg      *config.Extractor
+	cfg      *sdk.Config
 	cache    sync.Map // URL -> *cachedInfo
 	jobSlots chan struct{}
 }
@@ -46,13 +44,13 @@ func (e *YtdlpExtractor) Description() string {
 	return "Extracts video metadata (title, description, chapters, subtitles, thumbnail) from video hosting sites using the yt-dlp tool."
 }
 
-func (e *YtdlpExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *YtdlpExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *YtdlpExtractor) GetConfig() *config.Extractor {
+func (e *YtdlpExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{
+		return &sdk.Config{
 			Enable: false,
 			Options: map[string]any{
 				"binary":              "yt-dlp",
@@ -66,7 +64,7 @@ func (e *YtdlpExtractor) GetConfig() *config.Extractor {
 	return e.cfg
 }
 
-func (e *YtdlpExtractor) SetConfig(c *config.Extractor) error {
+func (e *YtdlpExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		switch k {
 		case "binary", "timeout", "max_concurrent_jobs", "fetch_subtitles", "sub_language",
@@ -170,7 +168,7 @@ func (e *YtdlpExtractor) cookieArgs() []string {
 	return args
 }
 
-func (e *YtdlpExtractor) Match(d *document.Document) bool {
+func (e *YtdlpExtractor) Match(d *sdk.Document) bool {
 	u, err := url.Parse(d.URL)
 	if err != nil {
 		return false
@@ -336,19 +334,19 @@ func (e *YtdlpExtractor) downloadThumbnail(ctx context.Context, thumbnailURL str
 	return fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(data))
 }
 
-func (e *YtdlpExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *YtdlpExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	return e.ExtractContext(context.Background(), d)
 }
 
 // ExtractContext extracts video metadata and cancels blocking work when ctx
 // is canceled.
-func (e *YtdlpExtractor) ExtractContext(ctx context.Context, d *document.Document) types.ExtractResult {
+func (e *YtdlpExtractor) ExtractContext(ctx context.Context, d *sdk.Document) sdk.ExtractResult {
 	info, err := e.getInfo(ctx, d.URL)
 	if err != nil {
 		if ctx.Err() != nil {
-			return types.AbortExtraction(ctx.Err())
+			return sdk.AbortExtraction(ctx.Err())
 		}
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	if info.Title != "" {
@@ -414,25 +412,25 @@ func (e *YtdlpExtractor) ExtractContext(ctx context.Context, d *document.Documen
 		d.Metadata["view_count"] = info.ViewCount
 	}
 	if err := ctx.Err(); err != nil {
-		return types.AbortExtraction(err)
+		return sdk.AbortExtraction(err)
 	}
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
-func (e *YtdlpExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *YtdlpExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	return e.PreviewContext(context.Background(), d)
 }
 
 // PreviewContext renders video metadata and cancels blocking work when ctx is
 // canceled.
-func (e *YtdlpExtractor) PreviewContext(ctx context.Context, d *document.Document) types.PreviewResult {
+func (e *YtdlpExtractor) PreviewContext(ctx context.Context, d *sdk.Document) sdk.PreviewResult {
 	info, err := e.getInfo(ctx, d.URL)
 	if err != nil {
 		if ctx.Err() != nil {
-			return types.AbortPreview(ctx.Err())
+			return sdk.AbortPreview(ctx.Err())
 		}
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	// Use cached thumbnail from metadata, or download it.
@@ -488,15 +486,15 @@ func (e *YtdlpExtractor) PreviewContext(ctx context.Context, d *document.Documen
 		preview.Transcript = e.fetchSubtitleText(ctx, info)
 	}
 	if err := ctx.Err(); err != nil {
-		return types.AbortPreview(err)
+		return sdk.AbortPreview(err)
 	}
 
 	data, err := json.Marshal(preview)
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
-	return types.Previewed(types.PreviewResponse{
+	return sdk.Previewed(sdk.PreviewResponse{
 		Content:  string(data),
 		Template: "video",
 	})

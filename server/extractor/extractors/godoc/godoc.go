@@ -13,18 +13,16 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 const pkgGoDevPrefix = "https://pkg.go.dev/"
 
 // GoDocExtractor extracts content from pkg.go.dev documentation pages.
 type GoDocExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 // Name returns the extractor's identifier.
@@ -37,20 +35,20 @@ func (e *GoDocExtractor) Description() string {
 	return "Extracts and renders Go package documentation from pkg.go.dev pages."
 }
 
-func (e *GoDocExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Preview: true}
+func (e *GoDocExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Preview: true}
 }
 
 // GetConfig returns the extractor's current configuration.
-func (e *GoDocExtractor) GetConfig() *config.Extractor {
+func (e *GoDocExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
 // SetConfig applies cfg to the extractor. Returns an error for unknown options.
-func (e *GoDocExtractor) SetConfig(c *config.Extractor) error {
+func (e *GoDocExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -60,28 +58,28 @@ func (e *GoDocExtractor) SetConfig(c *config.Extractor) error {
 
 // Match returns true for any pkg.go.dev URL that has a non-empty path beyond
 // the host (i.e. at least one character after https://pkg.go.dev/).
-func (e *GoDocExtractor) Match(d *document.Document) bool {
+func (e *GoDocExtractor) Match(d *sdk.Document) bool {
 	return strings.HasPrefix(d.URL, pkgGoDevPrefix) && len(d.URL) > len(pkgGoDevPrefix)
 }
 
 // Extract does not provide a custom extractor
-func (e *GoDocExtractor) Extract(d *document.Document) types.ExtractResult {
-	return types.ExtractFallback(nil)
+func (e *GoDocExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
+	return sdk.ExtractFallback(nil)
 }
 
 // Preview returns the sanitized HTML of the documentation base
 // element with all relative links and image sources rewritten
 // to absolute URLs.
-func (e *GoDocExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *GoDocExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	base, err := url.Parse(d.URL)
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 	content, err := extractArticle(d.HTML, true, base)
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(content)})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(content)})
 }
 
 func extractArticle(rawHTML string, renderHTML bool, base *url.URL) (string, error) {

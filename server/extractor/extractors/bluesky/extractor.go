@@ -12,11 +12,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 const postType = "bluesky"
@@ -29,7 +27,7 @@ var blueskyHosts = map[string]struct{}{
 
 // BlueskyExtractor extracts Bluesky posts from profiles, feeds, and threads.
 type BlueskyExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *BlueskyExtractor) Name() string {
@@ -40,18 +38,18 @@ func (e *BlueskyExtractor) Description() string {
 	return "Extracts Bluesky posts as individual documents from profiles, feeds, and post pages."
 }
 
-func (e *BlueskyExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *BlueskyExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *BlueskyExtractor) GetConfig() *config.Extractor {
+func (e *BlueskyExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *BlueskyExtractor) SetConfig(c *config.Extractor) error {
+func (e *BlueskyExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -59,7 +57,7 @@ func (e *BlueskyExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *BlueskyExtractor) Match(d *document.Document) bool {
+func (e *BlueskyExtractor) Match(d *sdk.Document) bool {
 	if metadataType(d) == postType {
 		return true
 	}
@@ -70,7 +68,7 @@ func (e *BlueskyExtractor) Match(d *document.Document) bool {
 	return isBlueskyHost(u.Hostname())
 }
 
-func metadataType(d *document.Document) string {
+func metadataType(d *sdk.Document) string {
 	if d.Metadata == nil {
 		return ""
 	}
@@ -83,22 +81,22 @@ func isBlueskyHost(host string) bool {
 	return ok
 }
 
-func (e *BlueskyExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *BlueskyExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	if metadataType(d) == postType {
-		return types.Extracted()
+		return sdk.Extracted()
 	}
 
 	d.SkipIndexing = true
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 	base, err := url.Parse(d.URL)
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
-	posts := make([]*document.Document, 0)
+	posts := make([]*sdk.Document, 0)
 	byURL := make(map[string]int)
 	for _, node := range schemaPostNodes(doc) {
 		post := schemaPostDocument(node, base, d.UserID)
@@ -113,10 +111,10 @@ func (e *BlueskyExtractor) Extract(d *document.Document) types.ExtractResult {
 	}
 
 	d.ExtraDocuments = append(d.ExtraDocuments, posts...)
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
-func appendPost(posts *[]*document.Document, byURL map[string]int, candidate *document.Document) {
+func appendPost(posts *[]*sdk.Document, byURL map[string]int, candidate *sdk.Document) {
 	if candidate == nil {
 		return
 	}
@@ -128,7 +126,7 @@ func appendPost(posts *[]*document.Document, byURL map[string]int, candidate *do
 	*posts = append(*posts, candidate)
 }
 
-func mergePost(existing, candidate *document.Document) {
+func mergePost(existing, candidate *sdk.Document) {
 	if candidate.Text != "" {
 		existing.Text = candidate.Text
 	}
@@ -221,7 +219,7 @@ func schemaTypeName(value string) string {
 	return value
 }
 
-func schemaPostDocument(node map[string]any, base *url.URL, userID uint) *document.Document {
+func schemaPostDocument(node map[string]any, base *url.URL, userID uint) *sdk.Document {
 	postURL, _, _, ok := canonicalPostURL(firstSchemaString(node, "url", "mainEntityOfPage"), base)
 	if !ok {
 		return nil
@@ -267,7 +265,7 @@ func schemaPostDocument(node map[string]any, base *url.URL, userID uint) *docume
 		metadata["external_url"] = cardURL
 	}
 
-	return &document.Document{
+	return &sdk.Document{
 		URL:      postURL,
 		Title:    postTitle(author),
 		Text:     text,
@@ -474,7 +472,7 @@ func semanticPostContainer(anchor *goquery.Selection) *goquery.Selection {
 	return nil
 }
 
-func renderedPostDocument(post *goquery.Selection, base *url.URL, userID uint) *document.Document {
+func renderedPostDocument(post *goquery.Selection, base *url.URL, userID uint) *sdk.Document {
 	postURL, handle, ok := renderedPostURL(post, base)
 	if !ok {
 		return nil
@@ -514,7 +512,7 @@ func renderedPostDocument(post *goquery.Selection, base *url.URL, userID uint) *
 	}
 
 	metadata := postMetadata(author, handle, renderedPublished(post, postURL, base))
-	return &document.Document{
+	return &sdk.Document{
 		URL:      postURL,
 		Title:    postTitle(author),
 		Text:     text,
@@ -675,7 +673,7 @@ func renderedPublished(post *goquery.Selection, postURL string, base *url.URL) s
 	return sanitizer.SanitizeText(value)
 }
 
-func pagePostDocument(doc *goquery.Document, base *url.URL, userID uint) *document.Document {
+func pagePostDocument(doc *goquery.Document, base *url.URL, userID uint) *sdk.Document {
 	if base == nil {
 		return nil
 	}
@@ -712,7 +710,7 @@ func pagePostDocument(doc *goquery.Document, base *url.URL, userID uint) *docume
 		metadata["image"] = image
 	}
 
-	return &document.Document{
+	return &sdk.Document{
 		URL:      postURL,
 		Title:    postTitle(author),
 		Text:     text,
@@ -880,7 +878,7 @@ func paragraphHTML(text string) string {
 	return "<p>" + strings.ReplaceAll(escaped, "\n", "<br>") + "</p>"
 }
 
-func (e *BlueskyExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *BlueskyExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	var builder strings.Builder
 	if title := strings.TrimSpace(d.Title); title != "" {
 		fmt.Fprintf(&builder, "<h2>%s</h2>", stdhtml.EscapeString(title))
@@ -890,7 +888,7 @@ func (e *BlueskyExtractor) Preview(d *document.Document) types.PreviewResult {
 	} else if strings.TrimSpace(d.Text) != "" {
 		builder.WriteString(paragraphHTML(d.Text))
 	}
-	return types.Previewed(types.PreviewResponse{
+	return sdk.Previewed(sdk.PreviewResponse{
 		Content: sanitizer.SanitizeHTML(builder.String()),
 	})
 }

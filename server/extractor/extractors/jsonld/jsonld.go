@@ -13,10 +13,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/net/html"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // scriptTypeMarker is the substring we look for to cheaply rule out pages
@@ -25,7 +23,7 @@ const scriptTypeMarker = "application/ld+json"
 
 // JSONLDExtractor extracts schema.org metadata from JSON-LD script tags.
 type JSONLDExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 // Name returns the extractor's identifier.
@@ -38,20 +36,20 @@ func (e *JSONLDExtractor) Description() string {
 	return "Parses application/ld+json script tags and stores normalized schema.org metadata on the document."
 }
 
-func (e *JSONLDExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Enrich: true}
+func (e *JSONLDExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Enrich: true}
 }
 
 // GetConfig returns the extractor's current configuration.
-func (e *JSONLDExtractor) GetConfig() *config.Extractor {
+func (e *JSONLDExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
 // SetConfig applies cfg to the extractor. Returns an error for unknown options.
-func (e *JSONLDExtractor) SetConfig(c *config.Extractor) error {
+func (e *JSONLDExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -62,7 +60,7 @@ func (e *JSONLDExtractor) SetConfig(c *config.Extractor) error {
 // Match reports whether the document's HTML plausibly contains a JSON-LD
 // script. strings.Contains is orders of magnitude cheaper than tokenizing
 // the whole HTML, so pages without JSON-LD skip the extractor entirely.
-func (e *JSONLDExtractor) Match(d *document.Document) bool {
+func (e *JSONLDExtractor) Match(d *sdk.Document) bool {
 	return len(d.HTML) > 0 && strings.Contains(d.HTML, scriptTypeMarker)
 }
 
@@ -76,10 +74,10 @@ var preferredTypes = []string{
 
 // Extract parses every application/ld+json script block, flattens @graph/array
 // wrappers and writes normalized fields to d.Metadata.
-func (e *JSONLDExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *JSONLDExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	blobs := findJSONLDBlobs(d.HTML)
 	if len(blobs) == 0 {
-		return types.ExtractFallback(nil)
+		return sdk.ExtractFallback(nil)
 	}
 
 	var nodes []map[string]any
@@ -92,7 +90,7 @@ func (e *JSONLDExtractor) Extract(d *document.Document) types.ExtractResult {
 		nodes = append(nodes, flatten(parsed)...)
 	}
 	if len(nodes) == 0 {
-		return types.ExtractFallback(nil)
+		return sdk.ExtractFallback(nil)
 	}
 
 	sanitizeNodes(nodes)
@@ -115,12 +113,12 @@ func (e *JSONLDExtractor) Extract(d *document.Document) types.ExtractResult {
 	setString(d.Metadata, "type", sanitizer.SanitizeText(typeString(best)))
 	setString(d.Metadata, "headline", sanitizer.SanitizeText(firstString(best, "headline", "name")))
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 // Preview is not implemented; Readability/Default handle rendering.
-func (e *JSONLDExtractor) Preview(d *document.Document) types.PreviewResult {
-	return types.PreviewFallback(nil)
+func (e *JSONLDExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
+	return sdk.PreviewFallback(nil)
 }
 
 // findJSONLDBlobs returns the raw text content of every

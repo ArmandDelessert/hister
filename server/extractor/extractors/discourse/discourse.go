@@ -15,15 +15,13 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 type DiscourseExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 type discourseTopic struct {
@@ -88,18 +86,18 @@ func (e *DiscourseExtractor) Description() string {
 	return "Extracts a Discourse topic and every post already present in the page."
 }
 
-func (e *DiscourseExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *DiscourseExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *DiscourseExtractor) GetConfig() *config.Extractor {
+func (e *DiscourseExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *DiscourseExtractor) SetConfig(c *config.Extractor) error {
+func (e *DiscourseExtractor) SetConfig(c *sdk.Config) error {
 	for key := range c.Options {
 		return fmt.Errorf("unknown option %q", key)
 	}
@@ -107,15 +105,15 @@ func (e *DiscourseExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *DiscourseExtractor) Match(d *document.Document) bool {
+func (e *DiscourseExtractor) Match(d *sdk.Document) bool {
 	_, ok := discourseTopicURL(d.URL)
 	return ok && isDiscourseHTML(d.HTML)
 }
 
-func (e *DiscourseExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *DiscourseExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	topic, err := parseDiscourseTopic(d)
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	d.Title = topic.Title
@@ -146,13 +144,13 @@ func (e *DiscourseExtractor) Extract(d *document.Document) types.ExtractResult {
 		}
 	}
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
-func (e *DiscourseExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *DiscourseExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	topic, err := parseDiscourseTopic(d)
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -195,10 +193,10 @@ func (e *DiscourseExtractor) Preview(d *document.Document) types.PreviewResult {
 		b.WriteString(post.HTML)
 	}
 
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
-func parseDiscourseTopic(d *document.Document) (*discourseTopic, error) {
+func parseDiscourseTopic(d *sdk.Document) (*discourseTopic, error) {
 	topicID, ok := discourseTopicURL(d.URL)
 	if !ok {
 		return nil, fmt.Errorf("not a Discourse topic page")

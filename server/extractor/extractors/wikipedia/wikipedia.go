@@ -9,16 +9,14 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // WikipediaExtractor extracts content from Wikipedia article pages.
 type WikipediaExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *WikipediaExtractor) Name() string {
@@ -29,18 +27,18 @@ func (e *WikipediaExtractor) Description() string {
 	return "Extracts article content, infoboxes, tables, and metadata from Wikipedia pages."
 }
 
-func (e *WikipediaExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *WikipediaExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *WikipediaExtractor) GetConfig() *config.Extractor {
+func (e *WikipediaExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *WikipediaExtractor) SetConfig(c *config.Extractor) error {
+func (e *WikipediaExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -48,23 +46,23 @@ func (e *WikipediaExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *WikipediaExtractor) Match(d *document.Document) bool {
+func (e *WikipediaExtractor) Match(d *sdk.Document) bool {
 	return isWikipediaURL(d.URL)
 }
 
 // Extract populates the document's Title, Text, and Metadata from Wikipedia
 // article HTML so that article content, infoboxes, and tables are searchable.
-func (e *WikipediaExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *WikipediaExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	d.Title = articleTitle(doc)
 
 	content := articleContent(doc)
 	if content.Length() == 0 {
-		return types.ExtractFallback(fmt.Errorf("no mw-parser-output found"))
+		return sdk.ExtractFallback(fmt.Errorf("no mw-parser-output found"))
 	}
 
 	if d.Metadata == nil {
@@ -92,23 +90,23 @@ func (e *WikipediaExtractor) Extract(d *document.Document) types.ExtractResult {
 
 	d.Text = strings.TrimSpace(b.String())
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractFallback(fmt.Errorf("no content found"))
+		return sdk.ExtractFallback(fmt.Errorf("no content found"))
 	}
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 // Preview returns sanitized HTML of the article body with navigation and
 // reference noise stripped, inline styles applied for rich rendering, and
 // relative URLs rewritten to absolute.
-func (e *WikipediaExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *WikipediaExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	content := articleContent(doc)
 	if content.Length() == 0 {
-		return types.PreviewFallback(fmt.Errorf("no mw-parser-output found"))
+		return sdk.PreviewFallback(fmt.Errorf("no mw-parser-output found"))
 	}
 
 	base, _ := url.Parse(d.URL)
@@ -120,9 +118,9 @@ func (e *WikipediaExtractor) Preview(d *document.Document) types.PreviewResult {
 
 	html, err := content.Html()
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeTrustedHTML(html)})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeTrustedHTML(html)})
 }
 
 // Non-content Wikipedia namespaces to exclude from extraction.

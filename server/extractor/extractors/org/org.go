@@ -4,17 +4,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // OrgModeExtractor serves previews for locally indexed Org files.
 // During indexing, Indexer.AddOrg renders the source to HTML and stores
 // it in doc.HTML, so Preview only needs to sanitize that HTML.
 type OrgModeExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *OrgModeExtractor) Name() string { return "OrgMode" }
@@ -23,18 +21,18 @@ func (e *OrgModeExtractor) Description() string {
 	return "Renders locally indexed Org files (.org) as HTML for preview."
 }
 
-func (e *OrgModeExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Preview: true}
+func (e *OrgModeExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Preview: true}
 }
 
-func (e *OrgModeExtractor) GetConfig() *config.Extractor {
+func (e *OrgModeExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *OrgModeExtractor) SetConfig(c *config.Extractor) error {
+func (e *OrgModeExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -43,7 +41,7 @@ func (e *OrgModeExtractor) SetConfig(c *config.Extractor) error {
 }
 
 // Match returns true for file:// URLs with an .org extension.
-func (e *OrgModeExtractor) Match(d *document.Document) bool {
+func (e *OrgModeExtractor) Match(d *sdk.Document) bool {
 	if !strings.HasPrefix(d.URL, "file://") {
 		return false
 	}
@@ -52,14 +50,14 @@ func (e *OrgModeExtractor) Match(d *document.Document) bool {
 }
 
 // Extract is a no-op: indexing is handled by Indexer.AddOrg.
-func (e *OrgModeExtractor) Extract(_ *document.Document) types.ExtractResult {
-	return types.ExtractFallback(nil)
+func (e *OrgModeExtractor) Extract(_ *sdk.Document) sdk.ExtractResult {
+	return sdk.ExtractFallback(nil)
 }
 
 // Preview sanitizes the rendered HTML stored in doc.HTML.
-func (e *OrgModeExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *OrgModeExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	if d.HTML == "" {
-		return types.PreviewFallback(nil)
+		return sdk.PreviewFallback(nil)
 	}
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(d.HTML)})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(d.HTML)})
 }

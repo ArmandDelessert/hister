@@ -323,21 +323,21 @@ func (r *Registry) PreviewContext(ctx context.Context, d *document.Document, nam
 }
 
 type basicExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 type readabilityExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
-func (e *basicExtractor) GetConfig() *config.Extractor {
+func (e *basicExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *basicExtractor) SetConfig(c *config.Extractor) error {
+func (e *basicExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -345,14 +345,14 @@ func (e *basicExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *readabilityExtractor) GetConfig() *config.Extractor {
+func (e *readabilityExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *readabilityExtractor) SetConfig(c *config.Extractor) error {
+func (e *readabilityExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -368,15 +368,15 @@ func (e *basicExtractor) Description() string {
 	return "Fallback extractor that strips HTML tags and extracts plain text from any web page."
 }
 
-func (e *basicExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *basicExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *basicExtractor) Match(_ *document.Document) bool {
+func (e *basicExtractor) Match(_ *sdk.Document) bool {
 	return true
 }
 
-func (e *basicExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *basicExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	var extractedTitle strings.Builder
 	r := strings.NewReader(d.HTML)
 	doc := html.NewTokenizer(r)
@@ -393,7 +393,7 @@ out:
 			if errors.Is(err, io.EOF) {
 				break out
 			}
-			return types.AbortExtraction(errors.New("failed to parse html: " + err.Error()))
+			return sdk.AbortExtraction(errors.New("failed to parse html: " + err.Error()))
 		case html.SelfClosingTagToken, html.StartTagToken:
 			tn, _ := doc.TagName()
 			currentTag = string(tn)
@@ -425,13 +425,13 @@ out:
 		d.Title = extractedTitle.String()
 	}
 	if d.Text == "" && d.Title == "" {
-		return types.ExtractFallback(errors.New("no content found"))
+		return sdk.ExtractFallback(errors.New("no content found"))
 	}
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
-func (e *basicExtractor) Preview(d *document.Document) types.PreviewResult {
-	return types.Previewed(types.PreviewResponse{Content: stdhtml.EscapeString(d.Text)})
+func (e *basicExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
+	return sdk.Previewed(sdk.PreviewResponse{Content: stdhtml.EscapeString(d.Text)})
 }
 
 func (e *readabilityExtractor) Name() string {
@@ -442,28 +442,28 @@ func (e *readabilityExtractor) Description() string {
 	return "Extracts the main article content from any web page using the go-readability library, filtering out navigation, ads, and other boilerplate."
 }
 
-func (e *readabilityExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *readabilityExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *readabilityExtractor) Match(_ *document.Document) bool {
+func (e *readabilityExtractor) Match(_ *sdk.Document) bool {
 	return true
 }
 
-func (e *readabilityExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *readabilityExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	r := strings.NewReader(d.HTML)
 
 	u, err := url.Parse(d.URL)
 	if err != nil {
-		return types.AbortExtraction(err)
+		return sdk.AbortExtraction(err)
 	}
 	a, err := readability.FromReader(r, u)
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 	buf := bytes.NewBuffer(nil)
 	if err := a.RenderText(buf); err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 	d.Text = buf.String()
 	if t := a.Title(); t != "" {
@@ -471,7 +471,7 @@ func (e *readabilityExtractor) Extract(d *document.Document) types.ExtractResult
 	}
 	d.SetFaviconURL(a.Favicon())
 	writeReadabilityMeta(d, a)
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 // writeReadabilityMeta copies the rich fields readability already parsed
@@ -479,7 +479,7 @@ func (e *readabilityExtractor) Extract(d *document.Document) types.ExtractResult
 // downstream consumers have byline/date/description without re-parsing.
 // The JSON-LD extractor only writes type and headline, so these keys do
 // not collide.
-func writeReadabilityMeta(d *document.Document, a readability.Article) {
+func writeReadabilityMeta(d *sdk.Document, a readability.Article) {
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
@@ -501,19 +501,19 @@ func writeReadabilityMeta(d *document.Document, a readability.Article) {
 	}
 }
 
-func (e *readabilityExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *readabilityExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	r := strings.NewReader(d.HTML)
 	u, err := url.Parse(d.URL)
 	if err != nil {
-		return types.AbortPreview(err)
+		return sdk.AbortPreview(err)
 	}
 	a, err := readability.FromReader(r, u)
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 	var htmlContent strings.Builder
 	if err := a.RenderHTML(&htmlContent); err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(htmlContent.String())})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(htmlContent.String())})
 }

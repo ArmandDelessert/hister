@@ -11,9 +11,7 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/types"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 // videoEntry holds a single embedded video found in a document.
@@ -61,7 +59,7 @@ var htmlQuickCheck = []string{"<iframe", "<video", "<embed", "<object"}
 // their URLs in d.Metadata["videos"]. Its enrichment capability keeps body
 // extraction independent from this metadata pass.
 type EmbeddedVideoExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *EmbeddedVideoExtractor) Name() string {
@@ -72,18 +70,18 @@ func (e *EmbeddedVideoExtractor) Description() string {
 	return "Scans HTML for embedded video tags (iframe, video, embed, object) and stores discovered video URLs in document metadata."
 }
 
-func (e *EmbeddedVideoExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Enrich: true}
+func (e *EmbeddedVideoExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Enrich: true}
 }
 
-func (e *EmbeddedVideoExtractor) GetConfig() *config.Extractor {
+func (e *EmbeddedVideoExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *EmbeddedVideoExtractor) SetConfig(c *config.Extractor) error {
+func (e *EmbeddedVideoExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -93,7 +91,7 @@ func (e *EmbeddedVideoExtractor) SetConfig(c *config.Extractor) error {
 
 // Match returns true only when the raw HTML plausibly contains a video
 // element, avoiding the tokenizer overhead on pages without any embeds.
-func (e *EmbeddedVideoExtractor) Match(d *document.Document) bool {
+func (e *EmbeddedVideoExtractor) Match(d *sdk.Document) bool {
 	if len(d.HTML) == 0 {
 		return false
 	}
@@ -108,22 +106,22 @@ func (e *EmbeddedVideoExtractor) Match(d *document.Document) bool {
 
 // Extract scans d.HTML for video embedding elements and appends any
 // discovered videos to d.Metadata["videos"].
-func (e *EmbeddedVideoExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *EmbeddedVideoExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	videos := extractVideos(d.HTML)
 	if len(videos) > 0 {
 		raw, err := json.Marshal(videos)
 		if err != nil {
-			return types.ExtractFallback(err)
+			return sdk.ExtractFallback(err)
 		}
 		d.AddMetadata("videos", string(raw))
-		return types.Extracted()
+		return sdk.Extracted()
 	}
-	return types.ExtractFallback(nil)
+	return sdk.ExtractFallback(nil)
 }
 
 // Preview does not provide a custom rendering; let the chain continue.
-func (e *EmbeddedVideoExtractor) Preview(d *document.Document) types.PreviewResult {
-	return types.PreviewFallback(nil)
+func (e *EmbeddedVideoExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
+	return sdk.PreviewFallback(nil)
 }
 
 // extractVideos tokenizes raw HTML and returns all embedded video entries

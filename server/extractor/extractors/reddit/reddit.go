@@ -12,15 +12,13 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 type RedditExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 type redditPost struct {
@@ -56,18 +54,18 @@ func (e *RedditExtractor) Description() string {
 	return "Extracts a Reddit post and every comment already present on its post page."
 }
 
-func (e *RedditExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *RedditExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *RedditExtractor) GetConfig() *config.Extractor {
+func (e *RedditExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *RedditExtractor) SetConfig(c *config.Extractor) error {
+func (e *RedditExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -75,7 +73,7 @@ func (e *RedditExtractor) SetConfig(c *config.Extractor) error {
 	return nil
 }
 
-func (e *RedditExtractor) Match(d *document.Document) bool {
+func (e *RedditExtractor) Match(d *sdk.Document) bool {
 	_, _, ok := redditPostURL(d.URL)
 	return ok
 }
@@ -134,10 +132,10 @@ func validRedditID(id string) bool {
 	return true
 }
 
-func (e *RedditExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *RedditExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	post, err := parseRedditPost(d)
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	d.Title = post.Title
@@ -155,7 +153,7 @@ func (e *RedditExtractor) Extract(d *document.Document) types.ExtractResult {
 	setMetadata(d.Metadata, "post_id", post.PostID)
 	d.Metadata["comments"] = len(post.Comments)
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
 func setMetadata(metadata map[string]any, key, value string) {
@@ -164,10 +162,10 @@ func setMetadata(metadata map[string]any, key, value string) {
 	}
 }
 
-func (e *RedditExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *RedditExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	post, err := parseRedditPost(d)
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -228,10 +226,10 @@ func (e *RedditExtractor) Preview(d *document.Document) types.PreviewResult {
 		}
 	}
 
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }
 
-func parseRedditPost(d *document.Document) (*redditPost, error) {
+func parseRedditPost(d *sdk.Document) (*redditPost, error) {
 	postID, subreddit, ok := redditPostURL(d.URL)
 	if !ok {
 		return nil, fmt.Errorf("not a Reddit post page")

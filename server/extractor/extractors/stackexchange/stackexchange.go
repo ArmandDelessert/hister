@@ -10,11 +10,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // possible apex domains for the stack exchange network
@@ -29,7 +27,7 @@ var seDomains = []string{
 }
 
 type StackExchangeExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *StackExchangeExtractor) Name() string {
@@ -40,18 +38,18 @@ func (e *StackExchangeExtractor) Description() string {
 	return "Extracts the question and all answers from Stack Exchange network question pages (Stack Overflow, Server Fault, Super User, Ask Ubuntu, *.stackexchange.com, and more)."
 }
 
-func (e *StackExchangeExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Extract: true, Preview: true}
+func (e *StackExchangeExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Extract: true, Preview: true}
 }
 
-func (e *StackExchangeExtractor) GetConfig() *config.Extractor {
+func (e *StackExchangeExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *StackExchangeExtractor) SetConfig(c *config.Extractor) error {
+func (e *StackExchangeExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -68,7 +66,7 @@ func isQuestionPath(path string) bool {
 	return rest != "" && rest[0] >= '0' && rest[0] <= '9'
 }
 
-func (e *StackExchangeExtractor) Match(d *document.Document) bool {
+func (e *StackExchangeExtractor) Match(d *sdk.Document) bool {
 	u, err := url.Parse(d.URL)
 	if err != nil {
 		return false
@@ -139,7 +137,7 @@ func postMetaLine(verb, date, author, score string) string {
 		`</em></p>`
 }
 
-func setMetadata(d *document.Document, doc *goquery.Document) {
+func setMetadata(d *sdk.Document, doc *goquery.Document) {
 	if d.Metadata == nil {
 		d.Metadata = make(map[string]any)
 	}
@@ -176,10 +174,10 @@ func setMetadata(d *document.Document, doc *goquery.Document) {
 	}
 }
 
-func (e *StackExchangeExtractor) Extract(d *document.Document) types.ExtractResult {
+func (e *StackExchangeExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.ExtractFallback(err)
+		return sdk.ExtractFallback(err)
 	}
 
 	question := doc.Find(".question .js-post-body").First()
@@ -187,7 +185,7 @@ func (e *StackExchangeExtractor) Extract(d *document.Document) types.ExtractResu
 		question = doc.Find(".js-post-body").First()
 	}
 	if question.Length() == 0 {
-		return types.ExtractFallback(fmt.Errorf("no question body found"))
+		return sdk.ExtractFallback(fmt.Errorf("no question body found"))
 	}
 
 	d.Title = questionTitle(doc)
@@ -209,13 +207,13 @@ func (e *StackExchangeExtractor) Extract(d *document.Document) types.ExtractResu
 
 	setMetadata(d, doc)
 
-	return types.Extracted()
+	return sdk.Extracted()
 }
 
-func (e *StackExchangeExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *StackExchangeExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(d.HTML))
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 	base, _ := url.Parse(d.URL)
 
@@ -227,12 +225,12 @@ func (e *StackExchangeExtractor) Preview(d *document.Document) types.PreviewResu
 		qSel = doc.Find(".js-post-body").First()
 	}
 	if qSel.Length() == 0 {
-		return types.PreviewFallback(fmt.Errorf("no question body found"))
+		return sdk.PreviewFallback(fmt.Errorf("no question body found"))
 	}
 	urlutil.RewriteURLs(qSel, base)
 	question, err := qSel.Html()
 	if err != nil {
-		return types.PreviewFallback(err)
+		return sdk.PreviewFallback(err)
 	}
 
 	var b strings.Builder
@@ -267,5 +265,5 @@ func (e *StackExchangeExtractor) Preview(d *document.Document) types.PreviewResu
 		b.WriteString(h)
 	})
 
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(b.String())})
 }

@@ -7,17 +7,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
-	"github.com/asciimoo/hister/server/types"
 )
 
 // MarkdownExtractor serves previews for locally indexed Markdown files.
 // During indexing, Indexer.AddMarkdown renders the source to HTML and stores
 // it in doc.HTML, so Preview only needs to sanitize that HTML.
 type MarkdownExtractor struct {
-	cfg *config.Extractor
+	cfg *sdk.Config
 }
 
 func (e *MarkdownExtractor) Name() string { return "Markdown" }
@@ -26,18 +24,18 @@ func (e *MarkdownExtractor) Description() string {
 	return "Renders locally indexed Markdown files (.md, .markdown) as HTML for preview."
 }
 
-func (e *MarkdownExtractor) Capabilities() types.ExtractorCapabilities {
-	return types.ExtractorCapabilities{Preview: true}
+func (e *MarkdownExtractor) Capabilities() sdk.Capabilities {
+	return sdk.Capabilities{Preview: true}
 }
 
-func (e *MarkdownExtractor) GetConfig() *config.Extractor {
+func (e *MarkdownExtractor) GetConfig() *sdk.Config {
 	if e.cfg == nil {
-		return &config.Extractor{Enable: true, Options: map[string]any{}}
+		return &sdk.Config{Enable: true, Options: map[string]any{}}
 	}
 	return e.cfg
 }
 
-func (e *MarkdownExtractor) SetConfig(c *config.Extractor) error {
+func (e *MarkdownExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		return fmt.Errorf("unknown option %q", k)
 	}
@@ -46,7 +44,7 @@ func (e *MarkdownExtractor) SetConfig(c *config.Extractor) error {
 }
 
 // Match returns true for file:// URLs with a .md or .markdown extension.
-func (e *MarkdownExtractor) Match(d *document.Document) bool {
+func (e *MarkdownExtractor) Match(d *sdk.Document) bool {
 	if !strings.HasPrefix(d.URL, "file://") {
 		return false
 	}
@@ -55,14 +53,14 @@ func (e *MarkdownExtractor) Match(d *document.Document) bool {
 }
 
 // Extract is a no-op: indexing is handled by Indexer.AddMarkdown.
-func (e *MarkdownExtractor) Extract(_ *document.Document) types.ExtractResult {
-	return types.ExtractFallback(nil)
+func (e *MarkdownExtractor) Extract(_ *sdk.Document) sdk.ExtractResult {
+	return sdk.ExtractFallback(nil)
 }
 
 // Preview sanitizes the rendered HTML stored in doc.HTML.
-func (e *MarkdownExtractor) Preview(d *document.Document) types.PreviewResult {
+func (e *MarkdownExtractor) Preview(d *sdk.Document) sdk.PreviewResult {
 	if d.HTML == "" {
-		return types.PreviewFallback(nil)
+		return sdk.PreviewFallback(nil)
 	}
-	return types.Previewed(types.PreviewResponse{Content: sanitizer.SanitizeHTML(d.HTML)})
+	return sdk.Previewed(sdk.PreviewResponse{Content: sanitizer.SanitizeHTML(d.HTML)})
 }

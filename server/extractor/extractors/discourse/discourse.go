@@ -21,7 +21,7 @@ import (
 )
 
 type DiscourseExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 type discourseTopic struct {
@@ -88,21 +88,6 @@ func (e *DiscourseExtractor) Description() string {
 
 func (e *DiscourseExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *DiscourseExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *DiscourseExtractor) SetConfig(c *sdk.Config) error {
-	for key := range c.Options {
-		return fmt.Errorf("unknown option %q", key)
-	}
-	e.cfg = c
-	return nil
 }
 
 func (e *DiscourseExtractor) Match(d *sdk.Document) bool {

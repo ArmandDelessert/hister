@@ -29,7 +29,7 @@ var twitterHosts = map[string]struct{}{
 }
 
 type TwitterExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *TwitterExtractor) Name() string {
@@ -42,21 +42,6 @@ func (e *TwitterExtractor) Description() string {
 
 func (e *TwitterExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *TwitterExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *TwitterExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 func (e *TwitterExtractor) Match(d *sdk.Document) bool {

@@ -50,7 +50,7 @@ var githubSystemPaths = map[string]bool{
 
 // GitHubExtractor extracts project details and README content from GitHub repository pages.
 type GitHubExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *GitHubExtractor) Name() string { return "GitHub" }
@@ -61,21 +61,6 @@ func (e *GitHubExtractor) Description() string {
 
 func (e *GitHubExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *GitHubExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *GitHubExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 var (

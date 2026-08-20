@@ -27,7 +27,7 @@ var blueskyHosts = map[string]struct{}{
 
 // BlueskyExtractor extracts Bluesky posts from profiles, feeds, and threads.
 type BlueskyExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *BlueskyExtractor) Name() string {
@@ -40,21 +40,6 @@ func (e *BlueskyExtractor) Description() string {
 
 func (e *BlueskyExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *BlueskyExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *BlueskyExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 func (e *BlueskyExtractor) Match(d *sdk.Document) bool {

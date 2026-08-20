@@ -294,38 +294,36 @@ A free-form map of extractor-specific settings. The available keys depend on
 the extractor implementation; each extractor validates its `options` in
 `SetConfig` and returns an error for any unrecognised key.
 
-### Implementing `GetConfig` and `SetConfig`
+### Using `ConfigSupport`
 
-`GetConfig` must return the extractor's current configuration (or a default
-when no config has been applied yet):
+Embed `sdk.ConfigSupport` to provide `GetConfig` and `SetConfig`. Its zero value
+enables the extractor and rejects every option key:
 
 ```go
-func (e *MyExtractor) GetConfig() *sdk.Config {
-    if e.cfg == nil {
-        return &sdk.Config{
-            Enable:  true,
-            Options: map[string]any{},
-        }
-    }
-    return e.cfg
+type MyExtractor struct {
+    sdk.ConfigSupport
 }
 ```
 
-`SetConfig` should validate that no unknown option keys are present, then store
-the config:
+Use `sdk.NewConfigSupport` when an extractor has custom defaults. Keys present in
+the default options map are accepted automatically:
 
 ```go
-func (e *MyExtractor) SetConfig(c *sdk.Config) error {
-    allowed := map[string]bool{"timeout": true}
-    for k := range c.Options {
-        if !allowed[k] {
-            return fmt.Errorf("unknown option %q", k)
-        }
+func NewMyExtractor() *MyExtractor {
+    return &MyExtractor{
+        ConfigSupport: sdk.NewConfigSupport(sdk.Config{
+            Enable: true,
+            Options: map[string]any{
+                "timeout": 10,
+            },
+        }),
     }
-    e.cfg = c
-    return nil
 }
 ```
+
+Additional accepted keys without defaults can be passed after the default
+configuration. An extractor can implement its own configuration methods when
+applying configuration requires extra work.
 
 Config merging (default → user-supplied) is performed automatically by
 `Registry.Init` before `SetConfig` is called, so `SetConfig` always receives

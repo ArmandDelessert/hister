@@ -4,7 +4,6 @@ package godoc
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	stdhtml "html"
 	"io"
 	"net/url"
@@ -22,7 +21,7 @@ const pkgGoDevPrefix = "https://pkg.go.dev/"
 
 // GoDocExtractor extracts content from pkg.go.dev documentation pages.
 type GoDocExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 // Name returns the extractor's identifier.
@@ -37,23 +36,6 @@ func (e *GoDocExtractor) Description() string {
 
 func (e *GoDocExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Preview: true}
-}
-
-// GetConfig returns the extractor's current configuration.
-func (e *GoDocExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-// SetConfig applies cfg to the extractor. Returns an error for unknown options.
-func (e *GoDocExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 // Match returns true for any pkg.go.dev URL that has a non-empty path beyond

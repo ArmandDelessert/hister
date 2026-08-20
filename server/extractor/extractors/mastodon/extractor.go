@@ -16,7 +16,7 @@ import (
 )
 
 type MastodonExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *MastodonExtractor) Name() string {
@@ -29,24 +29,6 @@ func (e *MastodonExtractor) Description() string {
 
 func (e *MastodonExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *MastodonExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{
-			Enable:  true,
-			Options: map[string]any{},
-		}
-	}
-	return e.cfg
-}
-
-func (e *MastodonExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 func (e *MastodonExtractor) Match(d *sdk.Document) bool {

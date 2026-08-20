@@ -15,7 +15,7 @@ import (
 const matchURLPrefix = "https://lobste.rs/s/"
 
 type LobstersExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *LobstersExtractor) Name() string {
@@ -28,21 +28,6 @@ func (e *LobstersExtractor) Description() string {
 
 func (e *LobstersExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *LobstersExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *LobstersExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 func (e *LobstersExtractor) Match(d *sdk.Document) bool {

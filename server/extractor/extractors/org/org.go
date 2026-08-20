@@ -1,7 +1,6 @@
 package org
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/asciimoo/hister/server/extractor/sdk"
@@ -12,7 +11,7 @@ import (
 // During indexing, Indexer.AddOrg renders the source to HTML and stores
 // it in doc.HTML, so Preview only needs to sanitize that HTML.
 type OrgModeExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *OrgModeExtractor) Name() string { return "OrgMode" }
@@ -23,21 +22,6 @@ func (e *OrgModeExtractor) Description() string {
 
 func (e *OrgModeExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Preview: true}
-}
-
-func (e *OrgModeExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *OrgModeExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 // Match returns true for file:// URLs with an .org extension.

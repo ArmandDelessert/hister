@@ -323,41 +323,11 @@ func (r *Registry) PreviewContext(ctx context.Context, d *document.Document, nam
 }
 
 type basicExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 type readabilityExtractor struct {
-	cfg *sdk.Config
-}
-
-func (e *basicExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *basicExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
-}
-
-func (e *readabilityExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *readabilityExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
+	sdk.ConfigSupport
 }
 
 func (e *basicExtractor) Name() string {

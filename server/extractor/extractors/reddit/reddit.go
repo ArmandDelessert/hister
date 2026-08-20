@@ -18,7 +18,7 @@ import (
 )
 
 type RedditExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 type redditPost struct {
@@ -56,21 +56,6 @@ func (e *RedditExtractor) Description() string {
 
 func (e *RedditExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *RedditExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *RedditExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 func (e *RedditExtractor) Match(d *sdk.Document) bool {

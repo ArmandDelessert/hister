@@ -16,7 +16,7 @@ import (
 
 // WikipediaExtractor extracts content from Wikipedia article pages.
 type WikipediaExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *WikipediaExtractor) Name() string {
@@ -29,21 +29,6 @@ func (e *WikipediaExtractor) Description() string {
 
 func (e *WikipediaExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *WikipediaExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *WikipediaExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 func (e *WikipediaExtractor) Match(d *sdk.Document) bool {

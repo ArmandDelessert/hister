@@ -33,7 +33,9 @@ const matchURLPrefix = "https://example.com/"
 // TemplateExtractor extracts content from example.com pages.
 // Rename this type to reflect the site or content type you are targeting.
 type TemplateExtractor struct {
-	cfg *sdk.Config
+	// The zero value is enabled and rejects every option key. Initialize this
+	// field with sdk.NewConfigSupport when the extractor has custom defaults.
+	sdk.ConfigSupport
 }
 
 // Name returns a short human-readable identifier used in log messages and as
@@ -52,47 +54,6 @@ func (e *TemplateExtractor) Description() string {
 // Enrich when it only annotates documents and should never select their body.
 func (e *TemplateExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-// GetConfig returns the extractor's current configuration, or built-in
-// defaults when SetConfig has not been called yet.
-//
-// Set Enable to false if the extractor requires external tools or credentials
-// that are not present by default (e.g. a binary, an API key). Users must
-// then explicitly opt-in via the config file.
-//
-// Declare every supported option key with its default value in Options.
-// extractor.Init merges defaults with any user-supplied values before calling
-// SetConfig, so SetConfig always receives the fully resolved map.
-func (e *TemplateExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{
-			Enable:  true,
-			Options: map[string]any{
-				// Declare extractor-specific options and their defaults here.
-				// Example:
-				//   "max_items": 20,
-				//   "include_comments": false,
-			},
-		}
-	}
-	return e.cfg
-}
-
-// SetConfig applies cfg to the extractor.
-// Reject any unrecognised option key with a descriptive error so the user
-// gets immediate feedback about typos in the config file.
-func (e *TemplateExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		switch k {
-		// List accepted option keys here. Example:
-		//   case "max_items", "include_comments":
-		default:
-			return fmt.Errorf("unknown option %q", k)
-		}
-	}
-	e.cfg = c
-	return nil
 }
 
 // Match reports whether this extractor should handle the given document.

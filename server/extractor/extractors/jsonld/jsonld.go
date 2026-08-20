@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -23,7 +22,7 @@ const scriptTypeMarker = "application/ld+json"
 
 // JSONLDExtractor extracts schema.org metadata from JSON-LD script tags.
 type JSONLDExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 // Name returns the extractor's identifier.
@@ -38,23 +37,6 @@ func (e *JSONLDExtractor) Description() string {
 
 func (e *JSONLDExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Enrich: true}
-}
-
-// GetConfig returns the extractor's current configuration.
-func (e *JSONLDExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-// SetConfig applies cfg to the extractor. Returns an error for unknown options.
-func (e *JSONLDExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 // Match reports whether the document's HTML plausibly contains a JSON-LD

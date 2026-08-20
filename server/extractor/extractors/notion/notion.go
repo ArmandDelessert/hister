@@ -25,7 +25,7 @@ import (
 // a low-quality "Notion"-titled document, which would later duplicate against
 // a properly rendered crawl in a different language index.
 type NotionExtractor struct {
-	cfg *sdk.Config
+	sdk.ConfigSupport
 }
 
 func (e *NotionExtractor) Name() string {
@@ -38,21 +38,6 @@ func (e *NotionExtractor) Description() string {
 
 func (e *NotionExtractor) Capabilities() sdk.Capabilities {
 	return sdk.Capabilities{Extract: true, Preview: true}
-}
-
-func (e *NotionExtractor) GetConfig() *sdk.Config {
-	if e.cfg == nil {
-		return &sdk.Config{Enable: true, Options: map[string]any{}}
-	}
-	return e.cfg
-}
-
-func (e *NotionExtractor) SetConfig(c *sdk.Config) error {
-	for k := range c.Options {
-		return fmt.Errorf("unknown option %q", k)
-	}
-	e.cfg = c
-	return nil
 }
 
 // Match accepts URLs on notion.so / www.notion.so and any *.notion.site

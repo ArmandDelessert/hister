@@ -20,7 +20,7 @@ func (orgFileType) Match(path string) bool {
 	return hasExtension(path, ".org")
 }
 
-func (orgFileType) Index(i *Indexer, d *document.Document, orgData []byte) error {
+func (orgFileType) Prepare(d *document.Document, orgData []byte) error {
 	src := strings.TrimSpace(string(orgData))
 	if src == "" {
 		return errors.New("org file empty")
@@ -33,13 +33,16 @@ func (orgFileType) Index(i *Indexer, d *document.Document, orgData []byte) error
 	d.Text = sanitizer.SanitizeText(d.HTML)
 	d.Title = title
 	d.AddMetadata("type", "org")
-	return i.Add(d)
+	return nil
 }
 
-// AddOrg renders Org files to HTML, stores it in d.HTML, and stores the raw
-// source in d.Text for full-text indexing.
+// AddOrg renders Org files to HTML, stores it in d.HTML, and stores rendered
+// plain text in d.Text for full-text indexing.
 func (i *Indexer) AddOrg(d *document.Document, orgData []byte) error {
-	return orgFileType{}.Index(i, d, orgData)
+	if err := (orgFileType{}).Prepare(d, orgData); err != nil {
+		return err
+	}
+	return i.Add(d)
 }
 
 func renderOrg(src []byte) (string, string, error) {

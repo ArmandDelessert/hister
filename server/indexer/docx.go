@@ -21,7 +21,7 @@ func (docxFileType) Match(path string) bool {
 	return hasExtension(path, ".docx")
 }
 
-func (docxFileType) Index(i *Indexer, d *document.Document, docxData []byte) error {
+func (docxFileType) Prepare(d *document.Document, docxData []byte) error {
 	text, title, err := extractDocxText(docxData)
 	if err != nil {
 		return fmt.Errorf("docx text extraction: %w", err)
@@ -34,11 +34,14 @@ func (docxFileType) Index(i *Indexer, d *document.Document, docxData []byte) err
 		d.Title = title
 	}
 	d.AddMetadata("type", "docx")
-	return i.Add(d)
+	return nil
 }
 
 func (i *Indexer) AddDocx(d *document.Document, docxData []byte) error {
-	return docxFileType{}.Index(i, d, docxData)
+	if err := (docxFileType{}).Prepare(d, docxData); err != nil {
+		return err
+	}
+	return i.Add(d)
 }
 
 func extractDocxText(docxData []byte) (text string, title string, err error) {

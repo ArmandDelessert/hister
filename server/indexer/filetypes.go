@@ -1,7 +1,6 @@
 package indexer
 
 import (
-	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,7 +11,7 @@ import (
 
 type fileTypeHandler interface {
 	Match(path string) bool
-	Index(*Indexer, *document.Document, []byte) error
+	Prepare(*document.Document, []byte) error
 }
 
 var fileTypeHandlers = []fileTypeHandler{
@@ -24,7 +23,16 @@ var fileTypeHandlers = []fileTypeHandler{
 }
 
 func (i *Indexer) indexFileContent(path string, d *document.Document, content []byte) error {
-	return fileTypeHandlerForPath(path).Index(i, d, content)
+	if err := prepareFileContent(path, d, content); err != nil {
+		return err
+	}
+	// IndexFile already read this content from the server filesystem, so it is
+	// a trusted local write and does not need submitted file URL validation.
+	return i.AddDocument(d)
+}
+
+func prepareFileContent(path string, d *document.Document, content []byte) error {
+	return fileTypeHandlerForPath(path).Prepare(d, content)
 }
 
 func fileTypeHandlerForPath(path string) fileTypeHandler {
@@ -42,16 +50,13 @@ func (plainTextFileType) Match(_ string) bool {
 	return true
 }
 
-func (plainTextFileType) Index(i *Indexer, d *document.Document, content []byte) error {
+func (plainTextFileType) Prepare(d *document.Document, content []byte) error {
 	if !utf8.Valid(content) {
 		return ErrBinaryFile
 	}
-	if int64(len(content)) > i.maxFileSize {
-		return fmt.Errorf("%w: %d bytes", ErrFileTooLarge, int64(len(content)))
-	}
 
 	d.Text = string(content)
-	return i.AddDocument(d)
+	return nil
 }
 
 func hasExtension(path string, exts ...string) bool {

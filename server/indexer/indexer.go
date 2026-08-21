@@ -970,6 +970,11 @@ func (i *Indexer) validateFileDocument(d *document.Document) error {
 	if !strings.EqualFold(pu.Scheme, "file") {
 		return nil
 	}
+	// Submitted HTML is processed from the request body and never reads the
+	// referenced path from the server filesystem.
+	if d.HTML != "" && !d.Processed {
+		return nil
+	}
 	if d.Text == "" {
 		return fmt.Errorf("%w: submitted content is required", ErrFileURLNotAllowed)
 	}

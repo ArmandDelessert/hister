@@ -161,20 +161,24 @@ func (d *Document) ProcessWithSensitivePatternContext(ctx context.Context, ld La
 	if err != nil {
 		return err
 	}
-	if pu.Scheme == "file" {
+	if pu.Scheme == "file" && d.HTML == "" {
 		return d.processFile(ld, sensitivePattern)
 	}
-	if pu.Scheme == "" || pu.Host == "" {
+	if pu.Scheme != "file" && (pu.Scheme == "" || pu.Host == "") {
 		return errors.New("invalid URL: missing scheme/host")
 	}
-	d.normalizeWebURL(pu)
+	if pu.Scheme == "file" {
+		d.Domain = "local"
+	} else {
+		d.normalizeWebURL(pu)
+		d.Domain = pu.Hostname()
+	}
 	now := time.Now().Unix()
 	if d.Added == 0 {
 		d.Added = now
 	}
 	d.Updated = now
 	d.Type = Web
-	d.Domain = pu.Hostname()
 	if d.HTML != "" {
 		if err := extractFn(ctx, d); err != nil {
 			return err

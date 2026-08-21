@@ -38,6 +38,12 @@ func TestFileDocumentValidation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("allowed file document rejected: %v", err)
 	}
+	if err := idx.validateFileDocument(&document.Document{
+		URL:  "file:///not/configured/saved.html",
+		HTML: "<html><body>submitted content</body></html>",
+	}); err != nil {
+		t.Fatalf("submitted HTML file rejected: %v", err)
+	}
 
 	for _, d := range []*document.Document{
 		{URL: files.PathToFileURL(filepath.Join(dir, "note.txt")), UserID: user.ID},

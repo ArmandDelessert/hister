@@ -41,12 +41,12 @@ hister import file export.json page.html ~/Downloads/saved-pages
 
 Supported inputs are:
 
-| Input              | Behavior                                                                     |
-| ------------------ | ---------------------------------------------------------------------------- |
-| Hister JSON export | Restores serialized documents without extracting their stored content again  |
-| 7z archive         | Reads the first JSON export inside the archive                               |
-| HTML or HTM page   | Extracts the canonical URL and sends the saved page to Hister for processing |
-| Directory          | Imports supported files directly inside it in filename order                 |
+| Input              | Behavior                                                                    |
+| ------------------ | --------------------------------------------------------------------------- |
+| Hister JSON export | Restores serialized documents without extracting their stored content again |
+| 7z archive         | Reads the first JSON export inside the archive                              |
+| HTML or HTM page   | Extracts the canonical URL, or uses the absolute path as a `file://` URL    |
+| Directory          | Imports supported files directly inside it in filename order                |
 
 Directory imports are not recursive. Unsupported files and nested directories are ignored.
 

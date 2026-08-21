@@ -48,10 +48,10 @@ Other directory rules still apply:
 
 The `hister import file` command accepts these file formats:
 
-| File type          | Extensions      | Behavior                                                                |
-| ------------------ | --------------- | ----------------------------------------------------------------------- |
-| Hister JSON export | `.json`         | Imports documents previously written by `hister export`.                |
-| 7z archive         | `.7z`           | Imports a compressed Hister JSON export.                                |
-| Saved HTML page    | `.html`, `.htm` | Extracts the original page URL from HTML metadata and indexes the page. |
+| File type          | Extensions      | Behavior                                                             |
+| ------------------ | --------------- | -------------------------------------------------------------------- |
+| Hister JSON export | `.json`         | Imports documents previously written by `hister export`.             |
+| 7z archive         | `.7z`           | Imports a compressed Hister JSON export.                             |
+| Saved HTML page    | `.html`, `.htm` | Extracts the original page URL, or uses its absolute `file://` path. |
 
 When importing a directory, Hister reads matching `.json`, `.7z`, `.html`, and `.htm` files directly inside that directory in filename order.

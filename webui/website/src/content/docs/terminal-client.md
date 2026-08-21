@@ -126,8 +126,8 @@ Three input formats are supported, detected by file extension:
 - **7z archives** (`.7z`) a 7z-compressed archive containing a single JSON export file.
 - **HTML files** (`.html` or `.htm`) a saved web page. The document URL is extracted
   from the HTML itself (the `<link rel="canonical">` tag, OpenGraph/Twitter `url` meta
-  tags, etc.) and the page is submitted to the running server for processing. The import
-  fails for a given file if the HTML cannot be parsed or no URL can be found in it.
+  tags, etc.) and the page is submitted to the running server for processing. When no URL
+  metadata is present, Hister uses the absolute path as a `file://` URL.
 
 When a directory is passed, Hister imports matching `.json`, `.7z`, `.html`, and `.htm`
 files directly inside that directory in filename order. Other files and nested

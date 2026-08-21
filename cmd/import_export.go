@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/asciimoo/hister/client"
+	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
 
@@ -146,7 +147,8 @@ containing a single JSON file.
 
 HTML files (.html or .htm) can also be imported: the URL is extracted from
 the HTML (canonical link, OpenGraph/Twitter meta tags, etc.) and the document
-is submitted to the running server for processing.
+is submitted to the running server for processing. If the HTML contains no
+URL metadata, its absolute path is used as a file URL.
 
 Multiple files may be given; they are imported in order and the result is
 reported as a combined total.
@@ -431,8 +433,9 @@ func addDocumentBatch(c *client.Client, docs []*document.Document) (imported, er
 }
 
 // importHTMLFile reads a single HTML file, builds a document from it by
-// extracting the URL from the HTML, and submits it to the running server. It
-// returns the number of documents imported, skipped and failed.
+// extracting the URL from the HTML or using its file URL as a fallback, and
+// submits it to the running server. It returns the number of documents
+// imported, skipped and failed.
 func importHTMLFile(
 	c *client.Client,
 	inputFile string,
@@ -445,7 +448,13 @@ func importHTMLFile(
 		return 0, 0, 1
 	}
 
-	d, err := document.FromHTML(string(data))
+	fallbackURL, err := htmlFileURL(inputFile)
+	if err != nil {
+		log.Warn().Err(err).Str("file", inputFile).Msg("Failed to create HTML file URL, skipping")
+		return 0, 0, 1
+	}
+
+	d, err := document.FromHTMLWithFallbackURL(string(data), fallbackURL)
 	if err != nil {
 		log.Warn().Err(err).Str("file", inputFile).Msg("Failed to import HTML file, skipping")
 		return 0, 0, 1
@@ -466,4 +475,14 @@ func importHTMLFile(
 	labelOverride.apply(d, "import")
 	imported, errCount = addDocumentBatch(c, []*document.Document{d})
 	return imported, 0, errCount
+}
+
+// htmlFileURL creates an absolute file URL for saved HTML that has no
+// original URL.
+func htmlFileURL(inputFile string) (string, error) {
+	absolutePath, err := filepath.Abs(inputFile)
+	if err != nil {
+		return "", err
+	}
+	return files.PathToFileURL(absolutePath), nil
 }

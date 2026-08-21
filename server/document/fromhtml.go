@@ -10,12 +10,21 @@ import (
 var ErrNoURL = errors.New("no URL found in HTML")
 
 func FromHTML(html string) (*Document, error) {
+	return FromHTMLWithFallbackURL(html, "")
+}
+
+// FromHTMLWithFallbackURL builds a document from HTML and uses fallbackURL
+// when the HTML does not contain URL metadata.
+func FromHTMLWithFallbackURL(html, fallbackURL string) (*Document, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
 		return nil, err
 	}
 
 	u := extractURL(doc)
+	if u == "" {
+		u = strings.TrimSpace(fallbackURL)
+	}
 	if u == "" {
 		return nil, ErrNoURL
 	}

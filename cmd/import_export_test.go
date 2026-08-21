@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asciimoo/hister/client"
+	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
 )
 
@@ -77,6 +78,65 @@ func TestIsSupportedImportInput(t *testing.T) {
 		if got := isSupportedImportInput(input); got != want {
 			t.Fatalf("isSupportedImportInput(%q) = %v, want %v", input, got, want)
 		}
+	}
+}
+
+func TestHTMLFileURL(t *testing.T) {
+	inputFile := filepath.Join("saved pages", "A useful page.html")
+	got, err := htmlFileURL(inputFile)
+	if err != nil {
+		t.Fatalf("htmlFileURL() unexpected error: %v", err)
+	}
+	absolutePath, err := filepath.Abs(inputFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := files.PathToFileURL(absolutePath)
+	if got != want {
+		t.Fatalf("htmlFileURL() = %q, want %q", got, want)
+	}
+}
+
+func TestImportHTMLFileUsesFileFallbackURL(t *testing.T) {
+	var receivedURL string
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var req struct {
+			Ops []struct {
+				URL string `json:"url"`
+			} `json:"ops"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return nil, fmt.Errorf("decode request: %w", err)
+		}
+		if len(req.Ops) != 1 {
+			t.Errorf("operation count = %d, want 1", len(req.Ops))
+		} else {
+			receivedURL = req.Ops[0].URL
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"results":[{"status":201}]}`)),
+			Request:    r,
+		}, nil
+	})}
+
+	inputFile := filepath.Join(t.TempDir(), "Saved page.html")
+	if err := os.WriteFile(inputFile, []byte(`<html><head><title>Saved page</title></head></html>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	imported, skipped, errCount := importHTMLFile(
+		client.New("http://hister.test", client.WithHTTPClient(httpClient), client.WithMaxBatchBodyBytes(40<<20)),
+		inputFile,
+		false,
+		documentLabelOverride{},
+	)
+	if imported != 1 || skipped != 0 || errCount != 0 {
+		t.Fatalf("importHTMLFile() = (%d, %d, %d), want (1, 0, 0)", imported, skipped, errCount)
+	}
+	if want := files.PathToFileURL(inputFile); receivedURL != want {
+		t.Fatalf("imported URL = %q, want %q", receivedURL, want)
 	}
 }
 

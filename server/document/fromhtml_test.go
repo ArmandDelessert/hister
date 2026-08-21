@@ -97,3 +97,28 @@ func TestFromHTMLNoURL(t *testing.T) {
 		})
 	}
 }
+
+func TestFromHTMLWithFallbackURL(t *testing.T) {
+	html := `<html><head><title>Saved page</title></head><body>content</body></html>`
+	d, err := FromHTMLWithFallbackURL(html, "file:///tmp/Saved%20page.html")
+	if err != nil {
+		t.Fatalf("FromHTMLWithFallbackURL() unexpected error: %v", err)
+	}
+	if d.URL != "file:///tmp/Saved%20page.html" {
+		t.Errorf("URL = %q, want file fallback URL", d.URL)
+	}
+	if d.Title != "Saved page" {
+		t.Errorf("Title = %q, want Saved page", d.Title)
+	}
+}
+
+func TestFromHTMLWithFallbackURLPrefersHTMLURL(t *testing.T) {
+	html := `<html><head><link rel="canonical" href="https://example.com/page"></head></html>`
+	d, err := FromHTMLWithFallbackURL(html, "file:///tmp/page.html")
+	if err != nil {
+		t.Fatalf("FromHTMLWithFallbackURL() unexpected error: %v", err)
+	}
+	if d.URL != "https://example.com/page" {
+		t.Errorf("URL = %q, want canonical URL", d.URL)
+	}
+}

@@ -359,7 +359,7 @@ func TestSearchFileTypeIncludesLocalAndRemoteFiles(t *testing.T) {
 	docs := []*document.Document{
 		{URL: "https://example.com/page", Title: "Web", Type: document.Web, Processed: true},
 		{URL: "file:///tmp/local.txt", Title: "Local", Type: document.Local, Processed: true},
-		{URL: "remote-file://laptop/tmp/remote.txt", Title: "Remote", Type: document.RemoteFile, Processed: true},
+		{URL: "remote-file://laptop/tmp/README.md", Title: "Remote", Type: document.RemoteFile, Processed: true},
 	}
 	for _, doc := range docs {
 		if err := idx.AddDocument(doc); err != nil {
@@ -380,6 +380,19 @@ func TestSearchFileTypeIncludesLocalAndRemoteFiles(t *testing.T) {
 	}
 	if !types[document.Local] || !types[document.RemoteFile] || types[document.Web] {
 		t.Fatalf("type:file returned types %#v", types)
+	}
+
+	for _, queryText := range []string{
+		"type:remote url:*readme*",
+		"type:remote url:*README*",
+	} {
+		res, err := idx.Search(&Query{Text: queryText})
+		if err != nil {
+			t.Fatalf("Search(%q) failed: %v", queryText, err)
+		}
+		if len(res.Documents) != 1 || res.Documents[0].Type != document.RemoteFile {
+			t.Fatalf("Search(%q) returned %#v, want the remote README", queryText, res.Documents)
+		}
 	}
 }
 

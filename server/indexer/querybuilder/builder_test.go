@@ -88,6 +88,16 @@ func asWildcard(t *testing.T, q query.Query) *query.WildcardQuery {
 	return wq
 }
 
+// asRegexp type asserts q to *query.RegexpQuery.
+func asRegexp(t *testing.T, q query.Query) *query.RegexpQuery {
+	t.Helper()
+	rq, ok := q.(*query.RegexpQuery)
+	if !ok {
+		t.Fatalf("expected *query.RegexpQuery, got %T", q)
+	}
+	return rq
+}
+
 // asMatchPhrase type-asserts q to *query.MatchPhraseQuery.
 func asMatchPhrase(t *testing.T, q query.Query) *query.MatchPhraseQuery {
 	t.Helper()
@@ -642,8 +652,22 @@ func Test_build_wildcard_word(t *testing.T) {
 		t.Fatalf("expected 1 must clause, got %d", len(clauses))
 	}
 	dq := asDisjunction(t, clauses[0])
+	urlRegexpCount := 0
 	for _, d := range dq.Disjuncts {
-		asWildcard(t, d)
+		if rq, ok := d.(*query.RegexpQuery); ok {
+			urlRegexpCount++
+			if rq.FieldVal != "url" || rq.Regexp != `(?i).*go.*` {
+				t.Fatalf("unexpected URL regexp query: %#v", rq)
+			}
+			continue
+		}
+		wq := asWildcard(t, d)
+		if wq.FieldVal == "url" {
+			t.Fatalf("URL wildcard was not made case insensitive: %#v", wq)
+		}
+	}
+	if urlRegexpCount != 1 {
+		t.Fatalf("URL regexp count = %d, want 1", urlRegexpCount)
 	}
 }
 
@@ -659,6 +683,21 @@ func Test_build_wildcard_field(t *testing.T) {
 	}
 	if wq.FieldVal != "title" {
 		t.Fatalf("expected field %q, got %q", "title", wq.FieldVal)
+	}
+}
+
+func Test_build_url_wildcard_is_case_insensitive(t *testing.T) {
+	bq := buildBoolQ(t, "url:*README.md*")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	rq := asRegexp(t, clauses[0])
+	if rq.Regexp != `(?i).*README\.md.*` {
+		t.Fatalf("expected case insensitive regexp %q, got %q", `(?i).*README\.md.*`, rq.Regexp)
+	}
+	if rq.FieldVal != "url" {
+		t.Fatalf("expected field %q, got %q", "url", rq.FieldVal)
 	}
 }
 

@@ -165,14 +165,21 @@ func createMatchQuery(s string, boost float64) query.Query {
 }
 
 // buildFieldQuery creates the appropriate Bleve query for a named field and value.
-// It uses WildcardQuery when v contains '*', TermQuery for url/domain fields,
-// and MatchQuery for all other fields.
+// It uses a case insensitive RegexpQuery for URL wildcards, WildcardQuery for
+// other wildcard fields, TermQuery for URL and domain fields, and MatchQuery
+// for all other fields.
 func buildFieldQuery(field, v string) query.Query {
 	definition, ok := searchschema.Field(field)
 	if !ok {
 		return bleve.NewQueryStringQuery(v)
 	}
 	if strings.Contains(v, "*") {
+		if definition.NormalizeFilePath {
+			q := bleve.NewRegexpQuery(caseInsensitiveWildcardRegexp(v))
+			q.SetField(definition.IndexField)
+			q.SetBoost(definition.Weight)
+			return q
+		}
 		q := bleve.NewWildcardQuery(strings.ToLower(v))
 		q.SetField(definition.IndexField)
 		q.SetBoost(definition.Weight)
@@ -191,6 +198,22 @@ func buildFieldQuery(field, v string) query.Query {
 	q.SetField(definition.IndexField)
 	q.SetBoost(definition.Weight)
 	return q
+}
+
+func caseInsensitiveWildcardRegexp(value string) string {
+	var pattern strings.Builder
+	pattern.WriteString("(?i)")
+	for _, r := range value {
+		switch r {
+		case '*':
+			pattern.WriteString(".*")
+		case '?':
+			pattern.WriteByte('.')
+		default:
+			pattern.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+	return pattern.String()
 }
 
 // buildQuotedFieldQuery preserves phrase semantics for analyzed text fields.

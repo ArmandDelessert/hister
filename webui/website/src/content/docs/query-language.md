@@ -220,6 +220,8 @@ url:*/docs/*
 title:*firewall*
 ```
 
+URL wildcard matching ignores letter case, so `url:*readme*` also matches a path ending in `README.md`.
+
 ## Negation
 
 Prefix terms with a minus sign (`-`) to exclude results:

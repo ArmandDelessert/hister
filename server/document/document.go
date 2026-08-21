@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -161,6 +162,9 @@ func (d *Document) ProcessWithSensitivePatternContext(ctx context.Context, ld La
 	if err != nil {
 		return err
 	}
+	if d.Type == RemoteFile {
+		return d.processRemoteFile(pu, ld, sensitivePattern)
+	}
 	if pu.Scheme == "file" && d.HTML == "" {
 		return d.processFile(ld, sensitivePattern)
 	}
@@ -183,6 +187,35 @@ func (d *Document) ProcessWithSensitivePatternContext(ctx context.Context, ld La
 		if err := extractFn(ctx, d); err != nil {
 			return err
 		}
+	}
+	d.finalizeDocument(ld)
+	return nil
+}
+
+func (d *Document) processRemoteFile(pu *url.URL, ld LanguageDetector, sensitivePattern *regexp.Regexp) error {
+	if pu.Scheme != "remote-file" || pu.Host == "" {
+		return errors.New("invalid remote file URL: expected remote-file scheme and source host")
+	}
+	if !d.SkipSensitiveCheck && sensitivePattern != nil && sensitivePattern.MatchString(d.Text) {
+		return ErrSensitiveContent
+	}
+
+	d.Domain = pu.Hostname()
+	if d.Title == "" {
+		base := path.Base(pu.Path)
+		parent := path.Base(path.Dir(pu.Path))
+		if parent == "." || parent == "/" {
+			d.Title = base
+		} else {
+			d.Title = parent + "/" + base
+		}
+	}
+	now := time.Now().Unix()
+	if d.Added == 0 {
+		d.Added = now
+	}
+	if d.Updated == 0 {
+		d.Updated = now
 	}
 	d.finalizeDocument(ld)
 	return nil

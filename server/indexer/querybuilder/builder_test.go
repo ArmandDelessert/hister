@@ -433,6 +433,24 @@ func Test_build_type_file(t *testing.T) {
 	if nq.FieldVal != "type" {
 		t.Fatalf("expected field %q, got %q", "type", nq.FieldVal)
 	}
+	if nq.Min == nil || *nq.Min != 1 || nq.Max == nil || *nq.Max != 3 {
+		t.Fatalf("expected aggregate file range [1, 3), got min=%v max=%v", nq.Min, nq.Max)
+	}
+}
+
+func Test_build_type_remote(t *testing.T) {
+	bq := buildBoolQ(t, "type:remote")
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	nq := asNumericRange(t, clauses[0])
+	if nq.FieldVal != "type" {
+		t.Fatalf("expected field %q, got %q", "type", nq.FieldVal)
+	}
+	if nq.Min == nil || *nq.Min != 2 || nq.Max == nil || *nq.Max != 3 {
+		t.Fatalf("expected remote range [2, 3), got min=%v max=%v", nq.Min, nq.Max)
+	}
 }
 
 func Test_build_unknown_type_falls_through(t *testing.T) {

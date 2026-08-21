@@ -14,16 +14,16 @@ The `hister import` command collects related import tools under one command. Eve
 
 ## Available Import Sources
 
-| Command                                     | Source                                     | Default label |
-| ------------------------------------------- | ------------------------------------------ | ------------- |
-| `hister import file INPUT...`               | Hister exports, archives, and saved pages  | `import`      |
-| `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                  | `browser`     |
-| `hister import linkding INSTANCE_URL`       | A Linkding instance through its HTTP API   | `linkding`    |
-| `hister import linkwarden INSTANCE_URL`     | A Linkwarden instance through its HTTP API | `linkwarden`  |
-| `hister import karakeep INSTANCE_URL`       | A Karakeep instance through its HTTP API   | `karakeep`    |
-| `hister import readeck INSTANCE_URL`        | A Readeck instance through its HTTP API    | `readeck`     |
-| `hister import shaarli INSTANCE_URL`        | A Shaarli instance through its HTTP API    | `shaarli`     |
-| `hister import wallabag INSTANCE_URL`       | A wallabag instance through its HTTP API   | `wallabag`    |
+| Command                                     | Source                                     | Default label             |
+| ------------------------------------------- | ------------------------------------------ | ------------------------- |
+| `hister import file [INPUT...]`             | Exports, saved pages, and file snapshots   | `import` or watched label |
+| `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                  | `browser`                 |
+| `hister import linkding INSTANCE_URL`       | A Linkding instance through its HTTP API   | `linkding`                |
+| `hister import linkwarden INSTANCE_URL`     | A Linkwarden instance through its HTTP API | `linkwarden`              |
+| `hister import karakeep INSTANCE_URL`       | A Karakeep instance through its HTTP API   | `karakeep`                |
+| `hister import readeck INSTANCE_URL`        | A Readeck instance through its HTTP API    | `readeck`                 |
+| `hister import shaarli INSTANCE_URL`        | A Shaarli instance through its HTTP API    | `shaarli`                 |
+| `hister import wallabag INSTANCE_URL`       | A wallabag instance through its HTTP API   | `wallabag`                |
 
 Use the global `--server-url` and `--token` flags when the destination Hister server differs from your configured server or requires authentication.
 
@@ -41,14 +41,35 @@ hister import file export.json page.html ~/Downloads/saved-pages
 
 Supported inputs are:
 
-| Input              | Behavior                                                                    |
-| ------------------ | --------------------------------------------------------------------------- |
-| Hister JSON export | Restores serialized documents without extracting their stored content again |
-| 7z archive         | Reads the first JSON export inside the archive                              |
-| HTML or HTM page   | Extracts the canonical URL, or uses the absolute path as a `file://` URL    |
-| Directory          | Imports supported files directly inside it in filename order                |
+| Input                       | Behavior                                                                    |
+| --------------------------- | --------------------------------------------------------------------------- |
+| Hister JSON export          | Restores serialized documents without extracting their stored content again |
+| 7z archive                  | Reads the first JSON export inside the archive                              |
+| HTML or HTM page with a URL | Extracts the canonical, OpenGraph, or Twitter URL                           |
+| Other local file            | Extracts supported content locally and creates a remote file snapshot       |
+| Directory                   | Imports matching files recursively                                          |
 
-Directory imports are not recursive. Unsupported files and nested directories are ignored.
+PDF, DOCX, Markdown, Org mode, and valid UTF 8 text use the same handlers as watched files. JSON that does not have the Hister export array shape and HTML that has no source URL are also treated as file snapshots.
+
+With no input paths, the command recursively imports files from every configured watched directory. It applies the same file type, pattern, exclusion, hidden path, size, and label settings:
+
+```bash
+hister import file
+```
+
+You can also provide individual files or directories:
+
+```bash
+hister import file ~/notes ~/Documents/report.pdf
+```
+
+Snapshot extraction happens in the command line process. Only the extracted document fields are sent through `/api/add`. Hister does not send or retain the original file bytes, and it does not monitor snapshots for later changes.
+
+Remote file documents use a `remote-file://SOURCE/absolute/path` identity. The default source is the client hostname. Set a stable name when hostnames may change or when several clients have the same paths:
+
+```bash
+hister import file --source alice-laptop ~/notes
+```
 
 The following options apply to file imports:
 
@@ -61,6 +82,12 @@ The following options apply to file imports:
 | `--end-date YYYY-MM-DD`   | Import documents added on or before the date                |
 | `--global`                | Import for all users when authenticated as an administrator |
 | `--user-id ID`            | Import for one user when authenticated as an administrator  |
+| `--source NAME`           | Set the source namespace used in document URLs              |
+| `--allow-sensitive`       | Skip sensitive content checks                               |
+
+Running the command again replaces documents with the same source and absolute path. File changes and removals are not synchronized automatically.
+
+The destination account and the `--global` or `--user-id` flags determine ownership. The `user` value on a watched directory is not resolved by this client side import.
 
 ## Importing Browser History
 

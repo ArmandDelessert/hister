@@ -306,6 +306,18 @@ func init() {
 					Required:    false,
 					Description: "User-defined label for the document",
 				},
+				{
+					Name:        "type",
+					Type:        "int",
+					Required:    false,
+					Description: "Document type. Use 2 with a remote-file URL for locally extracted file snapshots.",
+				},
+				{
+					Name:        "updated",
+					Type:        "int64",
+					Required:    false,
+					Description: "Source modification time as a Unix timestamp for remote file snapshots",
+				},
 			},
 		},
 		// alias for /api/add - backward compatibility - use /api/add in the future

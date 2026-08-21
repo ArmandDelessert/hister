@@ -626,7 +626,14 @@
     const item = items[highlightIdx];
     if (!item) return;
     if (openResultsOnNewTab) newWindow = true;
-    window.open(item.url, newWindow ? '_blank' : '_self');
+    window.open(historyResultUrl(item), newWindow ? '_blank' : '_self');
+  }
+
+  function historyResultUrl(item: HistoryItem): string {
+    if (item.url.startsWith('remote-file://')) {
+      return buildPreviewUrl(item.url, item.title || item.url);
+    }
+    return item.url;
   }
 
   function viewResultPopup(e?: KeyboardEvent) {
@@ -988,7 +995,7 @@
                       <div class="w-0 min-w-0 flex-1 space-y-1">
                         <a
                           data-result-link={item.url}
-                          href={item.url}
+                          href={historyResultUrl(item)}
                           class="history-title font-outfit text-hister-cyan line-clamp-2 text-base font-bold no-underline hover:underline md:text-lg"
                           title={item.title || item.url}
                           target="_blank"

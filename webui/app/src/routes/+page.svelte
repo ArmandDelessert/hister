@@ -339,7 +339,7 @@
       { type: 'text', value: 'Use' },
       { type: 'code', value: 'type:web' },
       { type: 'text', value: 'or' },
-      { type: 'code', value: 'type:local' },
+      { type: 'code', value: 'type:file' },
       { type: 'text', value: 'to filter by document type' },
     ],
     [
@@ -830,9 +830,9 @@
     return s.replace(/<[^>]*>/g, '');
   }
 
-  function openResult(url: string, title: string, newWindow = false) {
+  function openResult(url: string, title: string, newWindow = false, sourceUrl = url) {
     if (config.openResultsOnNewTab) newWindow = true;
-    saveHistoryItem(url, stripHtml(title), query, false, () => openURL(url, newWindow));
+    saveHistoryItem(sourceUrl, stripHtml(title), query, false, () => openURL(url, newWindow));
   }
 
   function sendHistoryBeacon(url: string, title: string, queryStr: string) {
@@ -989,10 +989,12 @@
     if (lastResults) lastResults = { ...lastResults, documents: accumulatedDocs };
   }
 
-  // Convert a file URL to a document authorized server URL for browser viewing.
-  function fileResultUrl(url: string, documentID?: string): string {
-    if (!url.startsWith('file://') || !documentID) return url;
-    return 'api/file?id=' + encodeURIComponent(documentID);
+  // Convert file document URLs to browser viewable Hister URLs.
+  function fileResultUrl(url: string, documentID?: string, title = ''): string {
+    if (url.startsWith('remote-file://')) return buildPreviewUrl(url, title);
+    if (url.startsWith('file://') && documentID)
+      return 'api/file?id=' + encodeURIComponent(documentID);
+    return url;
   }
 
   function displayResultPath(url: string, domain: string): string {
@@ -1067,7 +1069,8 @@
       highlightIdx
     ];
     if (res) {
-      openResult(res.getAttribute('href')!, res.innerText, newWindow);
+      const href = res.getAttribute('href')!;
+      openResult(href, res.innerText, newWindow, res.dataset.resultLink || href);
     }
   }
 
@@ -2346,7 +2349,7 @@
                         />
                         <a
                           data-result-link={r.url}
-                          href={fileResultUrl(r.url, r.id)}
+                          href={fileResultUrl(r.url, r.id, r.title || '*title*')}
                           class="result-title font-outfit text-md line-clamp-3 min-w-0 flex-1 font-semibold hover:underline md:text-xl"
                           title={r.title || '*title*'}
                           target={config.openResultsOnNewTab ? '_blank' : undefined}

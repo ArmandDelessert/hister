@@ -102,7 +102,19 @@ Finds documents imported from Linkding.
 type:file
 ```
 
-Finds local files (indexed from filesystem).
+Finds both watched local files and imported remote file snapshots.
+
+```textplain
+type:local
+```
+
+Finds watched files that remain accessible to the server filesystem.
+
+```textplain
+type:remote
+```
+
+Finds remote file snapshots created with `hister import file` or submitted as prepared documents through `/api/add`.
 
 ```textplain
 type:web

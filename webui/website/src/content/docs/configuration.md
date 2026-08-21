@@ -772,6 +772,8 @@ Files are indexed recursively, with the following rules:
 
 Changes to indexed directories are picked up automatically by the file watcher, no server restart is needed. On server start, only files that have been modified since they were last indexed are re-processed. File results appear with the domain `local` and are served through the Hister web interface directly.
 
+When a configured directory is available to the command line client but not to the server, run `hister import file` with no path arguments. It applies these directory rules locally, extracts matching content, and creates remote file snapshots through the normal add API. The original bytes are not sent. These snapshots are not watched or removed automatically.
+
 When `delete_on_remove: true` is set on a directory, deleting or renaming a file on the filesystem also removes it from the index automatically. This is opt-in and disabled by default.
 
 No reindex is required when adding or removing files. Files are detected and indexed automatically. After making directory filters more restrictive, run `hister cleanup` to remove indexed local documents that no longer match the configuration. Cleanup compares indexed paths with the configuration and does not scan or read the filesystem.

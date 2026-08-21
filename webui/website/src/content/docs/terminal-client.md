@@ -118,27 +118,31 @@ combined total:
 hister import file export.json page.html ~/Downloads/saved-pages
 ```
 
-Three input formats are supported, detected by file extension:
+Several input formats are supported:
 
 - **JSON export files** files previously created by `hister export`. They are read
   line by line and each serialized document is restored without running content extraction
   again.
-- **7z archives** (`.7z`) a 7z-compressed archive containing a single JSON export file.
+- **7z archives** (`.7z`) a 7z compressed archive containing a single JSON export file.
 - **HTML files** (`.html` or `.htm`) a saved web page. The document URL is extracted
   from the HTML itself (the `<link rel="canonical">` tag, OpenGraph/Twitter `url` meta
-  tags, etc.) and the page is submitted to the running server for processing. When no URL
-  metadata is present, Hister uses the absolute path as a `file://` URL.
+  tags, etc.) and the page is submitted to the running server for processing.
+- **Local file snapshots** PDF, DOCX, Markdown, Org mode, HTML without source URL metadata,
+  JSON without the Hister export array shape, and valid UTF 8 text are extracted locally.
+  Only prepared document fields are sent to the server.
 
-When a directory is passed, Hister imports matching `.json`, `.7z`, `.html`, and `.htm`
-files directly inside that directory in filename order. Other files and nested
-directories are ignored.
+When a directory is passed, Hister imports matching files recursively. With no input,
+it imports files from configured watched directories and applies their filters.
 
 ```bash
 # Import a single saved web page
 hister import file ~/Downloads/article.html
 
-# Import all supported files directly inside a directory
+# Import all supported files recursively from a directory
 hister import file ~/Downloads/saved-pages
+
+# Import files matched by every configured watched directory
+hister import file
 ```
 
 Useful flags:
@@ -148,10 +152,21 @@ Useful flags:
   timestamp falls within the given date range (applies to JSON exports).
 - `--batch-size` controls how many documents are submitted in each bulk request.
   The default is `10` and the maximum is `100`.
+- `--source` sets the stable source namespace for remote file snapshot URLs.
+- `--allow-sensitive` skips sensitive content checks for imported snapshots.
 
 > **Note:** `hister import file` talks to a running Hister server, so make sure the server
 > is started before importing. See [Importing Documents](import) for file,
 > browser history, and Linkwarden import instructions.
+
+`hister import file` creates searchable snapshots when the server cannot read files directly. Snapshot extraction occurs locally and only the prepared document is sent through the normal add API. With no paths it imports every file matched by configured watched directories. Explicit directories are recursive.
+
+```bash
+hister import file
+hister import file --source work-laptop ~/notes ~/Documents/report.pdf
+```
+
+The command extracts the same PDF, DOCX, Markdown, Org mode, and plain text formats used by watched directories. It does not send the original bytes or synchronize later file changes and removals. Run the command again to replace a snapshot with the same source name and absolute path.
 
 ## TUI (Terminal UI)
 

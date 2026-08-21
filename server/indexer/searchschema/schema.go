@@ -14,7 +14,7 @@ import (
 	"github.com/asciimoo/hister/server/document"
 )
 
-const Version = 1
+const Version = 2
 
 type FieldKind string
 
@@ -115,10 +115,15 @@ var valueSets = map[string][]ValueDefinition{
 			Max:   new(float64(document.Local)),
 		},
 		{
-			Value:   document.Local.String(),
-			Aliases: []string{"file"},
-			Min:     new(float64(document.Local)),
-			Max:     new(float64(document.Local) + 1),
+			Value: document.Local.String(),
+			Min:   new(float64(document.Local)),
+			Max:   new(float64(document.RemoteFile)),
+		},
+		{
+			Value:   document.RemoteFile.String(),
+			Aliases: []string{"remote_file"},
+			Min:     new(float64(document.RemoteFile)),
+			Max:     new(float64(document.RemoteFile) + 1),
 		},
 	},
 	"visit_counts": {
@@ -135,7 +140,7 @@ var fields = []FieldDefinition{
 	{Name: "title", Label: "Title", Description: "Search only page titles", Kind: FieldKindText, IndexField: "title", Weight: 12, Visible: true, Phrase: true, DefaultSearch: true},
 	{Name: "url", Label: "URL", Description: "Search only page addresses", Kind: FieldKindKeyword, IndexField: "url", Weight: 4, Visible: true, NormalizeFilePath: true, DefaultWildcard: true},
 	{Name: "text", Label: "Text", Description: "Search only document content", Kind: FieldKindText, IndexField: "text", Weight: 1, Visible: true, Phrase: true, DefaultSearch: true},
-	{Name: "type", Label: "Type", Description: "Filter web or local documents", Kind: FieldKindEnum, ValueSet: "document_types", IndexField: "type", Visible: true},
+	{Name: "type", Label: "Type", Description: "Filter web, local, or remote file documents", Kind: FieldKindEnum, ValueSet: "document_types", IndexField: "type", Visible: true},
 	{Name: "language", Label: "Language", Description: "Filter by document language", Kind: FieldKindText, IndexField: "language", Weight: 1, Visible: true},
 	{Name: "label", Label: "Label", Description: "Search assigned labels", Kind: FieldKindText, IndexField: "label", Weight: 1, Visible: true},
 	{Name: "visits", Label: "Visits", Description: "Filter by visit count", Kind: FieldKindNumericRange, ValueSet: "visit_counts", IndexField: "add_count", Aliases: []string{"add_count"}, Visible: true},
@@ -147,7 +152,7 @@ var fields = []FieldDefinition{
 var facets = []FacetDefinition{
 	{Name: "domains", Label: "Domains", QueryField: "domain", Kind: FacetKindTerms, Icon: "globe", DefaultSize: 10},
 	{Name: "languages", Label: "Languages", QueryField: "language", Kind: FacetKindTerms, Icon: "globe", DefaultSize: 10},
-	{Name: "types", Label: "Type", QueryField: "type", Kind: FacetKindNumericRanges, Icon: "tag", DefaultSize: 2},
+	{Name: "types", Label: "Type", QueryField: "type", Kind: FacetKindNumericRanges, Icon: "tag", DefaultSize: 3},
 	{Name: "visits", Label: "Visits", QueryField: "visits", Kind: FacetKindNumericRanges, Icon: "eye", DefaultSize: 4},
 	{Name: "updated", Label: "Updated", QueryField: "updated", Kind: FacetKindDateRanges, Icon: "calendar", DefaultSize: 5},
 }
@@ -199,6 +204,13 @@ func Values(name string) []ValueDefinition {
 }
 
 func Value(valueSet, value string) (ValueDefinition, bool) {
+	if valueSet == "document_types" && value == "file" {
+		return ValueDefinition{
+			Value: value,
+			Min:   new(float64(document.Local)),
+			Max:   new(float64(document.RemoteFile) + 1),
+		}, true
+	}
 	for _, definition := range valueSets[valueSet] {
 		if definition.Value == value || slices.Contains(definition.Aliases, value) {
 			return definition, true

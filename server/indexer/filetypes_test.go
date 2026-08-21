@@ -91,8 +91,8 @@ func TestPrepareFileContent(t *testing.T) {
 				UserID: 42,
 				Label:  "notes",
 			}
-			if err := prepareFileContent(tt.path, d, tt.content); err != nil {
-				t.Fatalf("prepareFileContent failed: %v", err)
+			if err := PrepareFileContent(tt.path, d, tt.content); err != nil {
+				t.Fatalf("PrepareFileContent failed: %v", err)
 			}
 			if d.URL != "file:///client/notes" || d.Type != document.Local || d.UserID != 42 || d.Label != "notes" {
 				t.Fatalf("document identity changed during preparation: %#v", d)
@@ -120,14 +120,14 @@ func TestPrepareFileContent(t *testing.T) {
 
 func TestPrepareFileContentRejectsInvalidContent(t *testing.T) {
 	t.Run("binary plain text", func(t *testing.T) {
-		err := prepareFileContent("notes.txt", &document.Document{}, []byte{0xff})
+		err := PrepareFileContent("notes.txt", &document.Document{}, []byte{0xff})
 		if !errors.Is(err, ErrBinaryFile) {
 			t.Fatalf("error = %v, want %v", err, ErrBinaryFile)
 		}
 	})
 
 	t.Run("invalid PDF", func(t *testing.T) {
-		err := prepareFileContent("notes.pdf", &document.Document{}, []byte("not a PDF"))
+		err := PrepareFileContent("notes.pdf", &document.Document{}, []byte("not a PDF"))
 		if err == nil || !strings.Contains(err.Error(), "pdf text extraction") {
 			t.Fatalf("error = %v, want PDF extraction error", err)
 		}

@@ -23,7 +23,7 @@ var fileTypeHandlers = []fileTypeHandler{
 }
 
 func (i *Indexer) indexFileContent(path string, d *document.Document, content []byte) error {
-	if err := prepareFileContent(path, d, content); err != nil {
+	if err := PrepareFileContent(path, d, content); err != nil {
 		return err
 	}
 	// IndexFile already read this content from the server filesystem, so it is
@@ -31,7 +31,9 @@ func (i *Indexer) indexFileContent(path string, d *document.Document, content []
 	return i.AddDocument(d)
 }
 
-func prepareFileContent(path string, d *document.Document, content []byte) error {
+// PrepareFileContent extracts indexable fields using the same handler as a
+// watched local file. It does not read, identify, or index the document.
+func PrepareFileContent(path string, d *document.Document, content []byte) error {
 	return fileTypeHandlerForPath(path).Prepare(d, content)
 }
 

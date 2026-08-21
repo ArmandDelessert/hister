@@ -19,6 +19,8 @@ Hister can index local files from configured directories and from explicit impor
 
 Files that do not match a specialized handler are treated as plain text. Binary files are skipped.
 
+The same handlers process snapshots created with `hister import file`. These imports are stored as remote file documents. Their extracted text and generated preview content are indexed, but the original file bytes are neither sent to the server nor retained.
+
 ## Directory Filters
 
 The `filetypes` setting on a watched directory is an extension filter. Use names without the leading dot.
@@ -48,10 +50,13 @@ Other directory rules still apply:
 
 The `hister import file` command accepts these file formats:
 
-| File type          | Extensions      | Behavior                                                             |
-| ------------------ | --------------- | -------------------------------------------------------------------- |
-| Hister JSON export | `.json`         | Imports documents previously written by `hister export`.             |
-| 7z archive         | `.7z`           | Imports a compressed Hister JSON export.                             |
-| Saved HTML page    | `.html`, `.htm` | Extracts the original page URL, or uses its absolute `file://` path. |
+| File type           | Extensions                 | Behavior                                                     |
+| ------------------- | -------------------------- | ------------------------------------------------------------ |
+| Hister JSON export  | `.json`                    | Imports documents previously written by `hister export`.     |
+| 7z archive          | `.7z`                      | Imports a compressed Hister JSON export.                     |
+| Saved HTML page     | `.html`, `.htm`            | Extracts the original page URL when present.                 |
+| Local file snapshot | Any supported local format | Extracts content locally and submits a remote file document. |
 
-When importing a directory, Hister reads matching `.json`, `.7z`, `.html`, and `.htm` files directly inside that directory in filename order.
+When importing a directory, Hister reads matching files recursively. With no input path, it uses every configured watched directory and applies its filters.
+
+Use `hister import file` for the PDF, DOCX, Markdown, Org mode, and plain text formats listed under local file indexing. Extraction occurs on the client, so this also works when the server cannot access the filesystem.

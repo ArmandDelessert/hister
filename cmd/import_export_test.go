@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asciimoo/hister/client"
-	"github.com/asciimoo/hister/files"
+	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 )
 
@@ -26,13 +26,17 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestExpandImportInputsExpandsDirectory(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := filepath.Join(root, "input")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{
 		"b.html",
 		"a.json",
 		"c.7z",
 		"d.htm",
-		"ignored.txt",
+		"notes.txt",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
 			t.Fatal(err)
@@ -45,78 +49,66 @@ func TestExpandImportInputsExpandsDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inputs, err := expandImportInputs([]string{"first.json", dir, "last"})
+	first := filepath.Join(root, "first.json")
+	last := filepath.Join(root, "last")
+	if err := os.WriteFile(first, []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(last, []byte("last"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	inputs, err := expandImportInputs([]string{first, dir, last}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := []string{
-		"first.json",
-		filepath.Join(dir, "a.json"),
-		filepath.Join(dir, "b.html"),
-		filepath.Join(dir, "c.7z"),
-		filepath.Join(dir, "d.htm"),
-		"last",
+	want := []importFileInput{
+		{Path: first},
+		{Path: filepath.Join(dir, "a.json")},
+		{Path: filepath.Join(dir, "b.html")},
+		{Path: filepath.Join(dir, "c.7z")},
+		{Path: filepath.Join(dir, "d.htm")},
+		{Path: filepath.Join(dir, "notes.txt")},
+		{Path: filepath.Join(dir, "subdir", "nested.html")},
+		{Path: last},
 	}
 	if !reflect.DeepEqual(inputs, want) {
 		t.Fatalf("expandImportInputs() = %#v, want %#v", inputs, want)
 	}
 }
 
-func TestIsSupportedImportInput(t *testing.T) {
-	tests := map[string]bool{
-		"export.json": true,
-		"backup.7z":   true,
-		"page.html":   true,
-		"page.htm":    true,
-		"page.HTML":   true,
-		"notes.txt":   false,
-		"README":      false,
-	}
-
-	for input, want := range tests {
-		if got := isSupportedImportInput(input); got != want {
-			t.Fatalf("isSupportedImportInput(%q) = %v, want %v", input, got, want)
-		}
-	}
-}
-
-func TestHTMLFileURL(t *testing.T) {
-	inputFile := filepath.Join("saved pages", "A useful page.html")
-	got, err := htmlFileURL(inputFile)
+func TestRemoteFileURL(t *testing.T) {
+	inputFile := filepath.Join(t.TempDir(), "My note.md")
+	got, err := remoteFileURL("Alice's Laptop", inputFile)
 	if err != nil {
-		t.Fatalf("htmlFileURL() unexpected error: %v", err)
+		t.Fatalf("remoteFileURL() unexpected error: %v", err)
 	}
-	absolutePath, err := filepath.Abs(inputFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := files.PathToFileURL(absolutePath)
+	want := "remote-file://alice-s-laptop" + filepath.ToSlash(filepath.Dir(inputFile)) + "/My%20note.md"
 	if got != want {
-		t.Fatalf("htmlFileURL() = %q, want %q", got, want)
+		t.Fatalf("remoteFileURL() = %q, want %q", got, want)
 	}
 }
 
-func TestImportHTMLFileUsesFileFallbackURL(t *testing.T) {
-	var receivedURL string
+func TestNormalizeRemoteFileSourceRejectsEmptyName(t *testing.T) {
+	if _, err := normalizeRemoteFileSource("___"); err == nil {
+		t.Fatal("normalizeRemoteFileSource() accepted a source with no usable characters")
+	}
+}
+
+func TestImportHTMLFileWithoutSourceURLUsesAddEndpoint(t *testing.T) {
+	var received document.Document
 	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		var req struct {
-			Ops []struct {
-				URL string `json:"url"`
-			} `json:"ops"`
+		if r.URL.Path != "/api/add" {
+			t.Errorf("request path = %q, want /api/add", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
 			return nil, fmt.Errorf("decode request: %w", err)
 		}
-		if len(req.Ops) != 1 {
-			t.Errorf("operation count = %d, want 1", len(req.Ops))
-		} else {
-			receivedURL = req.Ops[0].URL
-		}
 		return &http.Response{
-			StatusCode: http.StatusOK,
+			StatusCode: http.StatusCreated,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"results":[{"status":201}]}`)),
+			Body:       io.NopCloser(strings.NewReader("")),
 			Request:    r,
 		}, nil
 	})}
@@ -128,15 +120,78 @@ func TestImportHTMLFileUsesFileFallbackURL(t *testing.T) {
 
 	imported, skipped, errCount := importHTMLFile(
 		client.New("http://hister.test", client.WithHTTPClient(httpClient), client.WithMaxBatchBodyBytes(40<<20)),
-		inputFile,
+		importFileInput{Path: inputFile},
+		"laptop",
+		1<<20,
 		false,
 		documentLabelOverride{},
 	)
 	if imported != 1 || skipped != 0 || errCount != 0 {
 		t.Fatalf("importHTMLFile() = (%d, %d, %d), want (1, 0, 0)", imported, skipped, errCount)
 	}
-	if want := files.PathToFileURL(inputFile); receivedURL != want {
-		t.Fatalf("imported URL = %q, want %q", receivedURL, want)
+	wantURL, err := remoteFileURL("laptop", inputFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if received.URL != wantURL || received.Type != document.RemoteFile {
+		t.Fatalf("imported document = %#v, want remote snapshot %q", received, wantURL)
+	}
+	if !strings.Contains(received.Text, "Saved page") {
+		t.Fatalf("imported text = %q, want saved page content", received.Text)
+	}
+}
+
+func TestExpandImportInputsUsesWatchedDirectoryRules(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"keep.md":    "keep",
+		"skip.txt":   "skip",
+		"draft.md":   "draft",
+		".hidden.md": "hidden",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	directory := &config.Directory{Path: root, Label: "watched", Filetypes: []string{"md"}, Excludes: []string{"draft*"}}
+
+	inputs, err := expandImportInputs(nil, []*config.Directory{directory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []importFileInput{{Path: filepath.Join(root, "keep.md"), Label: "watched"}}
+	if !reflect.DeepEqual(inputs, want) {
+		t.Fatalf("expandImportInputs() = %#v, want %#v", inputs, want)
+	}
+}
+
+func TestIsHisterJSONExport(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "export", content: "[\n{\"url\":\"https://example.com\",\"title\":\"Example\",\"type\":0,\"processed\":true}\n]\n", want: true},
+		{name: "empty export", content: "[]", want: true},
+		{name: "ordinary object", content: "{\"name\":\"settings\"}", want: false},
+		{name: "ordinary array", content: "[1,2,3]", want: false},
+		{name: "ordinary URL array", content: "[{\"url\":\"https://example.com\"}]", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(dir, strings.ReplaceAll(tt.name, " ", "_")+".json")
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := isHisterJSONExport(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("isHisterJSONExport() = %t, want %t", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -351,6 +406,11 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 	}
 	if importBrowserCmd.Flags().Lookup("min-visit") == nil {
 		t.Error("import browser is missing --min-visit")
+	}
+	for _, name := range []string{"source", "skip-existing", "global", "user-id", "allow-sensitive"} {
+		if importFileCmd.Flags().Lookup(name) == nil {
+			t.Errorf("import file is missing --%s", name)
+		}
 	}
 	for _, name := range []string{"backend", "backend-option", "proxy", "header", "cookie"} {
 		for _, importCommand := range []*cobra.Command{importBrowserCmd, importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importReadeckCmd, importShaarliCmd} {

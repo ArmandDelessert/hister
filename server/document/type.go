@@ -6,6 +6,7 @@ type DocType int
 const (
 	Web DocType = iota
 	Local
+	RemoteFile
 )
 
 // String returns the human readable name of the DocType.
@@ -15,6 +16,8 @@ func (t DocType) String() string {
 		return "web"
 	case Local:
 		return "local"
+	case RemoteFile:
+		return "remote"
 	default:
 		return "unknown"
 	}

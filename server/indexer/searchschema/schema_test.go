@@ -4,7 +4,11 @@
 
 package searchschema
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/asciimoo/hister/server/document"
+)
 
 func TestDefinitionsAreInternallyConsistent(t *testing.T) {
 	seenFields := make(map[string]bool)
@@ -101,5 +105,28 @@ func TestSortFallsBackToDefault(t *testing.T) {
 
 	if _, ok := LookupSort("unknown"); ok {
 		t.Fatal("LookupSort accepted an unknown value")
+	}
+}
+
+func TestDocumentTypeValues(t *testing.T) {
+	remote, ok := Value("document_types", "remote")
+	if !ok || remote.Min == nil || remote.Max == nil || *remote.Min != float64(document.RemoteFile) || *remote.Max != float64(document.RemoteFile)+1 {
+		t.Fatalf("remote type range = %#v", remote)
+	}
+
+	remoteAlias, ok := Value("document_types", "remote_file")
+	if !ok || remoteAlias.Value != "remote" {
+		t.Fatalf("remote_file alias = %#v, %v", remoteAlias, ok)
+	}
+
+	file, ok := Value("document_types", "file")
+	if !ok || file.Min == nil || file.Max == nil || *file.Min != float64(document.Local) || *file.Max != float64(document.RemoteFile)+1 {
+		t.Fatalf("file aggregate range = %#v", file)
+	}
+
+	for _, value := range Values("document_types") {
+		if value.Value == "file" {
+			t.Fatal("aggregate file filter must not appear as an overlapping facet bucket")
+		}
 	}
 }

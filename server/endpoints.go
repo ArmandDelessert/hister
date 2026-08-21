@@ -692,8 +692,14 @@ func serveAdd(c *webContext) {
 	}
 	d := &document.Document{}
 	if strings.Contains(c.Request.Header.Get("Content-Type"), "json") {
+		maxBodyBytes := c.Config.Server.MaxBatchBodyBytes()
+		c.Request.Body = http.MaxBytesReader(c.Response, c.Request.Body, maxBodyBytes)
 		if err := json.NewDecoder(c.Request.Body).Decode(d); err != nil {
-			serve500(c)
+			if maxBytesErr, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				http.Error(c.Response, fmt.Sprintf("request body exceeds the %d MiB limit", maxBytesErr.Limit>>20), http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	} else {
@@ -706,11 +712,15 @@ func serveAdd(c *webContext) {
 		d.Title = f.Get("title")
 		d.Text = f.Get("text")
 	}
+	if err := validateAddDocument(d); err != nil {
+		http.Error(c.Response, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if !c.effectiveRules().IsSkip(d.URL) && !c.Config.IsSameHost(d.URL) {
 		d.UserID = submittedDocumentUserID(c)
 		rules := c.effectiveRules()
 		var existingDoc *document.Document
-		if rules.IsVersioning(d.URL) {
+		if d.Type != document.RemoteFile && rules.IsVersioning(d.URL) {
 			existingDoc = c.Indexer.GetByURLAndUser(d.URL, d.UserID)
 		}
 		err := c.Indexer.AddContext(c.Request.Context(), d)
@@ -740,6 +750,48 @@ func serveAdd(c *webContext) {
 		log.Debug().Str("url", d.URL).Msg("skip indexing")
 		c.Response.WriteHeader(http.StatusNotAcceptable)
 	}
+}
+
+func validateAddDocument(d *document.Document) error {
+	parsedURL, err := url.Parse(d.URL)
+	if err != nil {
+		return fmt.Errorf("invalid document URL: %w", err)
+	}
+	if d.Type != document.RemoteFile {
+		if strings.EqualFold(parsedURL.Scheme, "remote-file") {
+			return errors.New("remote-file URLs require the remote document type")
+		}
+		return nil
+	}
+	if parsedURL.Scheme != "remote-file" || parsedURL.Hostname() == "" {
+		return errors.New("remote file URL must use the remote-file scheme and include a source host")
+	}
+	if parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
+		return errors.New("remote file URL must not contain user information, a query, or a fragment")
+	}
+	if parsedURL.Path == "" || parsedURL.Path == "/" || !strings.HasPrefix(parsedURL.Path, "/") {
+		return errors.New("remote file URL must contain an absolute file path")
+	}
+	if d.Text == "" && d.HTML == "" {
+		return errors.New("remote file document must contain extracted text or HTML")
+	}
+
+	// All remote snapshot fields that depend on processing or server storage are
+	// derived again. This also prevents a submitted Processed value from
+	// bypassing URL and sensitive content checks.
+	d.DocumentID = ""
+	d.Domain = ""
+	d.HTMLKey = ""
+	d.Favicon = ""
+	d.FaviconKey = ""
+	d.Score = 0
+	d.Language = ""
+	d.UserID = 0
+	d.AddCount = 0
+	d.Processed = false
+	d.ExtraDocuments = nil
+	d.SkipIndexing = false
+	return nil
 }
 
 func serveAddPDF(c *webContext) {

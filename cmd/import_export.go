@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/asciimoo/hister/client"
-	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
 
@@ -133,35 +133,42 @@ Use one of the available subcommands to select the import source.`,
 }
 
 var importFileCmd = &cobra.Command{
-	Use:   "file INPUT_FILE_OR_DIR [INPUT_FILE_OR_DIR...]",
-	Short: "Import documents from export JSON or HTML files",
-	Long: `Import documents from one or more files previously created by the export
-command.
+	Use:   "file [INPUT_FILE_OR_DIR...]",
+	Short: "Import documents and local file snapshots",
+	Long: `Import documents from export files, saved pages, or local files.
 
 JSON files are read line by line; each line starting with '{' is parsed as a
 document and submitted to the running server without reprocessing its stored
-content.
+content. JSON files that do not have the Hister export array shape are imported
+as file snapshots.
 
-An input file may be a plain JSON file or a 7z-compressed archive (.7z)
-containing a single JSON file.
+A Hister JSON export may be read directly or from a 7z compressed archive
+(.7z) containing a single JSON file.
 
 HTML files (.html or .htm) can also be imported: the URL is extracted from
 the HTML (canonical link, OpenGraph/Twitter meta tags, etc.) and the document
-is submitted to the running server for processing. If the HTML contains no
-URL metadata, its absolute path is used as a file URL.
+is submitted to the running server for processing. HTML without URL metadata,
+PDF, DOCX, Markdown, Org mode, and valid UTF 8 files are extracted locally and
+submitted through the normal add endpoint as remote file snapshots.
 
 Multiple files may be given; they are imported in order and the result is
 reported as a combined total.
 
-Directories may be given too; matching .json, .7z, .html, and .htm files
-directly inside the directory are imported in filename order.
+Directories may be given too and are imported recursively. With no input,
+files matched by the configured watched directories are imported using their
+file type, pattern, exclusion, hidden path, and label rules.
 
 Use --start-date and --end-date (format: YYYY-MM-DD) to only import
 documents whose "added" timestamp falls within the given date range.`,
-	Args: cobra.MinimumNArgs(1),
+	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		skip, _ := cmd.Flags().GetBool("skip-existing")
 		global, _ := cmd.Flags().GetBool("global")
+		source, _ := cmd.Flags().GetString("source")
+		normalizedSource, err := normalizeRemoteFileSource(source)
+		if err != nil {
+			exit(1, err.Error())
+		}
 		batchSize, _ := cmd.Flags().GetInt("batch-size")
 		labelOverride := newDocumentLabelOverride(cmd)
 		if batchSize < 1 || batchSize > maxImportBatchSize {
@@ -174,22 +181,42 @@ documents whose "added" timestamp falls within the given date range.`,
 		}
 
 		clientOpts := append([]client.Option{client.WithTimeout(0)}, targetUserIDClientOptions(cmd, global)...)
+		if allowSensitive, _ := cmd.Flags().GetBool("allow-sensitive"); allowSensitive {
+			clientOpts = append(clientOpts, client.WithAllowSensitive())
+		}
 		c := newClient(clientOpts...)
 		imported := 0
 		skipped := 0
 		errCount := 0
 
-		inputFiles, err := expandImportInputs(args)
+		inputFiles, err := expandImportInputs(args, cfg.Indexer.Directories)
 		if err != nil {
 			exit(1, err.Error())
 		}
 
-		for _, inputFile := range inputFiles {
+		maxFileSize := cfg.Indexer.MaxFileSize << 20
+		if maxFileSize <= 0 {
+			maxFileSize = 1 << 20
+		}
+		for _, input := range inputFiles {
 			var i, s, e int
-			if ext := strings.ToLower(filepath.Ext(inputFile)); ext == ".html" || ext == ".htm" {
-				i, s, e = importHTMLFile(c, inputFile, skip, labelOverride)
-			} else {
-				i, s, e = importJSONFile(c, inputFile, skip, dateRange.From, dateRange.To, batchSize, labelOverride)
+			switch ext := strings.ToLower(filepath.Ext(input.Path)); ext {
+			case ".7z":
+				i, s, e = importJSONFile(c, input.Path, skip, dateRange.From, dateRange.To, batchSize, labelOverride)
+			case ".json":
+				isExport, detectErr := isHisterJSONExport(input.Path)
+				if detectErr != nil {
+					log.Warn().Err(detectErr).Str("file", input.Path).Msg("Failed to inspect JSON file")
+					e = 1
+				} else if isExport {
+					i, s, e = importJSONFile(c, input.Path, skip, dateRange.From, dateRange.To, batchSize, labelOverride)
+				} else {
+					i, s, e = importRemoteFilePath(c, input, normalizedSource, maxFileSize, skip, labelOverride)
+				}
+			case ".html", ".htm":
+				i, s, e = importHTMLFile(c, input, normalizedSource, maxFileSize, skip, labelOverride)
+			default:
+				i, s, e = importRemoteFilePath(c, input, normalizedSource, maxFileSize, skip, labelOverride)
 			}
 			imported += i
 			skipped += s
@@ -243,6 +270,8 @@ func addDocumentImportFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("skip-existing", false, "Do not overwrite documents that are already in the index")
 	cmd.Flags().Bool("global", false, "Make imported documents available for all users (only for admins in multiuser mode)")
 	cmd.Flags().Uint("user-id", 0, "Import documents under the given user ID (only for admins in multiuser mode)")
+	cmd.Flags().String("source", defaultRemoteFileSource(), "Stable source name used in remote file document URLs")
+	cmd.Flags().Bool("allow-sensitive", false, "Skip sensitive content checks, allowing matching documents to be indexed")
 }
 
 func printImportSummary(imported, skipped, errCount int) {
@@ -256,44 +285,40 @@ func printImportSummary(imported, skipped, errCount int) {
 	fmt.Println(msg)
 }
 
-func isSupportedImportInput(inputFile string) bool {
-	switch strings.ToLower(filepath.Ext(inputFile)) {
-	case ".json", ".7z", ".html", ".htm":
-		return true
-	default:
-		return false
+func isHisterJSONExport(inputFile string) (bool, error) {
+	f, err := os.Open(inputFile)
+	if err != nil {
+		return false, err
 	}
-}
+	defer func() { _ = f.Close() }()
 
-func expandImportInputs(args []string) ([]string, error) {
-	inputFiles := make([]string, 0, len(args))
-	for _, input := range args {
-		info, err := os.Stat(input)
-		if err != nil {
-			inputFiles = append(inputFiles, input)
-			continue
-		}
-		if !info.IsDir() {
-			inputFiles = append(inputFiles, input)
-			continue
-		}
-
-		entries, err := os.ReadDir(input)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read input directory %s: %w", input, err)
-		}
-		for _, entry := range entries {
-			if entry.IsDir() || !isSupportedImportInput(entry.Name()) {
-				continue
-			}
-			inputFiles = append(inputFiles, filepath.Join(input, entry.Name()))
-		}
+	decoder := json.NewDecoder(f)
+	token, err := decoder.Token()
+	if err != nil {
+		return false, nil
 	}
-	return inputFiles, nil
+	delim, ok := token.(json.Delim)
+	if !ok || delim != '[' {
+		return false, nil
+	}
+	if !decoder.More() {
+		return true, nil
+	}
+	var first map[string]json.RawMessage
+	if err := decoder.Decode(&first); err != nil {
+		return false, nil
+	}
+	var documentURL string
+	if err := json.Unmarshal(first["url"], &documentURL); err != nil || documentURL == "" {
+		return false, nil
+	}
+	_, hasType := first["type"]
+	_, hasProcessed := first["processed"]
+	return hasType && hasProcessed, nil
 }
 
 // importJSONFile imports documents from a JSON export file (optionally a
-// 7z-compressed archive) and submits them to the running server. It returns
+// 7z compressed archive) and submits them to the running server. It returns
 // the number of documents imported, skipped and failed.
 func importJSONFile(
 	c *client.Client,
@@ -438,25 +463,29 @@ func addDocumentBatch(c *client.Client, docs []*document.Document) (imported, er
 // imported, skipped and failed.
 func importHTMLFile(
 	c *client.Client,
-	inputFile string,
+	input importFileInput,
+	source string,
+	maxFileSize int64,
 	skip bool,
 	labelOverride documentLabelOverride,
 ) (imported, skipped, errCount int) {
-	data, err := os.ReadFile(inputFile)
+	data, err := os.ReadFile(input.Path)
 	if err != nil {
-		log.Warn().Err(err).Str("file", inputFile).Msg("Failed to read HTML file, skipping")
+		log.Warn().Err(err).Str("file", input.Path).Msg("Failed to read HTML file, skipping")
 		return 0, 0, 1
 	}
 
-	fallbackURL, err := htmlFileURL(inputFile)
-	if err != nil {
-		log.Warn().Err(err).Str("file", inputFile).Msg("Failed to create HTML file URL, skipping")
-		return 0, 0, 1
+	d, err := document.FromHTML(string(data))
+	if errors.Is(err, document.ErrNoURL) {
+		info, statErr := os.Stat(input.Path)
+		if statErr != nil {
+			log.Warn().Err(statErr).Str("file", input.Path).Msg("Failed to inspect HTML file")
+			return 0, 0, 1
+		}
+		return importRemoteFile(c, input, data, info, source, maxFileSize, skip, labelOverride)
 	}
-
-	d, err := document.FromHTMLWithFallbackURL(string(data), fallbackURL)
 	if err != nil {
-		log.Warn().Err(err).Str("file", inputFile).Msg("Failed to import HTML file, skipping")
+		log.Warn().Err(err).Str("file", input.Path).Msg("Failed to import HTML file, skipping")
 		return 0, 0, 1
 	}
 
@@ -475,14 +504,4 @@ func importHTMLFile(
 	labelOverride.apply(d, "import")
 	imported, errCount = addDocumentBatch(c, []*document.Document{d})
 	return imported, 0, errCount
-}
-
-// htmlFileURL creates an absolute file URL for saved HTML that has no
-// original URL.
-func htmlFileURL(inputFile string) (string, error) {
-	absolutePath, err := filepath.Abs(inputFile)
-	if err != nil {
-		return "", err
-	}
-	return files.PathToFileURL(absolutePath), nil
 }

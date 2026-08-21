@@ -18,6 +18,8 @@ Hister keeps current searchable documents until you replace or delete them. It d
 | A versioning rule matches a changed page              | Hister also stores a difference record in the SQL database                                                      |
 | A watched file changes                                | Hister updates its searchable document                                                                          |
 | A watched file is removed                             | Hister keeps the document unless `delete_on_remove: true` is configured                                         |
+| A remote file snapshot is imported again              | Hister replaces the document with the same source and absolute path                                             |
+| The source of a remote file snapshot changes or moves | No change occurs until the client imports it again                                                              |
 | A source bookmark or browser history entry is removed | No change occurs in Hister                                                                                      |
 | A document is deleted in Hister                       | The current index record and associated current assets are removed                                              |
 | `hister cleanup` is run                               | Local documents that no longer match configured directories and unreferenced HTML and favicon files are removed |
@@ -42,7 +44,7 @@ When `server.database` is a PostgreSQL connection string, SQL data is stored in 
 
 Browser session records contain session state and a hash of the random identifier sent to the browser. They never contain the configured application access token or the raw session identifier. Sessions expire thirty days after the most recent valid request or immediately after logout. Each valid request refreshes both the database expiry and browser cookie expiry. Expired records are removed during session activity.
 
-Configuration files can live outside `app.directory`. Source files in watched directories are not copied into the SQL database, but their extracted content is placed in the search index.
+Configuration files can live outside `app.directory`. Source files in watched directories are not copied into the SQL database, but their extracted content is placed in the search index. Remote file imports extract content in the command line process and send only prepared document fields to the server. The original bytes remain on the client.
 
 ## Storage Limits
 
@@ -50,8 +52,8 @@ Hister does not enforce a total storage limit. Available disk space and the sele
 
 Two settings are easy to mistake for quotas:
 
-- `indexer.max_file_size_mb` limits an individual watched local file. Its default is 1 MiB. It does not limit browser pages, imported documents, or total index size.
-- `server.max_batch_body_size` limits one batch API request. Its default is 40 MiB. A document submitted in a batch must fit within that request. The setting is not a total storage quota and does not apply to other submission routes.
+- `indexer.max_file_size_mb` limits an individual watched file or remote file snapshot source. Its default is 1 MiB. It does not limit browser pages, serialized document imports, or total index size.
+- `server.max_batch_body_size` limits one batch request or JSON add request. Its default is 40 MiB. The setting is not a total storage quota.
 
 Full HTML previews, large document text, version differences, and semantic vectors all increase storage use. Browser history size alone is not a reliable estimate because page content varies greatly.
 

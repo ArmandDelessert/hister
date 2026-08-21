@@ -252,8 +252,13 @@
         <h2
           class="font-outfit text-text-brand line-clamp-2 min-w-0 flex-1 text-lg leading-snug font-bold md:text-3xl"
         >
-          <a href={url} target="_blank" rel="noopener noreferrer" class="hover:underline">{title}</a
-          >
+          {#if url.startsWith('remote-file://')}
+            {title}
+          {:else}
+            <a href={url} target="_blank" rel="noopener noreferrer" class="hover:underline"
+              >{title}</a
+            >
+          {/if}
         </h2>
         <div class="mt-1 flex shrink-0 items-center gap-1">
           <DropdownMenu.Root

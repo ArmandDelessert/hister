@@ -318,8 +318,7 @@ func (q *fileImportQueue) run(ctx context.Context, process func(context.Context,
 }
 
 func retryableFileImportError(err error) bool {
-	var httpErr *client.HTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*client.HTTPError](err); ok {
 		return httpErr.StatusCode == http.StatusRequestTimeout || httpErr.StatusCode == http.StatusTooManyRequests || httpErr.StatusCode >= 500
 	}
 	var netErr net.Error

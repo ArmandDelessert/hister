@@ -192,6 +192,7 @@ func GetLatestHistoryItemsFilteredByDate(userID uint, limit int, lastID uint, la
 		q = q.Where("history_links.updated_at < ?", time.Unix(dateTo, 0).UTC())
 	}
 	if !lastUpdatedAt.IsZero() {
+		lastUpdatedAt = lastUpdatedAt.UTC()
 		q = q.Where(
 			"(history_links.updated_at < ? OR (history_links.updated_at = ? AND history_links.id < ?))",
 			lastUpdatedAt,

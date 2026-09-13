@@ -619,12 +619,20 @@ func doSearch(idx *indexer.Indexer, query *indexer.Query, rules *config.Rules, u
 					if h.Text == "" {
 						h.Text = d.Text
 					}
-					h.DocID = d.DocumentID
+					populatePriorityResultDetails(h, d)
 					continue
 				}
 				filtered = append(filtered, d)
 			}
 			res.Documents = filtered
+			for _, h := range hr {
+				if h.DocID != "" {
+					continue
+				}
+				if d := idx.GetByURLAndUser(h.URL, userID); d != nil {
+					populatePriorityResultDetails(h, d)
+				}
+			}
 		}
 		if oq != "" {
 			res.QuerySuggestion = model.GetQuerySuggestion(userID, oq)
@@ -632,6 +640,14 @@ func doSearch(idx *indexer.Indexer, query *indexer.Query, rules *config.Rules, u
 	}
 	res.SearchDuration = formatSearchDuration(time.Since(start))
 	return res, nil
+}
+
+func populatePriorityResultDetails(h *model.URLCount, d *document.Document) {
+	h.DocID = d.DocumentID
+	h.Domain = d.Domain
+	h.Added = d.Added
+	h.Updated = d.Updated
+	h.AddCount = d.AddCount
 }
 
 func searchIndex(idx *indexer.Indexer, query *indexer.Query, rules *config.Rules, userID uint) (*indexer.Results, error) {

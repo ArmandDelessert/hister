@@ -196,6 +196,11 @@
   let sentinelEl = $state<HTMLElement | undefined>();
   let highlightIdx = $state(0);
   const currentSort = $derived(sortValueFromQuery(query, config.search.sort));
+  const currentSortLabel = $derived(
+    config.search.sort.options.find((option) =>
+      currentSort ? option.value === currentSort : option.default,
+    )?.label ?? 'Relevance',
+  );
   let dateFrom = $state('');
   let dateTo = $state('');
   let showPopup = $state(false);
@@ -2362,13 +2367,7 @@
                             : 'text-text-brand-muted hover:text-hister-indigo'}"
                         >
                           <ArrowUpDown class="size-3" />
-                          Sort
-                          {#if currentSort}
-                            <span
-                              class="bg-hister-indigo text-background flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold"
-                              >1</span
-                            >
-                          {/if}
+                          Sort: {currentSortLabel}
                           <ChevronDown
                             class="size-3 transition-transform duration-200 {sortDropdownOpen
                               ? 'rotate-180'
@@ -2438,6 +2437,7 @@
                       ? 'hister-amber'
                       : 'hister-cyan'}
                   {@const state = getResultState(r.url, r.label)}
+                  {@const resultDate = r.updated || r.added}
                   <article
                     data-result
                     class="result-card flex w-full scroll-my-[6em] gap-3 transition-all duration-150"
@@ -2487,7 +2487,7 @@
                         />
                       </div>
                       <div
-                        class="result-meta flex max-w-full min-w-0 items-center gap-x-3 gap-y-1 overflow-hidden"
+                        class="result-meta flex max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
                       >
                         <div
                           class="result-url-line flex max-w-full min-w-0 shrink items-center gap-1.5"
@@ -2512,7 +2512,7 @@
                           </span>
                         </div>
                         <div
-                          class="result-secondary-meta flex shrink-0 items-center gap-x-3 gap-y-1"
+                          class="result-secondary-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
                         >
                           <button
                             class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
@@ -2531,6 +2531,16 @@
                               <Copy class="size-3" />
                             {/if}
                           </button>
+                          {#if resultDate}
+                            <time
+                              class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
+                              datetime={new Date(resultDate * 1000).toISOString()}
+                              title={formatTimestamp(resultDate)}
+                            >
+                              {r.updated ? 'Updated' : 'Added'}
+                              {formatRelativeTime(resultDate)}
+                            </time>
+                          {/if}
                           {#if r.isPinned}
                             <Badge
                               variant="secondary"
@@ -2544,17 +2554,11 @@
                               title="Prioritized because you opened it for this query. Use the result menu to forget it for this query."
                               >prioritized</Badge
                             >
-                          {:else if r.updated}
-                            <span
-                              class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
-                              title={formatTimestamp(r.updated)}
-                              >{formatRelativeTime(r.updated)}</span
-                            >
                           {/if}
                           {#if state.displayLabel}
                             <Badge
                               variant="secondary"
-                              class="result-label bg-hister-teal/20 min-h-4 shrink-0 border-0 px-1.5 py-0"
+                              class="result-label bg-hister-teal/20 min-h-4 max-w-full border-0 px-1.5 py-0"
                               title={state.displayLabel}
                             >
                               <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
@@ -2573,7 +2577,7 @@
                                 openReadable(e, r.url, r.title || '*title*', r.id || '');
                               }}
                             >
-                              <Eye class="size-3" /><span>view</span>
+                              <Eye class="size-3" /><span>Preview</span>
                             </Button>
                           {/if}
                           {#if !r.isPinned && r.finalScore && config.semanticEnabled && semanticOn}

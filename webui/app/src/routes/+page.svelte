@@ -543,6 +543,9 @@
   const docsLen = $derived(mergedResults.length);
   const totalResults = $derived(historyLen + docsLen);
   const hasResults = $derived(totalResults > 0);
+  const showPreviewPanel = $derived(
+    hasResults && !disablePreviews && (previewFullscreen || (panelOpen && isDesktop)),
+  );
   const displayResults = $derived<DisplayResult[]>([
     ...(lastResults?.history ?? []).map((r): DisplayResult => ({
       ...r,
@@ -1634,6 +1637,10 @@
     localStorage.setItem('hister-semantic-weight', String(semanticWeight));
   });
 
+  $effect(() => {
+    if (lastResults && !hasResults && previewFullscreen) exitFullscreen();
+  });
+
   // Auto-load the readability panel for the focused result on desktop.
   // Tracks mergedResults (not just lastResults) so that reordering caused by
   // the semantic weight slider also refreshes the panel.
@@ -2094,11 +2101,11 @@
     {@render connectionNotice('mx-3 my-3 md:mx-6')}
 
     <div class="flex min-h-0 flex-1 overflow-hidden" bind:this={splitContainerEl}>
-      {#if !previewFullscreen}
+      {#if !previewFullscreen || !showPreviewPanel}
         <ScrollArea class="results-scroll min-h-0 min-w-0 flex-1 overflow-hidden">
           <div
             class="results-list w-full max-w-[70em] space-y-3 overflow-x-hidden px-3 py-2 md:px-6"
-            class:results-list-panel={lastResults && panelOpen && isDesktop && !disablePreviews}
+            class:results-list-panel={showPreviewPanel}
           >
             {#if deleteError}
               <div
@@ -2774,7 +2781,7 @@
       {/if}
 
       <!-- Preview panel: fullscreen (both mobile and desktop) or split-pane (desktop only) -->
-      {#if !disablePreviews}
+      {#if showPreviewPanel}
         {#if previewFullscreen}
           <PreviewPanel
             url={panelUrl}
@@ -2791,7 +2798,7 @@
               );
             }}
           />
-        {:else if lastResults && panelOpen && isDesktop}
+        {:else}
           <!-- Drag handle to resize the split-screen panel -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div

@@ -35,6 +35,7 @@
     SearchResult,
     SearchQueryOptions,
     FacetsResult,
+    WebSocketRequest,
   } from '$lib/search';
   import { RESULTS_PER_PAGE } from '$lib/search';
   import {
@@ -73,6 +74,7 @@
   import {
     PreviewPanel,
     QuerySuggestions,
+    SearchLoading,
     ResultActionsMenu,
     ResultFavicon,
   } from '$lib/components';
@@ -191,6 +193,10 @@
   let connected = $state(false);
   let unloading = false;
   let lastResults = $state<SearchResults | null>(null);
+  let searchInProgress = $state(false);
+  let completedSearchMessage = $state('');
+  let latestSearchRequest = 0;
+  let latestPageRequest = 0;
   let accumulatedDocs = $state<SearchResult[]>([]);
   let pageKey = $state('');
   let hasMore = $state(false);
@@ -241,6 +247,11 @@
   let semanticWeight = $state(
     parseFloat(localStorage.getItem('hister-semantic-weight') ?? 'NaN') || 0.4,
   );
+  const currentSearchMessage = $derived(JSON.stringify(buildSearchQuery(query, searchQueryOpts())));
+  const searchPending = $derived(
+    !!query && (searchInProgress || currentSearchMessage !== completedSearchMessage),
+  );
+  const isSearchLoading = $derived(searchPending && connectionState !== 'disconnected');
 
   let showDeleteConfirm = $state(false);
   let deleteConfirmUrl = $state('');
@@ -542,7 +553,7 @@
   const historyLen = $derived((lastResults?.history as any)?.length || 0);
   const docsLen = $derived(mergedResults.length);
   const totalResults = $derived(historyLen + docsLen);
-  const hasResults = $derived(totalResults > 0);
+  const hasResults = $derived(!searchPending && totalResults > 0);
   const showPreviewPanel = $derived(
     hasResults && !disablePreviews && (previewFullscreen || (panelOpen && isDesktop)),
   );
@@ -804,16 +815,21 @@
   }
 
   function sendQuery(q: string) {
+    searchInProgress = true;
+    latestPageRequest = 0;
     loadingMoreForQuery = '';
     pageKey = '';
     hasMore = false;
-    wsManager?.send(JSON.stringify(buildSearchQuery(q, searchQueryOpts())));
+    latestSearchRequest =
+      wsManager?.send(JSON.stringify(buildSearchQuery(q, searchQueryOpts()))) ?? 0;
   }
 
   function loadMoreResults() {
-    if (!pageKey || !hasMore || loadingMoreForQuery) return;
+    if (searchPending || !pageKey || !hasMore || loadingMoreForQuery) return;
     loadingMoreForQuery = query;
-    wsManager?.sendImmediate(JSON.stringify(buildSearchQuery(query, searchQueryOpts(pageKey))));
+    latestPageRequest =
+      wsManager?.sendImmediate(JSON.stringify(buildSearchQuery(query, searchQueryOpts(pageKey)))) ??
+      0;
   }
 
   const skipUrl = { value: false };
@@ -898,14 +914,23 @@
     });
   }
 
-  function renderResults(event: MessageEvent) {
+  function renderResults(event: MessageEvent, request: WebSocketRequest) {
+    if (!query) return;
+    const isLoadMore =
+      request.id === latestPageRequest && !searchPending && loadingMoreForQuery === query;
+    if (
+      !isLoadMore &&
+      (request.id !== latestSearchRequest || request.message !== currentSearchMessage)
+    )
+      return;
     const res = parseSearchResults(event.data);
-    const isLoadMore = loadingMoreForQuery !== '' && loadingMoreForQuery === query;
     loadingMoreForQuery = '';
     if (isLoadMore) {
       accumulatedDocs = [...accumulatedDocs, ...(res.documents ?? [])];
       lastResults = { ...lastResults!, ...res, documents: accumulatedDocs };
     } else {
+      searchInProgress = false;
+      completedSearchMessage = request.message;
       accumulatedDocs = res.documents ?? [];
       lastResults = res;
       autocomplete = (query && res.query_suggestion) || '';
@@ -1138,7 +1163,7 @@
   }
 
   function selectNthResult(n: number) {
-    if (!totalResults) return;
+    if (!hasResults) return;
     highlightIdx = (highlightIdx + n + totalResults) % totalResults;
     const results = document.querySelectorAll('[data-result]');
     scrollTo(results[highlightIdx]);
@@ -1159,6 +1184,7 @@
       openURL(getSearchUrl(config.searchUrl, query.substring(2)), newWindow);
       return;
     }
+    if (searchPending) return;
     const res = document.querySelectorAll<HTMLAnchorElement>('[data-result] [data-result-link]')[
       highlightIdx
     ];
@@ -1170,6 +1196,7 @@
 
   function viewResultPopup(e?: KeyboardEvent) {
     if (e) e.preventDefault();
+    if (searchPending) return;
     if (isDesktop) {
       if (previewFullscreen) {
         // Fullscreen → back to split-screen
@@ -1616,6 +1643,10 @@
   });
   $effect(() => {
     if (!query) {
+      searchInProgress = false;
+      completedSearchMessage = '';
+      latestSearchRequest = 0;
+      latestPageRequest = 0;
       autocomplete = '';
       lastResults = null;
       accumulatedDocs = [];
@@ -1638,7 +1669,7 @@
   });
 
   $effect(() => {
-    if (lastResults && !hasResults && previewFullscreen) exitFullscreen();
+    if (lastResults && !searchPending && !hasResults && previewFullscreen) exitFullscreen();
   });
 
   // Auto-load the readability panel for the focused result on desktop.
@@ -1646,6 +1677,7 @@
   // the semantic weight slider also refreshes the panel.
   // Uses data instead of DOM queries so it works when results are hidden (fullscreen mode).
   $effect(() => {
+    if (searchPending) return;
     const idx = highlightIdx;
     const result = displayResults[idx]; // reactive: covers both pinned and regular results
     const isFullscreen = previewFullscreen;
@@ -1901,7 +1933,7 @@
       <div class="min-w-0 flex-1">
         <p class="font-outfit text-hister-rose font-bold">Cannot connect to Hister</p>
         <p class="font-inter text-text-brand-secondary text-sm">
-          {lastResults
+          {hasResults
             ? 'Showing the last loaded results while automatic reconnection continues.'
             : 'Search is unavailable while automatic reconnection continues.'}
         </p>
@@ -2106,6 +2138,7 @@
           <div
             class="results-list w-full max-w-[70em] space-y-3 overflow-x-hidden px-3 py-2 md:px-6"
             class:results-list-panel={showPreviewPanel}
+            aria-busy={isSearchLoading}
           >
             {#if deleteError}
               <div
@@ -2123,7 +2156,9 @@
               class="results-toolbar flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 py-2"
             >
               <span class="font-outfit text-text-brand text-sm font-bold md:text-base">
-                {#if lastResults}
+                {#if isSearchLoading}
+                  Searching…
+                {:else if !searchPending && lastResults}
                   {lastResults?.total && lastResults.total > totalResults
                     ? lastResults.total
                     : totalResults} results{#if lastResults?.search_duration}{' '}<span
@@ -2132,7 +2167,7 @@
                       ({lastResults.search_duration})</span
                     >{/if}
                 {:else}
-                  Searching…
+                  Search unavailable
                 {/if}
               </span>
               <div class="flex min-w-0 flex-wrap items-center justify-end gap-2 overflow-hidden">
@@ -2539,7 +2574,9 @@
               </div>
             </div>
 
-            {#if hasResults}
+            {#if isSearchLoading}
+              <SearchLoading />
+            {:else if hasResults}
               {#if lastResults?.query && lastResults.query.text.length > query.length}
                 <p class="font-inter text-text-brand-muted text-sm">
                   Expanded query: <code
@@ -2731,7 +2768,7 @@
                   </article>
                 {/each}
               {/if}
-            {:else if query && lastResults}
+            {:else if !searchPending && query && lastResults}
               <section class="px-4 py-12 text-center md:px-12">
                 <p class="font-inter text-text-brand-secondary mb-4">
                   No results found for "<span class="font-semibold">{query}</span>"
@@ -2764,12 +2801,8 @@
                   </Button>
                 </div>
               </section>
-            {:else if query && connectionState !== 'disconnected'}
-              <div class="flex items-center justify-center py-16">
-                <span class="font-inter text-text-brand-muted">Searching...</span>
-              </div>
             {/if}
-            {#if hasMore || loadingMoreForQuery}
+            {#if !searchPending && (hasMore || loadingMoreForQuery)}
               <div bind:this={sentinelEl} class="flex items-center justify-center py-4">
                 <span class="font-inter text-text-brand-muted text-sm">Loading more…</span>
               </div>

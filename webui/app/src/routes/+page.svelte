@@ -44,7 +44,9 @@
     shiftISODate,
     timeFilters,
   } from '$lib/time-filters';
-  import { emptySearchCapabilities, queryFilterValues, valuesForFacet } from '$lib/search-schema';
+  import { emptySearchCapabilities, valuesForFacet } from '$lib/search-schema';
+  import { queryFilters, removeQueryFilters, toggleQueryFilter } from '$lib/query-filters';
+  import type { QueryFilter } from '$lib/query-filters';
   import type { SearchCapabilities, SearchFacetDefinition } from '$lib/search-schema';
   import {
     removeSortDirectives,
@@ -631,9 +633,41 @@
     facetSizes = new Map();
   });
 
+  const filterFields = $derived([
+    ...new Set([
+      ...config.search.facets.map((facet) => facet.queryField),
+      ...config.search.fields.filter((field) => field.kind === 'time').map((field) => field.name),
+    ]),
+  ]);
+  const activeQueryFilters = $derived(queryFilters(query, filterFields));
+  const activeFilterChips = $derived(
+    activeQueryFilters.map((filter) => {
+      const facet = config.search.facets.find((facet) => facet.queryField === filter.field);
+      const field = config.search.fields.find((field) => field.name === filter.field);
+      const values = facet
+        ? valuesForFacet(config.search, facet)
+        : (config.search.valueSets[field?.valueSet ?? ''] ?? []);
+      const valueLabel =
+        values.find((value) => value.value === filter.value)?.label ??
+        currentFacets?.terms?.[facet?.name ?? '']?.terms?.find((term) => term.term === filter.value)
+          ?.label ??
+        filter.value;
+      return {
+        filter,
+        label: `${field?.label ?? facet?.label ?? filter.field}: ${filter.negated ? 'Not ' : ''}${valueLabel}`,
+      };
+    }),
+  );
   const activeFacetFilters = $derived(
     new Map(
-      termFacetDefinitions.map((facet) => [facet.name, queryFilterValues(query, facet.queryField)]),
+      termFacetDefinitions.map((facet) => [
+        facet.name,
+        new Set(
+          activeQueryFilters
+            .filter((filter) => filter.field === facet.queryField && !filter.negated)
+            .map((filter) => filter.value),
+        ),
+      ]),
     ),
   );
   const activeTimeFilters = $derived(timeFilters(query, dateFacetDefinition?.queryField ?? ''));
@@ -646,10 +680,33 @@
         )?.facetBucket ?? null)
       : null,
   );
-  const activeFilterCount = $derived(
-    [...activeFacetFilters.values()].reduce((total, filters) => total + filters.size, 0) +
-      (activeTimeFilters.length > 0 ? 1 : 0),
-  );
+  const activeFilterCount = $derived(activeQueryFilters.length);
+
+  function removeFilters(filters: QueryFilter[]) {
+    query = removeQueryFilters(query, filters) || '*';
+    querySuggestionOpen = false;
+  }
+
+  function clearFilters() {
+    removeFilters(activeQueryFilters);
+  }
+
+  function facetTerms(facet: SearchFacetDefinition) {
+    const terms = new Map(
+      (currentFacets?.terms?.[facet.name]?.terms ?? []).map((term) => [term.term, term]),
+    );
+    for (const value of activeFiltersForFacet(facet.name)) {
+      if (!terms.has(value)) {
+        terms.set(value, {
+          term: value,
+          count: 0,
+          label: valuesForFacet(config.search, facet).find((option) => option.value === value)
+            ?.label,
+        });
+      }
+    }
+    return [...terms.values()];
+  }
 
   function showFacetCategory(facet: SearchFacetDefinition) {
     return (
@@ -661,15 +718,11 @@
     return activeFacetFilters.get(name) ?? new Set<string>();
   }
   const visibleTermFacets = $derived(termFacetDefinitions.filter(showFacetCategory));
-  const showFiltersButton = $derived(hasResults || activeFilterCount > 0);
+  const showFiltersButton = $derived(config.search.facets.length > 0 || activeFilterCount > 0);
 
   function toggleQueryToken(prefix: string, value: string) {
-    const token = `${prefix}:${value}`;
-    if (query.includes(token)) {
-      query = query.replace(token, '').replace(/\s+/g, ' ').trim();
-    } else {
-      query = query.trim() ? `${query.trim()} ${token}` : token;
-    }
+    query = toggleQueryFilter(query, prefix, value);
+    querySuggestionOpen = false;
   }
 
   function toggleDateBucket(name: string) {
@@ -1313,7 +1366,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (isIMEKeyboardEvent(e)) return;
+    if (e.defaultPrevented || isIMEKeyboardEvent(e)) return;
     if (showDeleteConfirm) {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -2002,6 +2055,41 @@
         onactivechange={setActiveQuerySuggestion}
         onselect={selectQuerySuggestion}
       />
+      {#if activeFilterCount > 0}
+        <div
+          class="border-border-brand-muted flex flex-wrap items-center gap-2 border-b px-3 py-2 md:px-6"
+          role="group"
+          aria-label="Active filters"
+        >
+          {#each activeFilterChips as chip (chip.filter.start)}
+            <Button
+              variant="outline"
+              size="sm"
+              class="border-hister-indigo/40 bg-hister-indigo/5 text-hister-indigo font-inter h-auto min-h-7 max-w-full gap-1 border-2 px-2 py-1 text-xs"
+              aria-label={`Remove ${chip.label} filter`}
+              title={`Remove ${chip.label} filter`}
+              onclick={() => removeFilters([chip.filter])}
+              onkeydown={(event) => {
+                if (event.key !== 'Escape') event.stopPropagation();
+              }}
+            >
+              <span class="min-w-0 truncate">{chip.label}</span>
+              <X class="size-3 shrink-0" />
+            </Button>
+          {/each}
+          <Button
+            variant="ghost"
+            size="sm"
+            class="font-inter text-text-brand-muted hover:text-text-brand h-7 px-2 text-xs"
+            onclick={clearFilters}
+            onkeydown={(event) => {
+              if (event.key !== 'Escape') event.stopPropagation();
+            }}
+          >
+            Clear filters
+          </Button>
+        </div>
+      {/if}
     </div>
     {@render connectionNotice('mx-3 my-3 md:mx-6')}
 
@@ -2024,11 +2112,11 @@
                 >
               </div>
             {/if}
-            {#if hasResults}
-              <div
-                class="results-toolbar flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 py-2"
-              >
-                <span class="font-outfit text-text-brand text-sm font-bold md:text-base">
+            <div
+              class="results-toolbar flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 py-2"
+            >
+              <span class="font-outfit text-text-brand text-sm font-bold md:text-base">
+                {#if lastResults}
                   {lastResults?.total && lastResults.total > totalResults
                     ? lastResults.total
                     : totalResults} results{#if lastResults?.search_duration}{' '}<span
@@ -2036,193 +2124,196 @@
                     >
                       ({lastResults.search_duration})</span
                     >{/if}
-                </span>
-                <div class="flex min-w-0 flex-wrap items-center justify-end gap-2 overflow-hidden">
-                  {#if isDesktop && !panelOpen && !disablePreviews}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="font-inter text-text-brand-muted hover:text-hister-indigo gap-1 text-xs"
-                      onclick={() => {
-                        panelOpen = true;
-                        localStorage.setItem('hister-panel-open', 'true');
-                      }}
+                {:else}
+                  Searching…
+                {/if}
+              </span>
+              <div class="flex min-w-0 flex-wrap items-center justify-end gap-2 overflow-hidden">
+                {#if hasResults && isDesktop && !panelOpen && !disablePreviews}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="font-inter text-text-brand-muted hover:text-hister-indigo gap-1 text-xs"
+                    onclick={() => {
+                      panelOpen = true;
+                      localStorage.setItem('hister-panel-open', 'true');
+                    }}
+                  >
+                    <Eye class="size-3" />
+                    Preview
+                  </Button>
+                {/if}
+                {#if showFiltersButton}
+                  <DropdownMenu.Root bind:open={filtersDropdownOpen}>
+                    <DropdownMenu.Trigger>
+                      {#snippet child({ props })}
+                        <Button
+                          {...props}
+                          variant="ghost"
+                          size="sm"
+                          class="font-inter gap-1 text-xs {filtersDropdownOpen
+                            ? 'text-hister-indigo'
+                            : 'text-text-brand-muted hover:text-hister-indigo'}"
+                        >
+                          <Filter class="size-3" />
+                          Filters
+                          {#if activeFilterCount > 0}
+                            <span
+                              class="bg-hister-indigo text-background flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold"
+                              >{activeFilterCount}</span
+                            >
+                          {/if}
+                          <ChevronDown
+                            class="size-3 transition-transform duration-200 {filtersDropdownOpen
+                              ? 'rotate-180'
+                              : ''}"
+                          />
+                        </Button>
+                      {/snippet}
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Content
+                      class="border-brutal-border bg-card-surface w-80 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
                     >
-                      <Eye class="size-3" />
-                      Preview
-                    </Button>
-                  {/if}
-                  {#if showFiltersButton}
-                    <DropdownMenu.Root bind:open={filtersDropdownOpen}>
-                      <DropdownMenu.Trigger>
-                        {#snippet child({ props })}
-                          <Button
-                            {...props}
-                            variant="ghost"
-                            size="sm"
-                            class="font-inter gap-1 text-xs {filtersDropdownOpen
-                              ? 'text-hister-indigo'
-                              : 'text-text-brand-muted hover:text-hister-indigo'}"
-                          >
-                            <Filter class="size-3" />
-                            Filters
-                            {#if activeFilterCount > 0}
-                              <span
-                                class="bg-hister-indigo text-background flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold"
-                                >{activeFilterCount}</span
+                      <div class="space-y-3">
+                        {#snippet facetSection(
+                          facet: SearchFacetDefinition,
+                          activeFilters: Set<string>,
+                          showSeparator: boolean,
+                        )}
+                          {@const Icon = facetIcons[facet.icon ?? ''] ?? Filter}
+                          {#if showSeparator}
+                            <Separator class="bg-border-brand-muted" />
+                          {/if}
+                          <div class="space-y-1.5">
+                            <p
+                              class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                            >
+                              <Icon class="size-3" />
+                              {facet.label}
+                            </p>
+                            <div class="flex flex-wrap gap-1">
+                              {#each facetTerms(facet) as { term, count, label } (term)}
+                                <button
+                                  class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeFilters.has(
+                                    term,
+                                  )
+                                    ? 'border-hister-indigo bg-hister-indigo text-background'
+                                    : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                                  onclick={() => toggleQueryToken(facet.queryField, term)}
+                                  aria-pressed={activeFilters.has(term)}
+                                >
+                                  {label ?? term}
+                                  <span class="opacity-60">({count})</span>
+                                </button>
+                              {/each}
+                            </div>
+                            {#if currentFacets?.terms?.[facet.name]?.other}
+                              <button
+                                class="font-inter text-text-brand-muted hover:text-hister-indigo mt-1 cursor-pointer text-xs underline-offset-2 hover:underline"
+                                onclick={() => loadMoreFacet(facet.name)}>Load more</button
                               >
                             {/if}
-                            <ChevronDown
-                              class="size-3 transition-transform duration-200 {filtersDropdownOpen
-                                ? 'rotate-180'
-                                : ''}"
-                            />
-                          </Button>
+                          </div>
                         {/snippet}
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Content
-                        class="border-brutal-border bg-card-surface w-80 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-                      >
-                        <div class="space-y-3">
-                          {#snippet facetSection(
-                            facet: SearchFacetDefinition,
-                            activeFilters: Set<string>,
-                            showSeparator: boolean,
-                          )}
-                            {@const Icon = facetIcons[facet.icon ?? ''] ?? Filter}
-                            {#if showSeparator}
+                        {#if facetsLoading}
+                          <p class="font-inter text-text-brand-muted text-xs">Loading filters…</p>
+                        {:else}
+                          {#each visibleTermFacets as facet, index (facet.name)}
+                            {@render facetSection(
+                              facet,
+                              activeFiltersForFacet(facet.name),
+                              index > 0,
+                            )}
+                          {/each}
+                          {#snippet customDateInputs()}
+                            <details class="group/custom w-full">
+                              <summary
+                                class="font-inter text-text-brand-muted hover:text-hister-indigo cursor-pointer list-none text-xs underline-offset-2 hover:underline"
+                                >Custom</summary
+                              >
+                              <div
+                                class="mt-1.5 grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-2"
+                              >
+                                <span class="font-inter text-text-brand-secondary text-xs"
+                                  >From:</span
+                                >
+                                <Input
+                                  type="date"
+                                  value={dateFrom}
+                                  oninput={(event) =>
+                                    updateCustomDateFilter('from', event.currentTarget.value)}
+                                  class="border-border-brand-muted bg-card-surface text-text-brand font-fira focus-visible:border-hister-indigo h-7 w-auto min-w-0 border-[2px] px-2 text-xs shadow-none focus-visible:ring-0"
+                                />
+                                <span class="font-inter text-text-brand-secondary text-xs">To:</span
+                                >
+                                <Input
+                                  type="date"
+                                  value={dateTo}
+                                  oninput={(event) =>
+                                    updateCustomDateFilter('to', event.currentTarget.value)}
+                                  class="border-border-brand-muted bg-card-surface text-text-brand font-fira focus-visible:border-hister-indigo h-7 w-auto min-w-0 border-[2px] px-2 text-xs shadow-none focus-visible:ring-0"
+                                />
+                              </div>
+                            </details>
+                          {/snippet}
+                          {#if dateFacetDefinition && currentFacets?.date_histogram?.some((b) => b.count > 0)}
+                            {@const DateIcon = facetIcons[dateFacetDefinition.icon ?? ''] ?? Filter}
+                            {#if visibleTermFacets.length > 0}
                               <Separator class="bg-border-brand-muted" />
                             {/if}
                             <div class="space-y-1.5">
                               <p
                                 class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
                               >
-                                <Icon class="size-3" />
-                                {facet.label}
+                                <DateIcon class="size-3" />
+                                {dateFacetDefinition.label}
                               </p>
-                              <div class="flex flex-wrap gap-1">
-                                {#each currentFacets?.terms?.[facet.name]?.terms ?? [] as { term, count, label } (term)}
-                                  <button
-                                    class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeFilters.has(
-                                      term,
-                                    )
-                                      ? 'border-hister-indigo bg-hister-indigo text-background'
-                                      : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
-                                    onclick={() => toggleQueryToken(facet.queryField, term)}
-                                  >
-                                    {label ?? term}
-                                    <span class="opacity-60">({count})</span>
-                                  </button>
+                              <div class="flex flex-col gap-1">
+                                {#each currentFacets.date_histogram as { name, count } (name)}
+                                  {#if count > 0}
+                                    <button
+                                      class="font-inter flex cursor-pointer items-center justify-between rounded-none border-[2px] px-2 py-1 text-xs transition-colors {activeDateBucket ===
+                                      name
+                                        ? 'border-hister-indigo bg-hister-indigo text-background'
+                                        : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                                      onclick={() => toggleDateBucket(name)}
+                                    >
+                                      <span
+                                        >{dateFacetValues.find(
+                                          (value) => value.facetBucket === name,
+                                        )?.label ?? name}</span
+                                      >
+                                      <span class="opacity-60">{count}</span>
+                                    </button>
+                                  {/if}
                                 {/each}
                               </div>
-                              {#if currentFacets?.terms?.[facet.name]?.other}
-                                <button
-                                  class="font-inter text-text-brand-muted hover:text-hister-indigo mt-1 cursor-pointer text-xs underline-offset-2 hover:underline"
-                                  onclick={() => loadMoreFacet(facet.name)}>Load more</button
-                                >
-                              {/if}
+                              {@render customDateInputs()}
                             </div>
-                          {/snippet}
-                          {#if facetsLoading}
-                            <p class="font-inter text-text-brand-muted text-xs">Loading filters…</p>
-                          {:else}
-                            {#each visibleTermFacets as facet, index (facet.name)}
-                              {@render facetSection(
-                                facet,
-                                activeFiltersForFacet(facet.name),
-                                index > 0,
-                              )}
-                            {/each}
-                            {#snippet customDateInputs()}
-                              <details class="group/custom w-full">
-                                <summary
-                                  class="font-inter text-text-brand-muted hover:text-hister-indigo cursor-pointer list-none text-xs underline-offset-2 hover:underline"
-                                  >Custom</summary
-                                >
-                                <div
-                                  class="mt-1.5 grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-2"
-                                >
-                                  <span class="font-inter text-text-brand-secondary text-xs"
-                                    >From:</span
-                                  >
-                                  <Input
-                                    type="date"
-                                    value={dateFrom}
-                                    oninput={(event) =>
-                                      updateCustomDateFilter('from', event.currentTarget.value)}
-                                    class="border-border-brand-muted bg-card-surface text-text-brand font-fira focus-visible:border-hister-indigo h-7 w-auto min-w-0 border-[2px] px-2 text-xs shadow-none focus-visible:ring-0"
-                                  />
-                                  <span class="font-inter text-text-brand-secondary text-xs"
-                                    >To:</span
-                                  >
-                                  <Input
-                                    type="date"
-                                    value={dateTo}
-                                    oninput={(event) =>
-                                      updateCustomDateFilter('to', event.currentTarget.value)}
-                                    class="border-border-brand-muted bg-card-surface text-text-brand font-fira focus-visible:border-hister-indigo h-7 w-auto min-w-0 border-[2px] px-2 text-xs shadow-none focus-visible:ring-0"
-                                  />
-                                </div>
-                              </details>
-                            {/snippet}
-                            {#if dateFacetDefinition && currentFacets?.date_histogram?.some((b) => b.count > 0)}
-                              {@const DateIcon =
-                                facetIcons[dateFacetDefinition.icon ?? ''] ?? Filter}
-                              {#if visibleTermFacets.length > 0}
-                                <Separator class="bg-border-brand-muted" />
-                              {/if}
-                              <div class="space-y-1.5">
-                                <p
-                                  class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
-                                >
-                                  <DateIcon class="size-3" />
-                                  {dateFacetDefinition.label}
-                                </p>
-                                <div class="flex flex-col gap-1">
-                                  {#each currentFacets.date_histogram as { name, count } (name)}
-                                    {#if count > 0}
-                                      <button
-                                        class="font-inter flex cursor-pointer items-center justify-between rounded-none border-[2px] px-2 py-1 text-xs transition-colors {activeDateBucket ===
-                                        name
-                                          ? 'border-hister-indigo bg-hister-indigo text-background'
-                                          : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
-                                        onclick={() => toggleDateBucket(name)}
-                                      >
-                                        <span
-                                          >{dateFacetValues.find(
-                                            (value) => value.facetBucket === name,
-                                          )?.label ?? name}</span
-                                        >
-                                        <span class="opacity-60">{count}</span>
-                                      </button>
-                                    {/if}
-                                  {/each}
-                                </div>
-                                {@render customDateInputs()}
-                              </div>
-                            {:else if dateFacetDefinition}
-                              {@const DateIcon =
-                                facetIcons[dateFacetDefinition.icon ?? ''] ?? Filter}
-                              <div class="space-y-1.5">
-                                <p
-                                  class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
-                                >
-                                  <DateIcon class="size-3" />
-                                  {dateFacetDefinition.label}
-                                </p>
-                                {@render customDateInputs()}
-                              </div>
-                            {/if}
-                            {#if !termFacetDefinitions.some((facet) => currentFacets?.terms?.[facet.name]?.terms?.length) && !currentFacets?.date_histogram?.some((bucket) => bucket.count > 0)}
-                              <p class="font-inter text-text-brand-muted text-xs">
-                                No filters available for this query.
+                          {:else if dateFacetDefinition}
+                            {@const DateIcon = facetIcons[dateFacetDefinition.icon ?? ''] ?? Filter}
+                            <div class="space-y-1.5">
+                              <p
+                                class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                              >
+                                <DateIcon class="size-3" />
+                                {dateFacetDefinition.label}
                               </p>
-                            {/if}
+                              {@render customDateInputs()}
+                            </div>
                           {/if}
-                        </div>
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Root>
-                  {/if}
+                          {#if !termFacetDefinitions.some((facet) => currentFacets?.terms?.[facet.name]?.terms?.length) && !currentFacets?.date_histogram?.some((bucket) => bucket.count > 0)}
+                            <p class="font-inter text-text-brand-muted text-xs">
+                              No matching filter values. Remove an active filter to broaden your
+                              search.
+                            </p>
+                          {/if}
+                        {/if}
+                      </div>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Root>
+                {/if}
+                {#if hasResults || config.semanticEnabled}
                   <DropdownMenu.Root bind:open={actionsDropdownOpen}>
                     <DropdownMenu.Trigger>
                       {#snippet child({ props })}
@@ -2248,7 +2339,7 @@
                       class="border-brutal-border bg-card-surface w-80 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
                     >
                       <div class="space-y-3">
-                        {#if config.semanticEnabled && semanticOn}
+                        {#if config.semanticEnabled}
                           <div class="space-y-2">
                             <p
                               class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
@@ -2256,6 +2347,16 @@
                               <Sparkles class="size-3" />
                               Semantic Search
                             </p>
+                            {#if !semanticOn}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                class="font-inter text-hister-indigo border-hister-indigo border-2 text-xs"
+                                onclick={() => (semanticOn = true)}
+                              >
+                                Enable semantic search
+                              </Button>
+                            {/if}
                             <label
                               class="font-inter text-text-brand-secondary flex flex-col gap-1 text-xs"
                             >
@@ -2270,7 +2371,11 @@
                                 max="1"
                                 step="0.002"
                                 bind:value={similarityThreshold}
-                                class="accent-hister-indigo w-full cursor-pointer"
+                                disabled={!semanticOn}
+                                onkeydown={(event) => {
+                                  if (event.key !== 'Escape') event.stopPropagation();
+                                }}
+                                class="accent-hister-indigo w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                               />
                             </label>
                             <label
@@ -2287,139 +2392,147 @@
                                 max="1"
                                 step="0.05"
                                 bind:value={semanticWeight}
-                                class="accent-hister-indigo w-full cursor-pointer"
+                                disabled={!semanticOn}
+                                onkeydown={(event) => {
+                                  if (event.key !== 'Escape') event.stopPropagation();
+                                }}
+                                class="accent-hister-indigo w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                               />
                             </label>
                           </div>
-                          <Separator class="bg-border-brand-muted" />
+                          {#if hasResults}<Separator class="bg-border-brand-muted" />{/if}
                         {/if}
-                        <div class="space-y-2">
-                          <p
-                            class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
-                          >
-                            <Download class="size-3" />
-                            Export Results
-                          </p>
-                          <div class="flex flex-wrap gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
-                              onclick={() =>
-                                exportJSON({ ...lastResults!, documents: accumulatedDocs })}
-                            >
-                              JSON
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
-                              onclick={() =>
-                                exportCSV({ ...lastResults!, documents: accumulatedDocs }, query)}
-                            >
-                              CSV
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
-                              onclick={() =>
-                                exportRSS({ ...lastResults!, documents: accumulatedDocs }, query)}
-                            >
-                              RSS
-                            </Button>
-                          </div>
-                        </div>
-                        {#if config.canWrite}
-                          <Separator class="bg-border-brand-muted" />
+                        {#if hasResults}
                           <div class="space-y-2">
                             <p
-                              class="font-inter text-hister-rose flex items-center gap-1.5 text-xs font-semibold"
+                              class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
                             >
-                              <Trash2 class="size-3" />
-                              Danger Zone
+                              <Download class="size-3" />
+                              Export Results
                             </p>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 h-7 w-full border-[2px] text-xs"
-                              onclick={() => {
-                                showDeleteAllConfirm = true;
-                              }}
-                            >
-                              <Trash2 class="size-3" />
-                              Delete all matching results
-                            </Button>
+                            <div class="flex flex-wrap gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
+                                onclick={() =>
+                                  exportJSON({ ...lastResults!, documents: accumulatedDocs })}
+                              >
+                                JSON
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
+                                onclick={() =>
+                                  exportCSV({ ...lastResults!, documents: accumulatedDocs }, query)}
+                              >
+                                CSV
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
+                                onclick={() =>
+                                  exportRSS({ ...lastResults!, documents: accumulatedDocs }, query)}
+                              >
+                                RSS
+                              </Button>
+                            </div>
                           </div>
+                          {#if config.canWrite}
+                            <Separator class="bg-border-brand-muted" />
+                            <div class="space-y-2">
+                              <p
+                                class="font-inter text-hister-rose flex items-center gap-1.5 text-xs font-semibold"
+                              >
+                                <Trash2 class="size-3" />
+                                Danger Zone
+                              </p>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 h-7 w-full border-[2px] text-xs"
+                                onclick={() => {
+                                  showDeleteAllConfirm = true;
+                                }}
+                              >
+                                <Trash2 class="size-3" />
+                                Delete all matching results
+                              </Button>
+                            </div>
+                          {/if}
                         {/if}
                       </div>
                     </DropdownMenu.Content>
                   </DropdownMenu.Root>
-                  <DropdownMenu.Root bind:open={sortDropdownOpen}>
-                    <DropdownMenu.Trigger>
-                      {#snippet child({ props })}
-                        <Button
-                          {...props}
-                          variant="ghost"
-                          size="sm"
-                          class="font-inter gap-1 text-xs {sortDropdownOpen || currentSort
-                            ? 'text-hister-indigo'
-                            : 'text-text-brand-muted hover:text-hister-indigo'}"
-                        >
-                          <ArrowUpDown class="size-3" />
-                          Sort: {currentSortLabel}
-                          <ChevronDown
-                            class="size-3 transition-transform duration-200 {sortDropdownOpen
-                              ? 'rotate-180'
-                              : ''}"
-                          />
-                        </Button>
-                      {/snippet}
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Content
-                      class="border-brutal-border bg-card-surface w-52 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-                    >
-                      <div class="space-y-1.5">
-                        <p
-                          class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
-                        >
-                          <ArrowUpDown class="size-3" />
-                          Sort by
-                        </p>
-                        <div class="flex flex-col gap-1">
-                          {#each sortOptions as { value, label } (value)}
-                            <button
-                              class="font-inter flex cursor-pointer items-center gap-2 rounded-none border-[2px] px-2 py-1 text-xs transition-colors {currentSort ===
-                              value
-                                ? 'border-hister-indigo bg-hister-indigo text-background'
-                                : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
-                              onclick={() => {
-                                setSort(value);
-                                sortDropdownOpen = false;
-                              }}
-                            >
-                              {label}
-                              {#if currentSort === value}
-                                <Check class="ml-auto size-3" />
-                              {/if}
-                            </button>
-                          {/each}
-                        </div>
-                      </div>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Root>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="font-inter text-text-brand-muted hover:text-hister-coral gap-1 text-xs no-underline"
-                    href={getSearchUrl(config.searchUrl, query)}
+                {/if}
+                <DropdownMenu.Root bind:open={sortDropdownOpen}>
+                  <DropdownMenu.Trigger>
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        variant="ghost"
+                        size="sm"
+                        class="font-inter gap-1 text-xs {sortDropdownOpen || currentSort
+                          ? 'text-hister-indigo'
+                          : 'text-text-brand-muted hover:text-hister-indigo'}"
+                      >
+                        <ArrowUpDown class="size-3" />
+                        Sort: {currentSortLabel}
+                        <ChevronDown
+                          class="size-3 transition-transform duration-200 {sortDropdownOpen
+                            ? 'rotate-180'
+                            : ''}"
+                        />
+                      </Button>
+                    {/snippet}
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content
+                    class="border-brutal-border bg-card-surface w-52 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
                   >
-                    <ExternalLink class="size-3" />
-                    Web
-                  </Button>
-                </div>
+                    <div class="space-y-1.5">
+                      <p
+                        class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                      >
+                        <ArrowUpDown class="size-3" />
+                        Sort by
+                      </p>
+                      <div class="flex flex-col gap-1">
+                        {#each sortOptions as { value, label } (value)}
+                          <button
+                            class="font-inter flex cursor-pointer items-center gap-2 rounded-none border-[2px] px-2 py-1 text-xs transition-colors {currentSort ===
+                            value
+                              ? 'border-hister-indigo bg-hister-indigo text-background'
+                              : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                            onclick={() => {
+                              setSort(value);
+                              sortDropdownOpen = false;
+                            }}
+                          >
+                            {label}
+                            {#if currentSort === value}
+                              <Check class="ml-auto size-3" />
+                            {/if}
+                          </button>
+                        {/each}
+                      </div>
+                    </div>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="font-inter text-text-brand-muted hover:text-hister-coral gap-1 text-xs no-underline"
+                  href={getSearchUrl(config.searchUrl, query)}
+                >
+                  <ExternalLink class="size-3" />
+                  Web
+                </Button>
               </div>
+            </div>
 
+            {#if hasResults}
               {#if lastResults?.query && lastResults.query.text.length > query.length}
                 <p class="font-inter text-text-brand-muted text-sm">
                   Expanded query: <code
@@ -2612,18 +2725,37 @@
                 {/each}
               {/if}
             {:else if query && lastResults}
-              <section class="pmd:px-12 y-12 text-center">
+              <section class="px-4 py-12 text-center md:px-12">
                 <p class="font-inter text-text-brand-secondary mb-4">
                   No results found for "<span class="font-semibold">{query}</span>"
                 </p>
-                <Button
-                  variant="outline"
-                  class="border-hister-coral text-hister-coral hover:bg-hister-coral/10 font-inter border-[3px] font-semibold shadow-[3px_3px_0px_var(--hister-coral)]"
-                  href={getSearchUrl(config.searchUrl, query)}
-                >
-                  <ExternalLink class="size-4" />
-                  Search
-                </Button>
+                <p class="font-inter text-text-brand-muted mb-4 text-sm">
+                  {activeFilterCount > 0
+                    ? 'Try removing filters or changing your search terms.'
+                    : 'Try different search terms or search the web.'}
+                </p>
+                <div class="flex flex-wrap items-center justify-center gap-3">
+                  {#if activeFilterCount > 0}
+                    <Button
+                      variant="outline"
+                      class="border-hister-indigo text-hister-indigo font-inter border-2"
+                      onclick={clearFilters}
+                      onkeydown={(event) => {
+                        if (event.key !== 'Escape') event.stopPropagation();
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  {/if}
+                  <Button
+                    variant="outline"
+                    class="border-hister-coral text-hister-coral hover:bg-hister-coral/10 font-inter border-[3px] font-semibold shadow-[3px_3px_0px_var(--hister-coral)]"
+                    href={getSearchUrl(config.searchUrl, query)}
+                  >
+                    <ExternalLink class="size-4" />
+                    Search the web
+                  </Button>
+                </div>
               </section>
             {:else if query && connectionState !== 'disconnected'}
               <div class="flex items-center justify-center py-16">

@@ -867,7 +867,8 @@
 
   function openResult(url: string, title: string, newWindow = false, sourceUrl = url) {
     if (config.openResultsOnNewTab) newWindow = true;
-    saveHistoryItem(sourceUrl, stripHtml(title), query, false, () => openURL(url, newWindow));
+    sendHistoryBeacon(sourceUrl, title, query);
+    openURL(url, newWindow);
   }
 
   function sendHistoryBeacon(url: string, title: string, queryStr: string) {
@@ -878,28 +879,11 @@
       query: queryStr,
       delete: false,
     });
-    navigator.sendBeacon('api/history', new Blob([payload], { type: 'application/json' }));
-  }
-
-  async function saveHistoryItem(
-    url: string,
-    title: string,
-    queryStr: string,
-    remove: boolean,
-    callback?: () => void,
-  ) {
-    if (!config.historyEnabled) {
-      callback?.();
-      return;
-    }
     try {
-      const res = await apiFetch('/history', {
-        method: 'POST',
-        headers: { 'Content-type': 'application/json; charset=UTF-8' },
-        body: JSON.stringify({ url, title, query: queryStr, delete: remove }),
-      });
-      callback?.();
-    } catch {}
+      navigator.sendBeacon('api/history', new Blob([payload], { type: 'application/json' }));
+    } catch {
+      // History is best effort and must not prevent opening a result.
+    }
   }
 
   function setSort(sortId: string) {

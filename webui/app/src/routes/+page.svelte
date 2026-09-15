@@ -238,15 +238,20 @@
 
   let resultsShown = $state(false);
 
-  // Semantic search per-session state — read from localStorage immediately so
-  // the first $effect run doesn't overwrite the saved value with the default.
+  function storedSemanticValue(key: string): number | undefined {
+    const stored = localStorage.getItem(key);
+    if (!stored?.trim()) return undefined;
+    const value = Number(stored);
+    return Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
+  }
+
+  const savedSimilarityThreshold = storedSemanticValue('hister-semantic-threshold');
+  const savedSemanticWeight = storedSemanticValue('hister-semantic-weight');
+  // Wait for server defaults before persisting settings that have not been saved yet.
+  let semanticSettingsReady = $state(false);
   let semanticOn = $state(localStorage.getItem('hister-semantic-on') === 'true');
-  let similarityThreshold = $state(
-    parseFloat(localStorage.getItem('hister-semantic-threshold') ?? 'NaN') || 0.5,
-  );
-  let semanticWeight = $state(
-    parseFloat(localStorage.getItem('hister-semantic-weight') ?? 'NaN') || 0.4,
-  );
+  let similarityThreshold = $state(savedSimilarityThreshold ?? 0.5);
+  let semanticWeight = $state(savedSemanticWeight ?? 0.4);
   const currentSearchMessage = $derived(JSON.stringify(buildSearchQuery(query, searchQueryOpts())));
   const searchPending = $derived(
     !!query && (searchInProgress || currentSearchMessage !== completedSearchMessage),
@@ -1576,10 +1581,12 @@
     if (query && connected) sendQuery(query);
   });
   $effect(() => {
+    if (!semanticSettingsReady) return;
     localStorage.setItem('hister-semantic-threshold', String(similarityThreshold));
     if (query && connected) sendQuery(query);
   });
   $effect(() => {
+    if (!semanticSettingsReady) return;
     localStorage.setItem('hister-semantic-weight', String(semanticWeight));
   });
 
@@ -1664,10 +1671,9 @@
       disablePreviews = (appConfig as any).disablePreviews ?? false;
       if (config.semanticEnabled) {
         // Apply server defaults only when the user has not yet customised these.
-        if (localStorage.getItem('hister-semantic-threshold') === null)
-          similarityThreshold = config.similarityThreshold;
-        if (localStorage.getItem('hister-semantic-weight') === null)
-          semanticWeight = config.semanticWeight;
+        similarityThreshold = savedSimilarityThreshold ?? config.similarityThreshold;
+        semanticWeight = savedSemanticWeight ?? config.semanticWeight;
+        semanticSettingsReady = true;
       }
       if (
         !config.canWrite &&

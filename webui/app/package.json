@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "tsc -p tests/tsconfig.json && node --test .test/tests/*.test.js",
     "build": "vite build",
     "dev": "vite dev",
     "preview": "vite preview",

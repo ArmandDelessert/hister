@@ -28,10 +28,10 @@
   } from '$lib/search';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
   import { ResultState } from '$lib/result-state.svelte';
+  import { mergeSearchResults, removeSearchResults } from '$lib/search-results';
   import { showHelp } from '$lib/stores';
   import type {
     SearchResults,
-    SemanticHit,
     SearchResult,
     SearchQueryOptions,
     FacetsResult,
@@ -461,93 +461,13 @@
     tipWasSearching = isSearching;
   });
 
-  interface MergedResult {
-    id?: string;
-    url: string;
-    title: string;
-    domain: string;
-    score?: number;
-    text?: string;
-    favicon?: string;
-    favicon_key?: string;
-    added?: number;
-    updated?: number;
-    add_count?: number;
-    label?: string;
-    semanticScore?: number;
-    finalScore: number;
-    sourceType: 'keyword' | 'semantic' | 'both';
-  }
-
-  function mergeResults(
-    docs: SearchResults['documents'],
-    hits: SemanticHit[] | undefined,
-    alpha: number,
-  ): MergedResult[] {
-    const kwDocs = docs ?? [];
-    if (!semanticOn || !config.semanticEnabled || !hits?.length) {
-      return kwDocs.map((d) => ({ ...d, finalScore: d.score ?? 0, sourceType: 'keyword' }));
-    }
-
-    const maxBleve = Math.max(...kwDocs.map((d) => d.score ?? 0), 1);
-    const semByDocId = new Map<string, number>(hits.map((h) => [h.doc_id, h.similarity]));
-
-    // Helper: the doc_id is either a bare URL or "{uid}:{url}".
-    function urlFromDocId(docId: string): string {
-      const userId = getUserId();
-      if (userId) {
-        const prefix = `${userId}:`;
-        if (docId.startsWith(prefix)) return docId.slice(prefix.length);
-      }
-      return docId;
-    }
-
-    const merged = new Map<string, MergedResult>();
-
-    for (const d of kwDocs) {
-      // Find whether this keyword doc also appears in semantic hits.
-      // The semantic doc_id for this user+URL:
-      const userId = getUserId();
-      const expectedDocId = userId ? `${userId}:${d.url}` : d.url;
-      const semScore = semByDocId.get(expectedDocId) ?? semByDocId.get(d.url);
-      const norm = (d.score ?? 0) / maxBleve;
-      const finalScore =
-        semScore !== undefined ? (1 - alpha) * norm + alpha * semScore : (1 - alpha) * norm;
-      merged.set(d.url, {
-        ...d,
-        semanticScore: semScore,
-        finalScore,
-        sourceType: semScore !== undefined ? 'both' : 'keyword',
-      });
-    }
-
-    // Add semantic-only hits (server sets `document` only for non-keyword hits).
-    for (const hit of hits) {
-      if (!hit.document) continue;
-      const url = hit.document.url;
-      if (!merged.has(url)) {
-        merged.set(url, {
-          url,
-          title: hit.document.title ?? '',
-          domain: hit.document.domain ?? '',
-          favicon: hit.document.favicon,
-          favicon_key: hit.document.favicon_key,
-          added: hit.document.added,
-          updated: hit.document.updated,
-          add_count: hit.document.add_count,
-          text: hit.document.text,
-          semanticScore: hit.similarity,
-          finalScore: alpha * hit.similarity,
-          sourceType: 'semantic',
-        });
-      }
-    }
-
-    return Array.from(merged.values()).sort((a, b) => b.finalScore - a.finalScore);
-  }
-
   const mergedResults = $derived(
-    mergeResults(accumulatedDocs, lastResults?.semantic_hits, semanticWeight),
+    mergeSearchResults(accumulatedDocs, lastResults?.semantic_hits, {
+      semanticEnabled: semanticOn && config.semanticEnabled,
+      weight: semanticWeight,
+      sort: currentSort,
+      userId: getUserId(),
+    }),
   );
 
   const historyLen = $derived((lastResults?.history as any)?.length || 0);
@@ -1069,11 +989,9 @@
       );
       return;
     }
-    accumulatedDocs = [];
-    if (lastResults) {
-      lastResults = { ...lastResults, documents: [], total: 0 };
-    }
-    resultsShown = false;
+    // Refresh because semantic and history matches may fall outside the deleted query.
+    if (connected) sendQuery(query);
+    else removeMatchingResults(() => true);
   }
 
   function confirmDeleteAll() {
@@ -1094,14 +1012,27 @@
     return resultStates.get(url)!;
   }
 
+  function removeMatchingResults(matches: (doc: SearchResult) => boolean) {
+    if (!lastResults) return;
+    lastResults = removeSearchResults({ ...lastResults, documents: accumulatedDocs }, matches);
+    accumulatedDocs = lastResults.documents ?? [];
+    highlightIdx = Math.min(highlightIdx, Math.max(0, totalResults - 1));
+    facetsCache = new Map();
+    // Discard a page fetched before deletion so it cannot restore stale results.
+    latestPageRequest = 0;
+    loadingMoreForQuery = '';
+    if (lastResults.total === 0 && totalResults === 0) {
+      hasMore = false;
+      pageKey = '';
+    }
+  }
+
   function removeResult(url: string) {
-    accumulatedDocs = accumulatedDocs.filter((d) => d.url !== url);
-    if (lastResults) lastResults = { ...lastResults, documents: accumulatedDocs };
+    removeMatchingResults((doc) => doc.url === url);
   }
 
   function removeResultsByDomain(domain: string) {
-    accumulatedDocs = accumulatedDocs.filter((d) => d.domain !== domain);
-    if (lastResults) lastResults = { ...lastResults, documents: accumulatedDocs };
+    removeMatchingResults((doc) => doc.domain === domain);
   }
 
   // Convert file document URLs to browser viewable Hister URLs.

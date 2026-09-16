@@ -23,8 +23,11 @@ import (
 	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer/querybuilder"
 	"github.com/asciimoo/hister/server/indexer/searchschema"
+	"github.com/asciimoo/hister/server/metrics"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/vectorstore"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"charm.land/lipgloss/v2"
 	"github.com/blevesearch/bleve/v2"
@@ -1075,6 +1078,12 @@ func (i *Indexer) Total() uint64 {
 	return i.total(query.NewMatchAllQuery())
 }
 
+// DataDir returns the root data directory path used by the indexer.
+// It is used by the metrics package to compute the on-disk datastore size.
+func (i *Indexer) DataDir() string {
+	return i.dir
+}
+
 func (i *Indexer) TotalByUser(userID uint) uint64 {
 	return i.total(userDocumentsQuery(userID))
 }
@@ -1119,6 +1128,7 @@ func (i *Indexer) AddDocumentContext(ctx context.Context, d *document.Document) 
 }
 
 func (i *Indexer) addDocument(ctx context.Context, d *document.Document, incrementAddCount bool, write documentWriteFunc) error {
+	start := time.Now()
 	plan, err := i.prepareDocumentWrite(ctx, d, incrementAddCount)
 	if err != nil {
 		return err
@@ -1130,6 +1140,8 @@ func (i *Indexer) addDocument(ctx context.Context, d *document.Document, increme
 		if err := write(d, *plan); err != nil {
 			return err
 		}
+		metrics.IndexingDuration.Observe(time.Since(start).Seconds())
+		metrics.DocumentsIndexedTotal.WithLabelValues(d.Type.String()).Inc()
 	}
 	for _, extra := range d.ExtraDocuments {
 		if err := ctx.Err(); err != nil {
@@ -1735,7 +1747,17 @@ func (i *Indexer) CountByQuery(text string, userID *uint) (int, error) {
 }
 
 func (i *Indexer) Search(q *Query) (*Results, error) {
-	return i.search(i.semanticConfig, q)
+	timer := prometheus.NewTimer(metrics.SearchDuration)
+	res, err := i.search(i.semanticConfig, q)
+	timer.ObserveDuration()
+	if err != nil {
+		metrics.QueriesTotal.WithLabelValues("error").Inc()
+	} else if res.Total == 0 {
+		metrics.QueriesTotal.WithLabelValues("miss").Inc()
+	} else {
+		metrics.QueriesTotal.WithLabelValues("hit").Inc()
+	}
+	return res, err
 }
 
 func (i *Indexer) search(semanticConfig config.SemanticSearch, q *Query) (*Results, error) {

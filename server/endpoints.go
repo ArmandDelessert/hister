@@ -27,6 +27,7 @@ import (
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/indexer/querybuilder"
 	"github.com/asciimoo/hister/server/indexer/searchschema"
+	"github.com/asciimoo/hister/server/metrics"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/timeline"
 	"github.com/asciimoo/hister/server/types"
@@ -96,6 +97,9 @@ func registerEndpoints(cfg *config.Config, idx *indexer.Indexer) http.Handler {
 	}
 	serverMux := http.NewServeMux()
 	serverMux.HandleFunc(healthCheckPath, serveHealth)
+	if cfg.Server.Metrics {
+		serverMux.Handle("/metrics", metrics.Handler())
+	}
 	serverMux.Handle("/", appHandler)
 	return serverMux
 }

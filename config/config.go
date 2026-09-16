@@ -553,6 +553,7 @@ func CreateDefaultConfig() *Config {
 			BaseURL:          DefaultServerBaseURL,
 			Database:         "db.sqlite3",
 			MaxBatchBodySize: DefaultMaxBatchBodySize,
+			Metrics:          false,
 		},
 		Indexer: Indexer{
 			DetectLanguages: true,

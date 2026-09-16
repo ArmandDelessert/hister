@@ -57,6 +57,10 @@ By default, Hister has no telemetry and no cloud sync. The browser extension sen
 
 Optional semantic search sends document text to the embeddings endpoint you choose. Review the [privacy overview](https://hister.org/docs/intro#privacy) and [semantic search configuration](https://hister.org/docs/configuration#semantic-search) before enabling remote integrations.
 
+## Why Hister?
+
+Unlike traditional search engines, Hister builds a personal search index from the web pages and files you choose to keep. Your content stays on your Hister server, making it useful for finding information you've already encountered without relying on a third-party search provider.
+
 ## Development
 
 Requirements are Go 1.26, npm, and a C compiler for CGO dependencies.

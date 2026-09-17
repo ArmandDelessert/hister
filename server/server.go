@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/gob"
 	"errors"
@@ -146,8 +147,10 @@ func Listen(cfg *config.Config, idx *indexer.Indexer) {
 	sessionStore = newSessionStore(cfg.SecretKey(), cfg.BaseURL(""), sessionMaxAge)
 
 	if cfg.Server.Metrics {
-		metrics.Init(idx)
-		log.Info().Msg("Prometheus metrics endpoint enabled at /metrics")
+		m := metrics.New(context.Background(), idx)
+		idx.SetMetrics(m)
+		log.Info().Msg("Prometheus metrics endpoint enabled")
+		defer m.Stop()
 	}
 
 	// This is an ugly hack required to set the base path dynamically in svelte files.

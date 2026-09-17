@@ -3,6 +3,7 @@
 package metrics
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +25,7 @@ func (m *mockGaugeSource) DataDir() string {
 	return m.dataDir
 }
 
-func TestMetricsInitAndHandler(t *testing.T) {
+func TestMetricsNewAndHandler(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.txt")
 	content := []byte("hello metrics")
@@ -37,18 +38,22 @@ func TestMetricsInitAndHandler(t *testing.T) {
 		dataDir: tempDir,
 	}
 
-	Init(mockSrc)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m := New(ctx, mockSrc)
+	defer m.Stop()
 
 	// Record some sample metrics
-	QueriesTotal.WithLabelValues("hit").Inc()
-	SearchDuration.Observe(0.123)
-	DocumentsIndexedTotal.WithLabelValues("web").Inc()
-	IndexingDuration.Observe(0.045)
+	m.QueriesTotal.WithLabelValues("hit").Inc()
+	m.SearchDuration.Observe(0.123)
+	m.DocumentsIndexedTotal.WithLabelValues("web").Inc()
+	m.IndexingDuration.Observe(0.045)
 
 	// Force gauge refresh
-	refreshGauges()
+	m.refreshGauges()
 
-	handler := Handler()
+	handler := m.Handler()
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rec := httptest.NewRecorder()
 
@@ -77,6 +82,14 @@ func TestMetricsInitAndHandler(t *testing.T) {
 	}
 }
 
+func TestStopCancelsContext(t *testing.T) {
+	ctx := context.Background()
+	m := New(ctx, &mockGaugeSource{total: 1, dataDir: t.TempDir()})
+	m.Stop()
+	// Calling Stop again should be safe (cancel is idempotent)
+	m.Stop()
+}
+
 func TestDirSize(t *testing.T) {
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "file1.bin")
@@ -91,6 +104,13 @@ func TestDirSize(t *testing.T) {
 	}
 	if size != 15 {
 		t.Errorf("expected dirSize 15, got %d", size)
+	}
+}
+
+func TestDirSizeReturnsError(t *testing.T) {
+	_, err := dirSize("/nonexistent/path/that/should/fail")
+	if err == nil {
+		t.Error("expected dirSize to return an error for a nonexistent path")
 	}
 }
 

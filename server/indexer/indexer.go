@@ -72,6 +72,7 @@ type Indexer struct {
 	maxFileSize       int64
 	sensitivePattern  *regexp.Regexp
 	semanticConfig    config.SemanticSearch
+	metrics           *metrics.Metrics
 }
 
 const (
@@ -283,6 +284,7 @@ type MultiBatch struct {
 	embeddingIDs        map[string]struct{}
 	deletedIDs          map[string]struct{}
 	incrementAddCount   bool
+	stagedTypes         []string
 }
 
 func (i *Indexer) searchIndexes(req *bleve.SearchRequest) (*bleve.SearchResult, error) {
@@ -1077,11 +1079,16 @@ func (i *Indexer) total(q query.Query) uint64 {
 func (i *Indexer) Total() uint64 {
 	return i.total(query.NewMatchAllQuery())
 }
-
-// DataDir returns the root data directory path used by the indexer.
-// It is used by the metrics package to compute the on-disk datastore size.
 func (i *Indexer) DataDir() string {
 	return i.dir
+}
+
+func (i *Indexer) SetMetrics(m *metrics.Metrics) {
+	i.metrics = m
+}
+
+func (i *Indexer) Metrics() *metrics.Metrics {
+	return i.metrics
 }
 
 func (i *Indexer) TotalByUser(userID uint) uint64 {
@@ -1121,13 +1128,11 @@ func (i *Indexer) AddDocument(d *document.Document) error {
 	return i.AddDocumentContext(context.Background(), d)
 }
 
-// AddDocumentContext indexes a document while honoring caller cancellation
-// during document processing.
 func (i *Indexer) AddDocumentContext(ctx context.Context, d *document.Document) error {
-	return i.addDocument(ctx, d, true, i.applyDocumentWrite)
+	return i.addDocument(ctx, d, true, true, i.applyDocumentWrite)
 }
 
-func (i *Indexer) addDocument(ctx context.Context, d *document.Document, incrementAddCount bool, write documentWriteFunc) error {
+func (i *Indexer) addDocument(ctx context.Context, d *document.Document, incrementAddCount bool, recordMetrics bool, write documentWriteFunc) error {
 	start := time.Now()
 	plan, err := i.prepareDocumentWrite(ctx, d, incrementAddCount)
 	if err != nil {
@@ -1140,8 +1145,10 @@ func (i *Indexer) addDocument(ctx context.Context, d *document.Document, increme
 		if err := write(d, *plan); err != nil {
 			return err
 		}
-		metrics.IndexingDuration.Observe(time.Since(start).Seconds())
-		metrics.DocumentsIndexedTotal.WithLabelValues(d.Type.String()).Inc()
+		if recordMetrics && i.metrics != nil {
+			i.metrics.IndexingDuration.Observe(time.Since(start).Seconds())
+			i.metrics.DocumentsIndexedTotal.WithLabelValues(d.Type.String()).Inc()
+		}
 	}
 	for _, extra := range d.ExtraDocuments {
 		if err := ctx.Err(); err != nil {
@@ -1150,7 +1157,7 @@ func (i *Indexer) addDocument(ctx context.Context, d *document.Document, increme
 		if d.IgnoreSkipRules() {
 			extra.SetIgnoreSkipRules(true)
 		}
-		if err := i.addDocument(ctx, extra, false, write); err != nil {
+		if err := i.addDocument(ctx, extra, false, recordMetrics, write); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -1590,7 +1597,7 @@ func (b *MultiBatch) AddContext(ctx context.Context, d *document.Document) error
 	if err := b.indexer.validateFileDocument(d); err != nil {
 		return err
 	}
-	return b.indexer.addDocument(ctx, d, b.incrementAddCount, b.applyDocumentWrite)
+	return b.indexer.addDocument(ctx, d, b.incrementAddCount, false, b.applyDocumentWrite)
 }
 
 func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWritePlan) error {
@@ -1618,6 +1625,7 @@ func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWrite
 			b.orphanedFaviconKeys = append(b.orphanedFaviconKeys, key)
 		}
 	}
+	b.stagedTypes = append(b.stagedTypes, d.Type.String())
 	return nil
 }
 
@@ -1636,6 +1644,12 @@ func (b *MultiBatch) Save() error {
 	for _, entry := range b.batches {
 		if err := entry.index.Batch(entry.batch); err != nil {
 			return err
+		}
+	}
+	// Increment indexing counters only after all batches are committed.
+	if m := b.indexer.metrics; m != nil {
+		for _, typ := range b.stagedTypes {
+			m.DocumentsIndexedTotal.WithLabelValues(typ).Inc()
 		}
 	}
 	b.indexer.cleanupDataKeys(b.orphanedHTMLKeys, "", b.orphanedFaviconKeys, "")
@@ -1747,15 +1761,22 @@ func (i *Indexer) CountByQuery(text string, userID *uint) (int, error) {
 }
 
 func (i *Indexer) Search(q *Query) (*Results, error) {
-	timer := prometheus.NewTimer(metrics.SearchDuration)
+	var timer *prometheus.Timer
+	if i.metrics != nil {
+		timer = prometheus.NewTimer(i.metrics.SearchDuration)
+	}
 	res, err := i.search(i.semanticConfig, q)
-	timer.ObserveDuration()
-	if err != nil {
-		metrics.QueriesTotal.WithLabelValues("error").Inc()
-	} else if res.Total == 0 {
-		metrics.QueriesTotal.WithLabelValues("miss").Inc()
-	} else {
-		metrics.QueriesTotal.WithLabelValues("hit").Inc()
+	if timer != nil {
+		timer.ObserveDuration()
+	}
+	if i.metrics != nil {
+		if err != nil {
+			i.metrics.QueriesTotal.WithLabelValues("error").Inc()
+		} else if res.Total == 0 {
+			i.metrics.QueriesTotal.WithLabelValues("miss").Inc()
+		} else {
+			i.metrics.QueriesTotal.WithLabelValues("hit").Inc()
+		}
 	}
 	return res, err
 }

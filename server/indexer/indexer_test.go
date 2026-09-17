@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
+	servermetrics "github.com/asciimoo/hister/server/metrics"
 	"github.com/asciimoo/hister/server/testutil"
 )
 
@@ -55,6 +58,46 @@ func TestIndexerInstancesAreIndependent(t *testing.T) {
 	if second.GetByURLAndUser(doc.URL, 0) != nil {
 		t.Fatal("second indexer contains a document from the first indexer")
 	}
+}
+
+func TestMultiBatchCountsDocumentsOnlyAfterSave(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+
+	m := servermetrics.New(context.Background(), idx)
+	idx.SetMetrics(m)
+	defer m.Stop()
+
+	batch := idx.NewMultiBatch()
+	doc := &document.Document{
+		URL:       "https://example.com/batched",
+		Text:      "A staged document",
+		Type:      document.Web,
+		Processed: true,
+	}
+	// Materialize the labeled counter so that its zero value is exposed.
+	m.DocumentsIndexedTotal.WithLabelValues(doc.Type.String())
+	if err := batch.Add(doc); err != nil {
+		t.Fatalf("stage document: %v", err)
+	}
+	metric := "hister_documents_indexed_total{type=\"web\"} 0"
+	if body := metricsResponse(t, m); !strings.Contains(body, metric) {
+		t.Fatalf("documents indexed after Add missing %q:\n%s", metric, body)
+	}
+	if err := batch.Save(); err != nil {
+		t.Fatalf("save batch: %v", err)
+	}
+	metric = "hister_documents_indexed_total{type=\"web\"} 1"
+	if body := metricsResponse(t, m); !strings.Contains(body, metric) {
+		t.Fatalf("documents indexed after Save missing %q:\n%s", metric, body)
+	}
+}
+
+func metricsResponse(t *testing.T, m *servermetrics.Metrics) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	m.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	return rec.Body.String()
 }
 
 func TestSearchURLRegexpUsesGoMatchSemantics(t *testing.T) {

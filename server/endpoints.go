@@ -27,7 +27,6 @@ import (
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/indexer/querybuilder"
 	"github.com/asciimoo/hister/server/indexer/searchschema"
-	"github.com/asciimoo/hister/server/metrics"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/timeline"
 	"github.com/asciimoo/hister/server/types"
@@ -97,9 +96,6 @@ func registerEndpoints(cfg *config.Config, idx *indexer.Indexer) http.Handler {
 	}
 	serverMux := http.NewServeMux()
 	serverMux.HandleFunc(healthCheckPath, serveHealth)
-	if cfg.Server.Metrics {
-		serverMux.Handle("/metrics", metrics.Handler())
-	}
 	serverMux.Handle("/", appHandler)
 	return serverMux
 }
@@ -131,6 +127,15 @@ func registerDebugEndpoints(mux *http.ServeMux, cfg *config.Config, idx *indexer
 	register("GET /debug/pprof/symbol", pprof.Symbol)
 	register("POST /debug/pprof/symbol", pprof.Symbol)
 	register("GET /debug/pprof/trace", pprof.Trace)
+}
+
+func serveMetrics(c *webContext) {
+	m := c.Indexer.Metrics()
+	if m == nil {
+		c.Response.WriteHeader(http.StatusNotFound)
+		return
+	}
+	m.Handler().ServeHTTP(c.Response, c.Request)
 }
 
 func endpointRequiresAuth(cfg *config.Config, e *Endpoint) bool {
@@ -1604,6 +1609,9 @@ func serveAPI(c *webContext) {
 	}
 	var result []endpointInfo
 	for _, e := range Endpoints {
+		if e.Name == "Metrics" && !c.Config.Server.Metrics {
+			continue
+		}
 		result = append(result, endpointInfo{
 			Name:         e.Name,
 			Path:         e.Path,

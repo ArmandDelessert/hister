@@ -17,6 +17,7 @@ package sqlitevec
 // #cgo CFLAGS: -DSQLITE_CORE
 // #cgo CFLAGS: -Du_int8_t=uint8_t -Du_int16_t=uint16_t -Du_int64_t=uint64_t
 // #cgo linux LDFLAGS: -lm
+// #cgo freebsd LDFLAGS: -lm
 // #include "sqlite-vec.h"
 import "C"
 

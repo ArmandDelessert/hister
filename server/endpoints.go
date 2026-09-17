@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	iofs "io/fs"
 	"mime"
 	"net/http"
@@ -1478,7 +1479,7 @@ func servePreview(c *webContext) {
 	var resp sdk.PreviewResponse
 	var err error
 	if doc.HTML == "" {
-		resp = sdk.PreviewResponse{Content: doc.Text}
+		resp = sdk.PreviewResponse{Content: html.EscapeString(doc.Text)}
 	} else {
 		resp, err = extractor.PreviewContext(c.Request.Context(), doc, extractorName)
 		if err != nil {

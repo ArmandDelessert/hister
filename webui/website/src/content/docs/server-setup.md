@@ -196,6 +196,10 @@ map $uri $hister_connection {
 
 **Note**: if search doesn't work, there likely is a problem with WebSocket connections; troubleshooting info can be gathered from Nginx's `access.log` (tells you whether requests reached Nginx) and `error.log` (tells if you if any errors occurred _within_ Nginx).
 
+## Monitoring
+
+Enable `server.metrics: true` to expose operational statistics for Prometheus. The endpoint follows your configured base URL and authentication settings, and requires an administrator in multiple user mode. See [Monitoring](monitoring) for scrape configuration and metric definitions.
+
 ## AppArmor Profile
 
 If your Linux system uses AppArmor, you can confine Hister with the following profile.

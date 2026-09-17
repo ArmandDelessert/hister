@@ -157,6 +157,12 @@ description: 'Explore every configuration section, option, default value, enviro
       description: 'Maximum request body size in MiB accepted by the batch API. Import clients use this value to keep submitted batches within the server limit.',
     },
     {
+      name: 'metrics',
+      type: 'bool',
+      defaultValue: 'false',
+      description: 'Exposes Prometheus metrics at /metrics under the configured base URL. Uses token authentication when configured and requires an administrator in multiple user mode. See Monitoring for setup and metric definitions.',
+    },
+    {
       name: 'oauth',
       type: 'map',
       defaultValue: '(none)',
@@ -685,6 +691,8 @@ Each option below has one or both scope tags. The `server` tag marks settings us
 ## `server` Section
 
 <ConfigReference items={serverOptions} scopes={['server']} />
+
+For `server.metrics`, see [Monitoring](monitoring) for authentication, Prometheus scrape configuration, and metric definitions.
 
 ## Database Backends
 

@@ -84,6 +84,9 @@ func TestMultiBatchCountsDocumentsOnlyAfterSave(t *testing.T) {
 	if body := metricsResponse(t, m); !strings.Contains(body, metric) {
 		t.Fatalf("documents indexed after Add missing %q:\n%s", metric, body)
 	}
+	if body := metricsResponse(t, m); !strings.Contains(body, "hister_indexing_duration_seconds_count 0") {
+		t.Fatalf("indexing duration recorded before Save:\n%s", body)
+	}
 	if err := batch.Save(); err != nil {
 		t.Fatalf("save batch: %v", err)
 	}
@@ -91,6 +94,31 @@ func TestMultiBatchCountsDocumentsOnlyAfterSave(t *testing.T) {
 	if body := metricsResponse(t, m); !strings.Contains(body, metric) {
 		t.Fatalf("documents indexed after Save missing %q:\n%s", metric, body)
 	}
+	if body := metricsResponse(t, m); !strings.Contains(body, "hister_indexing_duration_seconds_count 1") {
+		t.Fatalf("indexing duration not recorded after Save:\n%s", body)
+	}
+}
+
+func TestMetricsAttachmentIsSafeDuringIndexing(t *testing.T) {
+	idx := &Indexer{}
+	m := servermetrics.New(context.Background(), nil)
+	defer m.Stop()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for range 1_000 {
+			idx.SetMetrics(m)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 1_000 {
+			idx.recordIndexingMetric("web", time.Millisecond)
+		}
+	}()
+	wg.Wait()
 }
 
 func metricsResponse(t *testing.T, m *servermetrics.Metrics) string {

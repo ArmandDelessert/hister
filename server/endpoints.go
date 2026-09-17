@@ -129,6 +129,15 @@ func registerDebugEndpoints(mux *http.ServeMux, cfg *config.Config, idx *indexer
 	register("GET /debug/pprof/trace", pprof.Trace)
 }
 
+func serveMetrics(c *webContext) {
+	m := c.Indexer.Metrics()
+	if m == nil {
+		c.Response.WriteHeader(http.StatusNotFound)
+		return
+	}
+	m.Handler().ServeHTTP(c.Response, c.Request)
+}
+
 func endpointRequiresAuth(cfg *config.Config, e *Endpoint) bool {
 	if e.NoAuth {
 		return false
@@ -1600,6 +1609,9 @@ func serveAPI(c *webContext) {
 	}
 	var result []endpointInfo
 	for _, e := range Endpoints {
+		if e.Name == "Metrics" && !c.Config.Server.Metrics {
+			continue
+		}
 		result = append(result, endpointInfo{
 			Name:         e.Name,
 			Path:         e.Path,

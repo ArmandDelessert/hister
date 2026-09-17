@@ -15,6 +15,7 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	servermetrics "github.com/asciimoo/hister/server/metrics"
 	"github.com/asciimoo/hister/server/testutil"
+
 	"github.com/blevesearch/bleve/v2"
 )
 
@@ -181,7 +182,7 @@ func metricsResponse(t *testing.T, m *servermetrics.Metrics) string {
 
 func metricValue(t *testing.T, body, name string) float64 {
 	t.Helper()
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 2 && fields[0] == name {
 			var value float64

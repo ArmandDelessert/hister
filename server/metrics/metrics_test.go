@@ -3,7 +3,6 @@
 package metrics
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,7 +28,7 @@ func TestMetricsNewAndHandler(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.txt")
 	content := []byte("hello metrics")
-	if err := os.WriteFile(testFile, content, 0644); err != nil {
+	if err := os.WriteFile(testFile, content, 0o644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
@@ -38,9 +37,7 @@ func TestMetricsNewAndHandler(t *testing.T) {
 		dataDir: tempDir,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+	ctx := t.Context()
 	m := New(ctx, mockSrc)
 	defer m.Stop()
 
@@ -83,7 +80,7 @@ func TestMetricsNewAndHandler(t *testing.T) {
 }
 
 func TestStopCancelsContext(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	m := New(ctx, &mockGaugeSource{total: 1, dataDir: t.TempDir()})
 	m.Stop()
 	// Calling Stop again should be safe (cancel is idempotent)
@@ -95,8 +92,8 @@ func TestDirSize(t *testing.T) {
 	f1 := filepath.Join(tempDir, "file1.bin")
 	f2 := filepath.Join(tempDir, "file2.bin")
 
-	_ = os.WriteFile(f1, []byte("12345"), 0644)
-	_ = os.WriteFile(f2, []byte("1234567890"), 0644)
+	_ = os.WriteFile(f1, []byte("12345"), 0o644)
+	_ = os.WriteFile(f2, []byte("1234567890"), 0o644)
 
 	size, err := dirSize(tempDir)
 	if err != nil {
@@ -112,11 +109,4 @@ func TestDirSizeReturnsError(t *testing.T) {
 	if err == nil {
 		t.Error("expected dirSize to return an error for a nonexistent path")
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

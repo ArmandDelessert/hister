@@ -1085,6 +1085,7 @@ func (i *Indexer) total(q query.Query) uint64 {
 func (i *Indexer) Total() uint64 {
 	return i.total(query.NewMatchAllQuery())
 }
+
 func (i *Indexer) DataDir() string {
 	return i.dir
 }

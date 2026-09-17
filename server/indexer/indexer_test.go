@@ -15,6 +15,7 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	servermetrics "github.com/asciimoo/hister/server/metrics"
 	"github.com/asciimoo/hister/server/testutil"
+	"github.com/blevesearch/bleve/v2"
 )
 
 func newTestIndexer(t *testing.T, cfg *config.Config) *Indexer {
@@ -99,6 +100,56 @@ func TestMultiBatchCountsDocumentsOnlyAfterSave(t *testing.T) {
 	}
 }
 
+func TestMultiBatchDurationIncludesBatchCommitDelay(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+
+	m := servermetrics.New(context.Background(), idx)
+	idx.SetMetrics(m)
+	defer m.Stop()
+
+	const batchDelay = 200 * time.Millisecond
+	idx.indexesMu.Lock()
+	for name, index := range idx.indexers {
+		idx.indexers[name] = delayedBatchIndex{bleveIndex: index, delay: batchDelay}
+	}
+	idx.indexesMu.Unlock()
+
+	batch := idx.NewMultiBatch()
+	doc := &document.Document{
+		URL:       "https://example.com/batched-delay",
+		Text:      "A staged document with a delayed commit",
+		Type:      document.Web,
+		Processed: true,
+	}
+	if err := batch.Add(doc); err != nil {
+		t.Fatalf("stage document: %v", err)
+	}
+	if err := batch.Save(); err != nil {
+		t.Fatalf("save batch: %v", err)
+	}
+
+	sum := metricValue(t, metricsResponse(t, m), "hister_indexing_duration_seconds_sum")
+	if sum < batchDelay.Seconds() {
+		t.Fatalf("indexing duration sum = %.3fs, want at least %.3fs", sum, batchDelay.Seconds())
+	}
+	t.Logf("indexing duration sum includes delayed batch commit: %.3fs", sum)
+}
+
+type bleveIndex interface {
+	bleve.Index
+}
+
+type delayedBatchIndex struct {
+	bleveIndex
+	delay time.Duration
+}
+
+func (i delayedBatchIndex) Batch(batch *bleve.Batch) error {
+	time.Sleep(i.delay)
+	return i.bleveIndex.Batch(batch)
+}
+
 func TestMetricsAttachmentIsSafeDuringIndexing(t *testing.T) {
 	idx := &Indexer{}
 	m := servermetrics.New(context.Background(), nil)
@@ -115,7 +166,7 @@ func TestMetricsAttachmentIsSafeDuringIndexing(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for range 1_000 {
-			idx.recordIndexingMetric("web", time.Millisecond)
+			idx.recordIndexingMetric("web", time.Now().Add(-time.Millisecond))
 		}
 	}()
 	wg.Wait()
@@ -126,6 +177,22 @@ func metricsResponse(t *testing.T, m *servermetrics.Metrics) string {
 	rec := httptest.NewRecorder()
 	m.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return rec.Body.String()
+}
+
+func metricValue(t *testing.T, body, name string) float64 {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == name {
+			var value float64
+			if _, err := fmt.Sscanf(fields[1], "%f", &value); err != nil {
+				t.Fatalf("parse metric %q value %q: %v", name, fields[1], err)
+			}
+			return value
+		}
+	}
+	t.Fatalf("metric %q missing:\n%s", name, body)
+	return 0
 }
 
 func TestSearchURLRegexpUsesGoMatchSemantics(t *testing.T) {

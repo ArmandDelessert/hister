@@ -290,7 +290,7 @@ type MultiBatch struct {
 
 type indexingMetric struct {
 	documentType string
-	duration     time.Duration
+	startedAt    time.Time
 }
 
 func (i *Indexer) searchIndexes(req *bleve.SearchRequest) (*bleve.SearchResult, error) {
@@ -1101,9 +1101,9 @@ func (i *Indexer) Metrics() *metrics.Metrics {
 	return i.metrics
 }
 
-func (i *Indexer) recordIndexingMetric(documentType string, duration time.Duration) {
+func (i *Indexer) recordIndexingMetric(documentType string, startedAt time.Time) {
 	if m := i.Metrics(); m != nil {
-		m.IndexingDuration.Observe(duration.Seconds())
+		m.IndexingDuration.Observe(time.Since(startedAt).Seconds())
 		m.DocumentsIndexedTotal.WithLabelValues(documentType).Inc()
 	}
 }
@@ -1149,7 +1149,7 @@ func (i *Indexer) AddDocumentContext(ctx context.Context, d *document.Document) 
 	return i.addDocument(ctx, d, true, i.recordIndexingMetric, i.applyDocumentWrite)
 }
 
-func (i *Indexer) addDocument(ctx context.Context, d *document.Document, incrementAddCount bool, recordMetric func(string, time.Duration), write documentWriteFunc) error {
+func (i *Indexer) addDocument(ctx context.Context, d *document.Document, incrementAddCount bool, recordMetric func(string, time.Time), write documentWriteFunc) error {
 	start := time.Now()
 	plan, err := i.prepareDocumentWrite(ctx, d, incrementAddCount)
 	if err != nil {
@@ -1163,7 +1163,7 @@ func (i *Indexer) addDocument(ctx context.Context, d *document.Document, increme
 			return err
 		}
 		if recordMetric != nil {
-			recordMetric(d.Type.String(), time.Since(start))
+			recordMetric(d.Type.String(), start)
 		}
 	}
 	for _, extra := range d.ExtraDocuments {
@@ -1616,8 +1616,8 @@ func (b *MultiBatch) AddContext(ctx context.Context, d *document.Document) error
 	return b.indexer.addDocument(ctx, d, b.incrementAddCount, b.recordIndexingMetric, b.applyDocumentWrite)
 }
 
-func (b *MultiBatch) recordIndexingMetric(documentType string, duration time.Duration) {
-	b.stagedMetrics = append(b.stagedMetrics, indexingMetric{documentType: documentType, duration: duration})
+func (b *MultiBatch) recordIndexingMetric(documentType string, startedAt time.Time) {
+	b.stagedMetrics = append(b.stagedMetrics, indexingMetric{documentType: documentType, startedAt: startedAt})
 }
 
 func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWritePlan) error {
@@ -1668,7 +1668,7 @@ func (b *MultiBatch) Save() error {
 	// Record batch metrics only after all batches are committed.
 	if m := b.indexer.Metrics(); m != nil {
 		for _, metric := range b.stagedMetrics {
-			m.IndexingDuration.Observe(metric.duration.Seconds())
+			m.IndexingDuration.Observe(time.Since(metric.startedAt).Seconds())
 			m.DocumentsIndexedTotal.WithLabelValues(metric.documentType).Inc()
 		}
 	}

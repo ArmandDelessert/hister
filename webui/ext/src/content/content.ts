@@ -1,18 +1,32 @@
-import { type PageData, extractPageData, registerResultExtractor } from '../modules/extract';
+import {
+  type PageData,
+  type PageState,
+  extractPageData,
+  extractPageState,
+  getPageURL,
+  registerResultExtractor,
+} from '../modules/extract';
 
-let d: PageData;
-// ms
-const defaultSleepTime = 10 * 1000;
-let sleepTime = defaultSleepTime;
-const sleepIncrementRatio = 2;
+const minimumUpdateInterval = 30 * 1000;
+const maximumPollInterval = 5 * 60 * 1000;
+const previewCheckInterval = 5 * 60 * 1000;
+const navigationDebounce = 1000;
 const supportedContentTypes = new Set(['text/html', 'application/xhtml+xml', 'text/plain']);
-// URL that was rejected by the server with a 406 (skip rule match).
-// Cleared when the page navigates to a different URL.
-let skippedUrl: string | null = null;
-let updateTimer: ReturnType<typeof setTimeout> | null = null;
 
-// @ts-ignore
-var isFirefox = typeof InstallTrigger !== 'undefined';
+type PageSnapshot = { state: PageState; data: PageData };
+type SubmissionResponse = { status?: string; status_code?: number; error?: string };
+
+let previous: PageSnapshot | null = null;
+let pendingHiddenSnapshot: PageSnapshot | null = null;
+let lastSubmissionAt = -Infinity;
+let lastCaptureAt = -Infinity;
+let lastPreviewCheckAt = -Infinity;
+let pollInterval = minimumUpdateInterval;
+let updateTimer: ReturnType<typeof setTimeout> | null = null;
+let skippedUrl: string | null = null;
+let started = false;
+let pageLeaving = false;
+let submissionNumber = 0;
 
 function isContextValid(): boolean {
   try {
@@ -22,143 +36,222 @@ function isContextValid(): boolean {
   }
 }
 
-if (isFirefox) {
-  if (document.readyState === 'complete') {
-    extract(null);
-  } else {
-    window.addEventListener('load', extract);
-  }
-} else {
-  window.addEventListener('load', extract);
+function isSupportedPage(): boolean {
+  return supportedContentTypes.has(document.contentType.split(';', 1)[0].trim().toLowerCase());
 }
 
-// Detect SPA navigations via the Navigation API (fires on window.navigation,
-// not on window). Falls back to polling for browsers without it.
-if (typeof window.navigation !== 'undefined') {
-  window.navigation.addEventListener('navigatesuccess', update);
-}
-
-// Submit the latest page state when the tab is being hidden or closed.
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden || !d || !isContextValid()) return;
-  let current;
-  try {
-    current = extractPageData();
-  } catch (_) {
-    return;
-  }
-  if (current.html != d.html || current.url != d.url || current.title != d.title) {
-    d = current;
-    chrome.runtime.sendMessage({ pageData: d }, (resp) => {
-      if (resp?.status_code === 406) {
-        skippedUrl = d.url;
-      }
-    });
-  }
-});
-
-function scheduleUpdate() {
+function clearUpdateTimer() {
   if (updateTimer !== null) {
     clearTimeout(updateTimer);
+    updateTimer = null;
   }
-  updateTimer = setTimeout(update, sleepTime);
 }
 
-function normalizeContentType(contentType: string): string {
-  return contentType.split(';', 1)[0].trim().toLowerCase();
+function cooldown(): number {
+  return Math.max(0, lastSubmissionAt + minimumUpdateInterval - Date.now());
 }
 
-function isSupportedContentType(contentType: string): boolean {
-  return supportedContentTypes.has(normalizeContentType(contentType));
+function scheduleUpdate(delay: number) {
+  clearUpdateTimer();
+  if (pageLeaving || document.hidden || !isContextValid()) return;
+  updateTimer = setTimeout(
+    update,
+    Math.max(delay, cooldown(), lastCaptureAt + minimumUpdateInterval - Date.now()),
+  );
 }
 
-function extract(sendResponse, actionType, force) {
-  if (!isContextValid()) return;
-  if (!isSupportedContentType(document.contentType)) {
-    if (typeof sendResponse === 'function') {
-      sendResponse({ status: 'unsupported_content_type', content_type: document.contentType });
-    }
-    return;
+function stateChanged(state: PageState): boolean {
+  return (
+    !previous ||
+    state.url !== previous.state.url ||
+    state.text !== previous.state.text ||
+    state.title !== previous.state.title ||
+    state.faviconURL !== previous.state.faviconURL ||
+    state.metadata !== previous.state.metadata
+  );
+}
+
+function capture(checkPreview = false): PageSnapshot | null {
+  if (!isSupportedPage()) return null;
+  const url = getPageURL();
+  if (url === skippedUrl) return null;
+  skippedUrl = null;
+
+  lastCaptureAt = Date.now();
+  const state = extractPageState();
+  const changed = stateChanged(state);
+  if (!changed && !checkPreview && Date.now() - lastPreviewCheckAt < previewCheckInterval) {
+    return null;
   }
-  const navEntry = window.performance.getEntries().find((e) => e.entryType === 'navigation') as
-    PerformanceNavigationTiming | undefined;
-  if (navEntry && navEntry.responseStatus > 299 && !force) {
-    return;
-  }
-  registerResultExtractor(window, (r) => {
-    if (isContextValid()) chrome.runtime.sendMessage({ resultData: r });
-  });
-  try {
-    d = extractPageData();
-  } catch (e) {
-    console.log('failed to extract page data:', e);
-    return;
-  }
-  let msg = { pageData: d };
-  if (actionType) {
-    msg['action'] = actionType;
-  }
-  chrome.runtime.sendMessage(msg, (resp) => {
-    if (typeof sendResponse === 'function') {
-      sendResponse(resp);
+  const data = extractPageData(state);
+  lastPreviewCheckAt = Date.now();
+  return changed || data.html !== previous?.data.html ? { state, data } : null;
+}
+
+function submit(
+  snapshot: PageSnapshot,
+  manual = false,
+  sendResponse?: (response: SubmissionResponse) => void,
+) {
+  previous = snapshot;
+  lastSubmissionAt = Date.now();
+  pollInterval = minimumUpdateInterval;
+  const number = ++submissionNumber;
+  const message = manual
+    ? { pageData: snapshot.data, action: 'reindex' }
+    : { pageData: snapshot.data };
+  chrome.runtime.sendMessage(message, (response: SubmissionResponse | undefined) => {
+    // A delayed reply must not mark a newer page or manual submission as skipped.
+    if (number === submissionNumber) {
+      if (response?.status_code === 406) {
+        skippedUrl = snapshot.state.url;
+      } else if (
+        !response ||
+        response.error ||
+        response.status_code === 429 ||
+        (response.status_code !== undefined && response.status_code >= 500)
+      ) {
+        // Retry from a fresh snapshot at the next scheduled check.
+        previous = null;
+      }
     }
-    if (!resp || resp.error || resp.status_code != 201) {
-      console.log('failed to submit page data', resp);
-    }
-    if (resp?.status_code === 406) {
-      skippedUrl = d.url;
-    }
-    // Always start polling for URL/content changes, even if the initial
-    // submission failed (e.g. skip rule). The page may navigate to a
-    // non-skipped URL later (SPA).
-    scheduleUpdate();
+    sendResponse?.(response ?? { error: 'No response from background' });
   });
 }
 
 function update() {
-  if (!d || !isContextValid()) {
-    return;
-  }
-  let d2;
+  updateTimer = null;
+  if (pageLeaving || document.hidden || !isContextValid()) return;
   try {
-    d2 = extractPageData();
-  } catch (e) {
-    console.log('failed to extract page data', e);
-    return;
-  }
-  if (d2.html != d.html || d2.url != d.url || d2.title != d.title) {
-    sleepTime = defaultSleepTime;
-    d = d2;
-    if (d2.url === skippedUrl) {
-      // URL is still server-side skipped; don't resubmit.
-      scheduleUpdate();
-      return;
+    const snapshot = capture();
+    if (snapshot) {
+      submit(snapshot);
+    } else {
+      pollInterval = Math.min(pollInterval * 2, maximumPollInterval);
     }
-    skippedUrl = null;
-    chrome.runtime.sendMessage({ pageData: d }, (resp) => {
-      if (resp?.status_code === 406) {
-        skippedUrl = d.url;
-      }
-    });
-  } else {
-    sleepTime *= sleepIncrementRatio;
+  } catch (error) {
+    console.log('failed to extract page data:', error);
   }
-  scheduleUpdate();
+  const previewDelay = Math.max(
+    minimumUpdateInterval,
+    lastPreviewCheckAt + previewCheckInterval - Date.now(),
+  );
+  scheduleUpdate(Math.min(pollInterval, previewDelay));
 }
 
-// Get message from background page
-// TODO check sender
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-  if (!request) {
+function enableMonitoring() {
+  if (started) return;
+  started = true;
+  registerResultExtractor(window, (result) => {
+    if (isContextValid()) chrome.runtime.sendMessage({ resultData: result });
+  });
+}
+
+function start() {
+  if (started || !isContextValid() || !isSupportedPage()) return;
+  const navEntry = window.performance.getEntries().find((e) => e.entryType === 'navigation') as
+    PerformanceNavigationTiming | undefined;
+  if (navEntry && navEntry.responseStatus > 299) return;
+  enableMonitoring();
+  scheduleUpdate(0);
+}
+
+if (document.readyState === 'complete') {
+  start();
+} else {
+  window.addEventListener('load', start, { once: true });
+}
+
+if (typeof window.navigation !== 'undefined') {
+  window.navigation.addEventListener('navigatesuccess', () => {
+    if (!started || pageLeaving || document.hidden) return;
+    pollInterval = minimumUpdateInterval;
+    scheduleUpdate(navigationDebounce);
+  });
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!started || pageLeaving || !isContextValid()) return;
+  clearUpdateTimer();
+  pendingHiddenSnapshot = null;
+  if (!document.hidden) {
+    pollInterval = minimumUpdateInterval;
+    scheduleUpdate(navigationDebounce);
     return;
   }
+  // Capture once on hiding. A delayed send retains that snapshot without
+  // polling or reading the DOM again while the tab is hidden.
+  if (!previous) return;
+  try {
+    pendingHiddenSnapshot = capture(true);
+  } catch (error) {
+    console.log('failed to extract page data:', error);
+    return;
+  }
+  if (!pendingHiddenSnapshot) return;
+  const flush = () => {
+    updateTimer = null;
+    const snapshot = pendingHiddenSnapshot;
+    pendingHiddenSnapshot = null;
+    if (snapshot && snapshot.state.url !== skippedUrl && isContextValid()) submit(snapshot);
+  };
+  if (cooldown() === 0) flush();
+  else updateTimer = setTimeout(flush, cooldown());
+});
+
+window.addEventListener('pagehide', () => {
+  pageLeaving = true;
+  clearUpdateTimer();
+  let snapshot = pendingHiddenSnapshot;
+  pendingHiddenSnapshot = null;
+  if (!started || !isContextValid() || lastCaptureAt === -Infinity) return;
+  try {
+    // Read the latest state in case it changed after the tab became hidden.
+    // If it reverted to the previous submission, discard the pending snapshot.
+    snapshot = capture(true);
+  } catch (error) {
+    console.log('failed to extract final page data:', error);
+  }
+  // Hand the snapshot to the background process before this context disappears.
+  // Closing or navigating away is an exception to the automatic update interval.
+  if (snapshot && snapshot.state.url !== skippedUrl) submit(snapshot);
+});
+
+window.addEventListener('pageshow', (event) => {
+  if (!event.persisted) return;
+  pageLeaving = false;
+  if (started) {
+    pollInterval = minimumUpdateInterval;
+    scheduleUpdate(navigationDebounce);
+  }
+});
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (!request) return;
   if (request.error) {
     alert(request.error);
     return;
   }
-  if (request.action == 'reindex') {
-    extract(sendResponse, 'reindex', true);
-    return true;
+  if (request.action !== 'reindex') return;
+  if (!isContextValid()) return;
+  if (!isSupportedPage()) {
+    sendResponse({ status: 'unsupported_content_type', content_type: document.contentType });
+    return;
   }
-  console.log('message received', request);
+  clearUpdateTimer();
+  pendingHiddenSnapshot = null;
+  skippedUrl = null;
+  try {
+    lastCaptureAt = Date.now();
+    const state = extractPageState();
+    const data = extractPageData(state);
+    lastPreviewCheckAt = Date.now();
+    submit({ state, data }, true, sendResponse);
+    enableMonitoring();
+    scheduleUpdate(minimumUpdateInterval);
+  } catch (error) {
+    sendResponse({ error: error instanceof Error ? error.message : String(error) });
+    scheduleUpdate(minimumUpdateInterval);
+  }
+  return true;
 });

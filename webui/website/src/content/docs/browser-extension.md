@@ -98,9 +98,13 @@ WebEngine debugging port to a network.
 
 ### Automatic Page Indexing
 
-The extension automatically captures page content every time you visit a URL. It extracts the page title, full text, HTML, and favicon, then sends them to your Hister server via its API.
+The extension captures visible pages, including the page title, full text, HTML, and favicon, then sends them to your Hister server via its API. Pages opened in a background tab are captured when you view them.
 
-After a page is successfully indexed, the extension continues monitoring it in the background and re-submits if the content changes (for example on single-page applications). The re-check interval starts at 10 seconds and doubles each time the page content is unchanged, reducing resource usage over time.
+While a page remains visible, the extension checks for changes at intervals starting at 30 seconds. The interval doubles when nothing changes, up to five minutes. Navigation within a page waits for one second of quiet before a check, and automatic checks and submissions remain at least 30 seconds apart within that page. Rapid navigation can therefore capture only the latest page state.
+
+Changes to text, title, favicon, or page metadata trigger an update. Cosmetic markup changes alone wait for a preview check, at most once every five minutes, so animations and changing HTML attributes do not continuously trigger indexing. Each submission includes the current full HTML for extraction and previews.
+
+When you hide a tab, the extension captures one final snapshot and stops polling. If that snapshot has changed, it is submitted after any remaining submission delay. Showing the tab again resumes checks using fresh content. Closing the tab or navigating away flushes changed content immediately to the extension's background process, bypassing the remaining delay. Unchanged content is not submitted again. Manual indexing also submits immediately and bypasses these delays.
 
 Automatic indexing can be paused at any time using the toggle in the popup.
 

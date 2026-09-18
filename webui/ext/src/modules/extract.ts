@@ -6,6 +6,8 @@ type PageData = {
   faviconURL: string;
 };
 
+type PageState = Omit<PageData, 'html'> & { metadata: string };
+
 type Result = {
   title: string;
   url: string;
@@ -71,12 +73,14 @@ class DuckDuckGoExtractor implements ResultExtractor {
 
 let resultExtractors: ResultExtractor[] = [new GoogleExtractor(), new DuckDuckGoExtractor()];
 
-function getURL() {
+function getPageURL() {
   return window.location.href.replace(window.location.hash, '');
 }
 
-function extractPageData(): PageData {
-  const url = getURL();
+// Read the fields that can justify an automatic update without serializing
+// the entire DOM. Other markup changes are captured by periodic preview checks.
+function extractPageState(): PageState {
+  const url = getPageURL();
   let faviconURL = '';
   try {
     const faviconHref = document.querySelector("link[rel~='icon']")?.getAttribute('href');
@@ -87,9 +91,28 @@ function extractPageData(): PageData {
     text: document.body?.innerText ?? '',
     title: document.querySelector('title')?.innerText ?? document.title,
     url,
-    html: document.documentElement?.innerHTML ?? '',
     faviconURL,
+    metadata: JSON.stringify(
+      Array.from(
+        document.querySelectorAll(
+          'meta[name], meta[property], link[rel="canonical"], script[type="application/ld+json"]',
+        ),
+        (el) => [
+          el.tagName,
+          el.getAttribute('name'),
+          el.getAttribute('property'),
+          el.getAttribute('content'),
+          el.getAttribute('href'),
+          el.tagName === 'SCRIPT' ? el.textContent : null,
+        ],
+      ),
+    ),
   };
+}
+
+function extractPageData(state: PageState): PageData {
+  const { metadata, ...data } = state;
+  return { ...data, html: document.documentElement?.innerHTML ?? '' };
 }
 
 function registerResultExtractor(w: Window, cb: ExtractorCallback) {
@@ -101,4 +124,11 @@ function registerResultExtractor(w: Window, cb: ExtractorCallback) {
   }
 }
 
-export { type PageData, registerResultExtractor, extractPageData };
+export {
+  type PageData,
+  type PageState,
+  registerResultExtractor,
+  getPageURL,
+  extractPageState,
+  extractPageData,
+};

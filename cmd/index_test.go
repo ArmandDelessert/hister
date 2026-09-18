@@ -3,12 +3,77 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor"
+
 	"github.com/spf13/cobra"
 )
+
+func TestIndexInitializesExtractors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake yt-dlp executable requires a POSIX shell")
+	}
+	oldCfg := cfg
+	t.Cleanup(func() { cfg = oldCfg })
+	for _, e := range extractor.DefaultRegistry().Extractors() {
+		original := e.GetConfig()
+		t.Cleanup(func() {
+			if err := e.SetConfig(original); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+
+	binary := filepath.Join(t.TempDir(), "yt-dlp")
+	script := `#!/bin/sh
+printf '%s\n' '{"title":"Video title","description":"Video description"}'
+`
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		enabled   bool
+		wantTitle string
+		wantText  string
+	}{
+		{"enabled", true, "Video title", "Video description"},
+		{"disabled", false, "Page title", "Page contents"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg = config.CreateDefaultConfig()
+			cfg.Extractors = map[string]*config.Extractor{
+				"ytdlp": {
+					Enable: tc.enabled,
+					Options: map[string]any{
+						"binary": binary,
+					},
+				},
+			}
+			cmd := newIndexTestCommand()
+			cmd.Flags().Bool("recursive", false, "")
+			indexCmd.PreRun(cmd, nil)
+
+			d := &document.Document{
+				URL:  "https://www.youtube.com/watch?v=extractor-init-" + tc.name,
+				HTML: "<html><head><title>Page title</title></head><body><p>Page contents</p></body></html>",
+			}
+			if err := d.ProcessContext(t.Context(), nil, extractor.ExtractContext); err != nil {
+				t.Fatal(err)
+			}
+			if d.Title != tc.wantTitle || !strings.Contains(d.Text, tc.wantText) {
+				t.Fatalf("extracted title = %q, text = %q; want title %q and text containing %q", d.Title, d.Text, tc.wantTitle, tc.wantText)
+			}
+		})
+	}
+}
 
 func newIndexTestCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "index [URL...]"}

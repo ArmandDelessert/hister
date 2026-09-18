@@ -24,6 +24,7 @@ var indexCmd = &cobra.Command{
 	Long:  "Index one or more URLs. Use --recursive to crawl linked pages, --input to create a persistent job from a file or standard input, or --job-id to resume a persistent job.",
 	Args:  validateIndexArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
+		initExtractor()
 		recursive, _ := cmd.Flags().GetBool("recursive")
 		jobID, _ := cmd.Flags().GetString("job-id")
 		input, _ := indexInput(cmd)

@@ -6,11 +6,12 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.10
 	charm.land/lipgloss/v2 v2.0.6
-	codeberg.org/readeck/go-readability/v2 v2.1.2
+	codeberg.org/readeck/go-readability/v2 v2.1.3
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/asciimoo/lingua-go v0.15.0
 	github.com/asciimoo/pdf v0.2.0
 	github.com/blevesearch/bleve/v2 v2.6.1
+	github.com/blevesearch/bleve_index_api v1.4.1
 	github.com/bodgit/sevenzip v1.6.5
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/ultraviolet v0.0.0-20260906173415-0277a179edd9
@@ -29,6 +30,8 @@ require (
 	github.com/niklasfasching/go-org v1.9.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/prometheus/client_golang v1.24.1
+	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/common v0.70.1
 	github.com/rs/zerolog v1.35.1
 	github.com/sergi/go-diff v1.4.0
 	github.com/spf13/cobra v1.10.2
@@ -51,7 +54,6 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.25.0 // indirect
-	github.com/blevesearch/bleve_index_api v1.4.1 // indirect
 	github.com/blevesearch/geo v0.2.6 // indirect
 	github.com/blevesearch/go-faiss v1.1.5 // indirect
 	github.com/blevesearch/go-porterstemmer v1.0.3 // indirect
@@ -111,8 +113,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect

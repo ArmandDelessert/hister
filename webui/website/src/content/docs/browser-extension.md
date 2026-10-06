@@ -113,6 +113,12 @@ must match at least one allow pattern when the list is nonempty, and skip rules 
 precedence. The extension checks both lists before uploading pages or PDFs. Patterns
 that JavaScript cannot evaluate are checked by the server when the page is submitted.
 
+Pages served with an unsuccessful HTTP status (`4xx` or `5xx`) are not indexed
+automatically, so error pages such as "404 Not Found" stay out of the index. The
+extension reads the status of every main frame response with the `webRequest`
+API, which works in both Chromium based browsers and Firefox. Manual reindex
+overrides this check.
+
 Automatic indexing can be paused at any time using the toggle in the popup.
 
 ### Manual Reindex

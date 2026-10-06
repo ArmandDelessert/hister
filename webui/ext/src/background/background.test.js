@@ -29,6 +29,7 @@ function browser({
   const lookups = [];
   let onMessage;
   let onActivated;
+  let onHeadersReceived;
   const storage = {
     histerURL: 'https://hister.example/',
     showIndexedBadge: true,
@@ -73,6 +74,14 @@ function browser({
         setBadgeBackgroundColor: action,
         setIcon: action,
       },
+      webRequest: {
+        onHeadersReceived: {
+          addListener: (fn, filter) => {
+            assert.equal(String(filter.types), 'main_frame');
+            onHeadersReceived = fn;
+          },
+        },
+      },
     },
     fetch: async (url, options) => {
       const parsed = new URL(url);
@@ -100,6 +109,8 @@ function browser({
     lookups,
     message,
     activate: () => onActivated({ tabId: 1 }),
+    respond: (statusCode, url = sourceURL, tabId = 1) =>
+      onHeadersReceived({ tabId, url, statusCode }),
     submit: (manual = false) =>
       message({
         pageData: { url: canonicalURL, title: 'Article', text: 'Article text', faviconURL: '' },
@@ -154,6 +165,52 @@ test('indexed badges fall back to the visited URL when no content script is avai
   const b = browser({ contentScript: false });
   await b.activate();
   assert.deepEqual(b.lookups, [b.sourceURL]);
+});
+
+test('automatic submissions are rejected for unsuccessful navigation responses', async () => {
+  const cases = [
+    { name: 'success', responses: [[200]], expected: 201 },
+    { name: 'not found', responses: [[404]], expected: 404 },
+    { name: 'server error', responses: [[503]], expected: 503 },
+    // 304 renders a valid cached page and a redirect is superseded by its target.
+    { name: 'not modified', responses: [[304]], expected: 201 },
+    { name: 'redirect to success', responses: [[301], [200]], expected: 201 },
+    { name: 'redirect to error', responses: [[301], [404]], expected: 404 },
+    // The status of another page, tab, or of the canonical URL that was never
+    // navigated to must not reject the submission.
+    { name: 'other url', responses: [[404, 'https://example.com/other']], expected: 201 },
+    { name: 'canonical url', responses: [[404, 'https://example.com/clean']], expected: 201 },
+    { name: 'other tab', responses: [[404, undefined, 2]], expected: 201 },
+    { name: 'no response seen', responses: [], expected: 201 },
+  ];
+  for (const { name, responses, expected } of cases) {
+    const b = browser();
+    for (const response of responses) b.respond(...response);
+    const result = await b.submit();
+    assert.equal(result.status_code, expected, name);
+    assert.equal(b.documents.length, expected === 201 ? 1 : 0, name);
+  }
+});
+
+// A page submits a final snapshot while it is being replaced, so its status
+// must survive the responses of the navigation that evicts it.
+test('an error page stays rejected after the tab navigated away', async () => {
+  const b = browser();
+  b.respond(404);
+  for (const url of ['https://example.com/a', 'https://example.com/b', 'https://example.com/c']) {
+    b.respond(200, url);
+  }
+  assert.equal((await b.submit()).status_code, 404);
+  assert.equal(b.documents.length, 0);
+});
+
+test('the navigation status ignores fragments and manual indexing overrides it', async () => {
+  const b = browser({ sourceURL: 'https://example.com/visited#section' });
+  b.respond(404, 'https://example.com/visited');
+  assert.equal((await b.submit()).status_code, 404);
+  assert.equal(b.documents.length, 0);
+  assert.equal((await b.submit(true)).status_code, 201);
+  assert.equal(b.documents.length, 1);
 });
 
 test('popup rule checks include both the visited and canonical URLs', async () => {

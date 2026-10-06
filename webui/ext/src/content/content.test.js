@@ -20,7 +20,7 @@ const bundle = await build({
 });
 const script = bundle.output.find((entry) => entry.type === 'chunk').code;
 
-function browser({ hidden = false, status = 200, contentType = 'text/html', respond = true } = {}) {
+function browser({ hidden = false, contentType = 'text/html', respond = true } = {}) {
   let now = 0;
   let nextTimer = 0;
   let onMessage;
@@ -83,7 +83,6 @@ function browser({ hidden = false, status = 200, contentType = 'text/html', resp
     document,
     addEventListener,
     navigation: { addEventListener },
-    performance: { getEntries: () => [{ entryType: 'navigation', responseStatus: status }] },
   };
   const runtime = {
     id: 'extension',
@@ -540,14 +539,9 @@ test('permanent rejection does not repeatedly submit unchanged content', () => {
   assert.equal(b.messages.length, 1);
 });
 
-test('unsupported content is never extracted, and manual indexing can override an HTTP error', () => {
+test('unsupported content is never extracted', () => {
   const unsupported = browser({ contentType: 'application/pdf' });
   unsupported.advance(60_000);
   unsupported.reindex();
   assert.deepEqual(unsupported.reads, { text: 0, html: 0 });
-  const errorPage = browser({ status: 404 });
-  errorPage.advance(60_000);
-  assert.equal(errorPage.messages.length, 0);
-  errorPage.reindex();
-  assert.equal(errorPage.messages.length, 1);
 });

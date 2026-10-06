@@ -685,6 +685,13 @@
           </div>
         </Card.Header>
 
+        <p class="font-inter text-text-brand-muted px-4 py-3 text-sm md:px-5">
+          Aliases are shortcuts for search queries. Enter a keyword and the query it should expand
+          to, then use that keyword in the search bar. For example, set <code>gh</code> to
+          <code>domain:github.com</code> so searching for <code>gh svelte</code> searches indexed
+          GitHub pages for <code>svelte</code>.
+        </p>
+
         <div
           class="bg-muted-surface border-brutal-border flex items-center border-b-[3px] px-4 py-4 md:px-5 md:py-5"
         >

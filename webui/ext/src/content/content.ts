@@ -147,11 +147,12 @@ function enableMonitoring() {
   });
 }
 
+// Unsuccessful HTTP responses are filtered out by the background script, which
+// tracks main frame response statuses via chrome.webRequest. The content script
+// cannot do it itself: PerformanceNavigationTiming.responseStatus is only
+// implemented by Chromium and by Firefox since 140.
 function start() {
   if (started || !isContextValid() || !isSupportedPage()) return;
-  const navEntry = window.performance.getEntries().find((e) => e.entryType === 'navigation') as
-    PerformanceNavigationTiming | undefined;
-  if (navEntry && navEntry.responseStatus > 299) return;
   enableMonitoring();
   scheduleUpdate(0);
 }

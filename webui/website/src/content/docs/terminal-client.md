@@ -160,7 +160,7 @@ hister import file backup.json --format json
 hister import linkding https://bookmarks.example.com --format jsonl
 ```
 
-These formats apply to file imports and the Linkding, Linkwarden, Karakeep, Raindrop, Readeck, Shaarli, and
+These formats apply to file imports and the Linkding, Linkwarden, Karakeep, Raindrop, Readeck, Readwise Reader, Shaarli, and
 wallabag importers. Browser import retains its interactive output. See [Website Crawler](crawler)
 for structured crawl inspection.
 

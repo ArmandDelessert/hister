@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	stdhtml "html"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -433,7 +432,7 @@ func (c *readeckClient) document(
 	}
 	return d, &serviceContentRequest{
 		URL:         rawURL,
-		HTML:        readeckArticleDocument(title, synced.HTML),
+		HTML:        serviceArticleDocument(title, synced.HTML),
 		PrefixText:  prefixText,
 		SourceTitle: title,
 	}, nil
@@ -520,16 +519,4 @@ func cleanImportStrings(values []string) []string {
 		result = append(result, value)
 	}
 	return result
-}
-
-func readeckArticleDocument(title, article string) string {
-	article = strings.TrimSpace(article)
-	if article == "" {
-		return ""
-	}
-	if strings.Contains(strings.ToLower(article), "<html") {
-		return article
-	}
-	return "<!doctype html><html><head><title>" + stdhtml.EscapeString(title) +
-		"</title></head><body>" + article + "</body></html>"
 }

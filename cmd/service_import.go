@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"net/http"
 	"net/url"
@@ -331,6 +332,7 @@ type serviceContentRequest struct {
 	HTML        string
 	PrefixText  string
 	SourceTitle string
+	StoredOnly  bool
 }
 
 type serviceImportBuffer struct {
@@ -464,7 +466,7 @@ func loadServiceContent(
 			return nil
 		}
 	}
-	if contentFetcher != nil {
+	if contentFetcher != nil && !request.StoredOnly {
 		return downloadServiceContent(ctx, contentFetcher, d, request, languageDetector)
 	}
 	return embeddedErr
@@ -572,4 +574,16 @@ func serviceAPIToken(cmd *cobra.Command, envName string) string {
 		return strings.TrimSpace(token)
 	}
 	return strings.TrimSpace(os.Getenv(envName))
+}
+
+func serviceArticleDocument(title, article string) string {
+	article = strings.TrimSpace(article)
+	if article == "" {
+		return ""
+	}
+	if strings.Contains(strings.ToLower(article), "<html") {
+		return article
+	}
+	return "<!doctype html><html><head><title>" + stdhtml.EscapeString(title) +
+		"</title></head><body>" + article + "</body></html>"
 }

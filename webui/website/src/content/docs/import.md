@@ -27,6 +27,7 @@ The `hister import` command collects related import tools under one command. Eve
 | `hister import raindrop`                    | Raindrop.io through its HTTP API            | `raindrop`                |
 | `hister import raindrop --input INPUT.csv`  | A Raindrop.io CSV export                    | `raindrop`                |
 | `hister import readeck INSTANCE_URL`        | A Readeck instance through its HTTP API     | `readeck`                 |
+| `hister import readwise`                    | Readwise Reader through its HTTP API        | `readwise`                |
 | `hister import shaarli INSTANCE_URL`        | A Shaarli instance through its HTTP API     | `shaarli`                 |
 | `hister import wallabag INSTANCE_URL`       | A wallabag instance through its HTTP API    | `wallabag`                |
 
@@ -563,9 +564,43 @@ hister import raindrop --input Raindrop.io-Export.csv --skip-existing
 
 CSV imports need no Raindrop API credential. The `--input` option cannot be combined with `--api-token`. Raindrop API and CSV imports support the [service import options](#service-import-options) below, including `--label`, date filters, and output formats. Individual failures result in exit status 2; source API failures, unreadable files, and invalid CSV headers or quoting result in exit status 1.
 
+## Importing from Readwise Reader
+
+Get an access token from [Readwise](https://readwise.io/access_token), then run:
+
+```bash
+export HISTER_IMPORT_READWISE_TOKEN='your-readwise-token'
+hister import readwise
+```
+
+You can use `--api-token` as a temporary override. The global `--token` flag authenticates with the destination Hister server. The command connects to Readwise Reader directly and takes no instance URL.
+
+Hister requests documents from all Reader locations, including the feed and archive, through the [Reader API](https://readwise.io/reader_api). This imports Reader documents, including articles, videos, books, and PDFs. It does not use the original Readwise highlights API. Separate highlight and note records are skipped so they cannot overwrite the complete document at the same source URL. Notes attached to a document are included in its searchable text.
+
+### Readwise Data Mapping
+
+| Reader value                                                                                         | Hister value                              |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `source_url`, or `url` when no source URL exists                                                     | Document URL                              |
+| `title`                                                                                              | Title                                     |
+| `html_content`                                                                                       | Stored HTML and extracted searchable text |
+| `summary`, `notes`                                                                                   | Searchable text and metadata              |
+| `created_at`, `updated_at`                                                                           | Added and updated timestamps              |
+| Document ID, Reader URL, author, tags, category, location, site, source, publication date, image URL | `readwise_*` metadata                     |
+
+Every imported document receives `source: readwise` metadata and the `readwise` label by default. Stored HTML is used first. If it is absent or cannot be extracted, Hister downloads the original source URL using the configured crawler backend. Books and PDFs without a source URL use their Reader URL and stored HTML; if no content is available, their metadata is still imported. The importer does not download original EPUB or PDF attachments from Reader.
+
+Pagination is automatic. Rate limit responses are retried up to three times, honoring `Retry-After` with a maximum wait of five minutes per retry. Each run scans the library again, allowing changed documents and previously failed imports to be retried. Use `--skip-existing` to keep URLs already indexed in Hister:
+
+```bash
+hister import readwise --skip-existing --label reading
+```
+
+Deleted Reader documents are not removed from Hister. Readwise imports support the service import options below. Individual failures result in exit status 2; API or pagination failures result in exit status 1.
+
 ## Service Import Options
 
-The following options apply to Linkding, Linkwarden, Karakeep, Raindrop, Readeck, Shaarli, and wallabag imports. Raindrop CSV input does not use `--api-token`.
+The following options apply to Linkding, Linkwarden, Karakeep, Raindrop, Readeck, Readwise Reader, Shaarli, and wallabag imports. Raindrop CSV input does not use `--api-token`.
 
 Service imports preserve favicon data supplied by the source. When it is absent, Hister tries the favicon URL discovered while extracting the linked page, or the conventional `/favicon.ico` URL when no page icon is available. A favicon download failure does not stop the import.
 

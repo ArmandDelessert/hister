@@ -251,7 +251,7 @@ func TestRaindropAPIRateLimitRetryBoundAndCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := waitForRaindrop(ctx, time.Hour); !errors.Is(err, context.Canceled) {
+	if err := waitForServiceImport(ctx, time.Hour); !errors.Is(err, context.Canceled) {
 		t.Fatalf("wait error = %v", err)
 	}
 }
@@ -268,7 +268,7 @@ func TestRaindropRetryDelay(t *testing.T) {
 		{header: http.Header{"Retry-After": {"9223372036854775807"}}, want: 5 * time.Minute},
 		{header: http.Header{"Retry-After": {"invalid"}}, want: time.Minute},
 	} {
-		if got := raindropRetryDelay(tt.header, now); got != tt.want {
+		if got := serviceImportRetryDelay(tt.header, now); got != tt.want {
 			t.Errorf("delay for %v = %v, want %v", tt.header, got, tt.want)
 		}
 	}

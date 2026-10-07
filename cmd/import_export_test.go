@@ -492,6 +492,7 @@ func TestImportCommandHierarchy(t *testing.T) {
 		"karakeep":   importKarakeepCmd,
 		"raindrop":   importRaindropCmd,
 		"readeck":    importReadeckCmd,
+		"readwise":   importReadwiseCmd,
 		"shaarli":    importShaarliCmd,
 		"wallabag":   importWallabagCmd,
 	}
@@ -539,7 +540,7 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 	if importCmd.PersistentFlags().Lookup("label") == nil {
 		t.Fatal("import is missing --label")
 	}
-	for _, importCommand := range []*cobra.Command{importFileCmd, importBrowserCmd, importBrowserHistoryCmd, importBookmarksCmd, importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importShaarliCmd, importWallabagCmd} {
+	for _, importCommand := range []*cobra.Command{importFileCmd, importBrowserCmd, importBrowserHistoryCmd, importBookmarksCmd, importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importReadwiseCmd, importShaarliCmd, importWallabagCmd} {
 		if importCommand.InheritedFlags().Lookup("ignore-rules") == nil {
 			t.Errorf("import %s does not inherit --ignore-rules", importCommand.Name())
 		}
@@ -548,7 +549,7 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"batch-size", "start-date", "end-date", "skip-existing", "global", "user-id"} {
-		for _, importCommand := range []*cobra.Command{importFileCmd, importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importShaarliCmd, importWallabagCmd} {
+		for _, importCommand := range []*cobra.Command{importFileCmd, importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importReadwiseCmd, importShaarliCmd, importWallabagCmd} {
 			if importCommand.Flags().Lookup(name) == nil {
 				t.Errorf("import %s is missing --%s", importCommand.Name(), name)
 			}
@@ -599,7 +600,7 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"backend", "backend-option", "proxy", "header", "cookie"} {
-		for _, importCommand := range []*cobra.Command{importBrowserCmd, importBrowserHistoryCmd, importBookmarksCmd, importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importShaarliCmd} {
+		for _, importCommand := range []*cobra.Command{importBrowserCmd, importBrowserHistoryCmd, importBookmarksCmd, importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importReadwiseCmd, importShaarliCmd} {
 			if importCommand.Flags().Lookup(name) == nil {
 				t.Errorf("import %s is missing --%s", importCommand.Name(), name)
 			}
@@ -608,7 +609,7 @@ func TestImportSubcommandFlagOwnership(t *testing.T) {
 			t.Errorf("import file unexpectedly has --%s", name)
 		}
 	}
-	for _, importCommand := range []*cobra.Command{importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importShaarliCmd} {
+	for _, importCommand := range []*cobra.Command{importLinkdingCmd, importLinkwardenCmd, importKarakeepCmd, importRaindropCmd, importReadeckCmd, importReadwiseCmd, importShaarliCmd} {
 		if importCommand.Flags().Lookup("api-token") == nil {
 			t.Errorf("import %s is missing --api-token", importCommand.Name())
 		}

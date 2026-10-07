@@ -69,7 +69,7 @@ func newRaindropClient(token string, httpClient *http.Client) (*raindropClient, 
 	if err != nil {
 		return nil, err
 	}
-	return &raindropClient{serviceAPIClient: api, pageSize: raindropPageSize, wait: waitForRaindrop}, nil
+	return &raindropClient{serviceAPIClient: api, pageSize: raindropPageSize, wait: waitForServiceImport}, nil
 }
 
 func (c *raindropClient) bookmarks(ctx context.Context, pageNumber int) ([]raindropItem, error) {

@@ -76,6 +76,7 @@ func configureCommandScopes() {
 	setCommandScope(importLinkwardenCmd, executionScopeRemote)
 	setCommandScope(importKarakeepCmd, executionScopeRemote)
 	setCommandScope(importReadeckCmd, executionScopeRemote)
+	setCommandScope(importReadwiseCmd, executionScopeRemote)
 	setCommandScope(importShaarliCmd, executionScopeRemote)
 	setCommandScope(importWallabagCmd, executionScopeRemote)
 

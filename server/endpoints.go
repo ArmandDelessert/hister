@@ -759,12 +759,6 @@ func serveVersions(c *webContext) {
 	c.JSON(versions)
 }
 
-// shouldSkipSubmission checks URL allow and skip rules unless the document carries an
-// explicit override. Other document validation and authorization still apply.
-func shouldSkipSubmission(c *webContext, d *document.Document) bool {
-	return !d.IgnoreSkipRules() && c.effectiveRules().IsSkip(d.URL)
-}
-
 func serveAdd(c *webContext) {
 	m := c.Request.Method
 	if m == http.MethodGet {
@@ -797,86 +791,38 @@ func serveAdd(c *webContext) {
 		d.Title = f.Get("title")
 		d.Text = f.Get("text")
 	}
-	if err := validateAddDocument(d); err != nil {
-		http.Error(c.Response, err.Error(), http.StatusBadRequest)
+	if status, err := prepareDocumentSubmission(c, d); err != nil {
+		http.Error(c.Response, err.Error(), status)
 		return
 	}
-	if !shouldSkipSubmission(c, d) && !c.Config.IsSameHost(d.URL) {
-		d.UserID = submittedDocumentUserID(c)
-		rules := c.effectiveRules()
-		var existingDoc *document.Document
-		if d.Type != document.RemoteFile && rules.IsVersioning(d.URL) {
-			existingDoc = c.Indexer.GetByURLAndUser(d.URL, d.UserID)
-		}
-		err := c.Indexer.AddContext(c.Request.Context(), d, indexer.WithRules(rules))
-		if err != nil {
-			if errors.Is(err, document.ErrSensitiveContent) {
-				log.Warn().Str("URL", d.URL).Msg("rejected document: sensitive content")
-				http.Error(c.Response, document.ErrSensitiveContent.Error(), http.StatusUnprocessableEntity)
-				return
-			}
-			log.Error().Err(err).Str("URL", d.URL).Msg("failed to create index")
-			serve500(c)
+	rules := c.effectiveRules()
+	var existingDoc *document.Document
+	if d.Type != document.RemoteFile && rules.IsVersioning(d.URL) {
+		existingDoc = c.Indexer.GetByURLAndUser(d.URL, d.UserID)
+	}
+	err := c.Indexer.AddContext(c.Request.Context(), d, indexer.WithRules(rules))
+	if err != nil {
+		if errors.Is(err, document.ErrSensitiveContent) {
+			log.Warn().Str("URL", d.URL).Msg("rejected document: sensitive content")
+			http.Error(c.Response, document.ErrSensitiveContent.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		if existingDoc != nil {
-			newDoc := c.Indexer.GetByURLAndUser(d.URL, d.UserID)
-			if newDoc != nil {
-				htmlDiff, textDiff := computeDocumentDiff(existingDoc, newDoc)
-				if htmlDiff != "" || textDiff != "" {
-					if err := model.SaveDocumentVersion(newDoc.URL, newDoc.UserID, htmlDiff, textDiff); err != nil {
-						log.Warn().Err(err).Str("url", newDoc.URL).Msg("failed to save document version")
-					}
+		log.Error().Err(err).Str("URL", d.URL).Msg("failed to create index")
+		serve500(c)
+		return
+	}
+	if existingDoc != nil {
+		newDoc := c.Indexer.GetByURLAndUser(d.URL, d.UserID)
+		if newDoc != nil {
+			htmlDiff, textDiff := computeDocumentDiff(existingDoc, newDoc)
+			if htmlDiff != "" || textDiff != "" {
+				if err := model.SaveDocumentVersion(newDoc.URL, newDoc.UserID, htmlDiff, textDiff); err != nil {
+					log.Warn().Err(err).Str("url", newDoc.URL).Msg("failed to save document version")
 				}
 			}
 		}
-		c.Response.WriteHeader(http.StatusCreated)
-	} else {
-		log.Debug().Str("url", d.URL).Msg("skip indexing")
-		c.Response.WriteHeader(http.StatusNotAcceptable)
 	}
-}
-
-func validateAddDocument(d *document.Document) error {
-	parsedURL, err := url.Parse(d.URL)
-	if err != nil {
-		return fmt.Errorf("invalid document URL: %w", err)
-	}
-	if d.Type != document.RemoteFile {
-		if strings.EqualFold(parsedURL.Scheme, "remote-file") {
-			return errors.New("remote-file URLs require the remote document type")
-		}
-		return nil
-	}
-	if parsedURL.Scheme != "remote-file" || parsedURL.Hostname() == "" {
-		return errors.New("remote file URL must use the remote-file scheme and include a source host")
-	}
-	if parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
-		return errors.New("remote file URL must not contain user information, a query, or a fragment")
-	}
-	if parsedURL.Path == "" || parsedURL.Path == "/" || !strings.HasPrefix(parsedURL.Path, "/") {
-		return errors.New("remote file URL must contain an absolute file path")
-	}
-	if d.Text == "" && d.HTML == "" {
-		return errors.New("remote file document must contain extracted text or HTML")
-	}
-
-	// All remote snapshot fields that depend on processing or server storage are
-	// derived again. This also prevents a submitted Processed value from
-	// bypassing URL and sensitive content checks.
-	d.DocumentID = ""
-	d.Domain = ""
-	d.HTMLKey = ""
-	d.Favicon = ""
-	d.FaviconKey = ""
-	d.Score = 0
-	d.Language = ""
-	d.UserID = 0
-	d.AddCount = 0
-	d.Processed = false
-	d.ExtraDocuments = nil
-	d.SkipIndexing = false
-	return nil
+	c.Response.WriteHeader(http.StatusCreated)
 }
 
 func serveAddPDF(c *webContext) {
@@ -2101,14 +2047,9 @@ func serveBatch(c *webContext) {
 	for i, op := range req.Ops {
 		switch op.Op {
 		case batchOpAdd:
-			if op.URL == "" {
-				results[i] = batchOpResult{Status: http.StatusBadRequest, Error: "missing url"}
-				continue
-			}
 			d := &op.Document
-			d.UserID = uid
-			if shouldSkipSubmission(c, d) || strings.HasPrefix(d.URL, c.Config.BaseURL("/")) {
-				results[i] = batchOpResult{Status: http.StatusNotAcceptable, Error: "url skipped by rules"}
+			if status, err := prepareDocumentSubmission(c, d); err != nil {
+				results[i] = batchOpResult{Status: status, Error: err.Error()}
 				continue
 			}
 			if err := batch.AddContext(c.Request.Context(), d, indexer.WithRules(c.effectiveRules())); err != nil {

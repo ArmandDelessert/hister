@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/asciimoo/hister/server/indexer"
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/server/model"
 
 	"charm.land/bubbles/v2/textinput"
@@ -50,7 +50,7 @@ var deleteUserCmd = &cobra.Command{
 		}
 		c := newClient()
 		q := fmt.Sprintf("user_id:%d", u.ID)
-		res, err := c.Search(&indexer.Query{Text: q})
+		res, err := c.Search(&client.SearchQuery{Text: q})
 		if err != nil {
 			exit(1, "Failed to check user documents: "+err.Error())
 		}

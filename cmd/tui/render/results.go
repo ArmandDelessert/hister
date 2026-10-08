@@ -8,9 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui/model"
-	"github.com/asciimoo/hister/server/document"
-	smodel "github.com/asciimoo/hister/server/model"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -160,7 +159,7 @@ func selectedResultStyle(m *model.Model) lipgloss.Style {
 	return m.Styles.SelectedItemBlur
 }
 
-func HistoryItem(m *model.Model, h *smodel.URLCount, sel bool, contentW int) string {
+func HistoryItem(m *model.Model, h *client.SearchHistoryItem, sel bool, contentW int) string {
 	ts := m.Styles.Title
 	if sel && resultListFocused(m) {
 		ts = m.Styles.SelTitle
@@ -186,7 +185,7 @@ func HistoryItem(m *model.Model, h *smodel.URLCount, sel bool, contentW int) str
 	return m.Styles.Item.Render(content)
 }
 
-func Document(m *model.Model, d *document.Document, sel bool, contentW int) string {
+func Document(m *model.Model, d *client.Document, sel bool, contentW int) string {
 	ts := m.Styles.Title
 	if sel && resultListFocused(m) {
 		ts = m.Styles.SelTitle

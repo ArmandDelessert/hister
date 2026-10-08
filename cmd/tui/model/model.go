@@ -17,8 +17,6 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/component"
 	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/spinner"
@@ -45,7 +43,7 @@ type Model struct {
 	overlayStack []ViewState
 	Cfg          *config.Config
 	Client       *client.Client
-	Results      *indexer.Results
+	Results      *client.SearchResults
 
 	// Readable preview pane. DetailsURL is also the pane-open flag so modal
 	// dialogs can retain the split view behind them.
@@ -355,7 +353,7 @@ func (m *Model) GetSelectedTitle() string {
 	return ""
 }
 
-func (m *Model) GetSelectedDocument() *document.Document {
+func (m *Model) GetSelectedDocument() *client.Document {
 	if m.Results == nil || m.SelectedIdx < 0 || m.SelectedIdx < len(m.Results.History) || m.SelectedIdx == m.Limit {
 		return nil
 	}
@@ -370,7 +368,7 @@ func (m *Model) GetSelectedDocument() *document.Document {
 // VisibleDocuments merges keyword and semantic-only results into the order
 // presented by the TUI. It deliberately returns a new slice and never mutates
 // the server response, which keeps selection and re-rendering deterministic.
-func (m *Model) VisibleDocuments() []*document.Document {
+func (m *Model) VisibleDocuments() []*client.Document {
 	if m.Results == nil {
 		return nil
 	}
@@ -380,10 +378,10 @@ func (m *Model) VisibleDocuments() []*document.Document {
 	}
 
 	seen := make(map[string]struct{}, len(documents))
-	byID := make(map[string]*document.Document, len(documents))
+	byID := make(map[string]*client.Document, len(documents))
 	for _, doc := range documents {
 		seen[doc.URL] = struct{}{}
-		byID[document.GetDocID(doc.UserID, doc.URL)] = doc
+		byID[doc.ID()] = doc
 	}
 	semanticScores := make(map[string]float64, len(m.Results.SemanticHits))
 	for _, hit := range m.Results.SemanticHits {
@@ -392,7 +390,7 @@ func (m *Model) VisibleDocuments() []*document.Document {
 			if _, ok := seen[hit.Document.URL]; !ok {
 				documents = append(documents, hit.Document)
 				seen[hit.Document.URL] = struct{}{}
-				byID[document.GetDocID(hit.Document.UserID, hit.Document.URL)] = hit.Document
+				byID[hit.Document.ID()] = hit.Document
 			}
 		}
 		if doc := byID[hit.DocID]; doc != nil {
@@ -400,7 +398,7 @@ func (m *Model) VisibleDocuments() []*document.Document {
 		}
 	}
 	if m.SortMode == "domain" {
-		slices.SortStableFunc(documents, func(a, b *document.Document) int {
+		slices.SortStableFunc(documents, func(a, b *client.Document) int {
 			if n := cmp.Compare(a.Domain, b.Domain); n != 0 {
 				return n
 			}
@@ -417,10 +415,10 @@ func (m *Model) VisibleDocuments() []*document.Document {
 	if weight <= 0 || weight >= 1 {
 		weight = 0.4
 	}
-	combinedScore := func(doc *document.Document) float64 {
+	combinedScore := func(doc *client.Document) float64 {
 		return (1-weight)*(doc.Score/maxKeywordScore) + weight*semanticScores[doc.URL]
 	}
-	slices.SortStableFunc(documents, func(a, b *document.Document) int {
+	slices.SortStableFunc(documents, func(a, b *client.Document) int {
 		return cmp.Compare(combinedScore(b), combinedScore(a))
 	})
 	return documents

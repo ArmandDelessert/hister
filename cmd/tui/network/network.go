@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui/model"
-	"github.com/asciimoo/hister/server/indexer"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/gorilla/websocket"
@@ -81,8 +81,8 @@ func ConnectWebSocket(wsURL, origin, token string, wsChan chan tea.Msg, wsDone c
 	}
 }
 
-func decodeResults(data []byte) (*indexer.Results, error) {
-	var results indexer.Results
+func decodeResults(data []byte) (*client.SearchResults, error) {
+	var results client.SearchResults
 	if err := json.Unmarshal(data, &results); err != nil {
 		return nil, err
 	}

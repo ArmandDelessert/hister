@@ -10,9 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -157,7 +154,7 @@ func TestRequestCancellation(t *testing.T) {
 			return err
 		},
 		"add": func(c *Client, ctx context.Context) error {
-			return c.AddDocumentJSONContext(ctx, &document.Document{URL: "https://example.com"})
+			return c.AddDocumentJSONContext(ctx, &Document{URL: "https://example.com"})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -198,12 +195,12 @@ func TestDocumentExistsResponseHandling(t *testing.T) {
 }
 
 func TestSearchRequestAndResponse(t *testing.T) {
-	query := &indexer.Query{Text: `label:"a & b"`, Limit: 3, PageKey: "next+page"}
+	query := &SearchQuery{Text: `label:"a & b"`, Limit: 3, PageKey: "next+page"}
 	for _, response := range []string{`{"total":2}`, `null`, `{"total":2}invalid`} {
 		t.Run(response, func(t *testing.T) {
 			body := &trackedResponseBody{Reader: strings.NewReader(response)}
 			c := New("http://hister.test", WithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				var got indexer.Query
+				var got SearchQuery
 				if err := json.Unmarshal([]byte(r.URL.Query().Get("query")), &got); err != nil {
 					t.Fatal(err)
 				}
@@ -249,7 +246,7 @@ func TestBatchRequestSplittingPreservesResults(t *testing.T) {
 		}
 		sizes = append(sizes, len(request.Ops))
 		for _, op := range request.Ops {
-			if op.Op != "add" || !op.SkipSensitiveCheck || !op.IgnoreSkipRules() {
+			if op.Op != "add" || !op.SkipSensitiveCheck || op.Metadata["ignore_skip_rules"] != true {
 				t.Errorf("document options lost: %+v", op)
 			}
 		}
@@ -261,7 +258,7 @@ func TestBatchRequestSplittingPreservesResults(t *testing.T) {
 		bodies = append(bodies, body)
 		return &http.Response{StatusCode: status, Body: body}, nil
 	})}))
-	results, err := c.AddDocumentsJSON([]*document.Document{{URL: "https://example.com/first"}, {URL: "https://example.com/large"}, {URL: "https://example.com/last"}})
+	results, err := c.AddDocumentsJSON([]*Document{{URL: "https://example.com/first"}, {URL: "https://example.com/large"}, {URL: "https://example.com/last"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +313,7 @@ func TestRequestEncodingAndTransportErrors(t *testing.T) {
 		calls++
 		return nil, transportErr
 	})}))
-	d := &document.Document{URL: "https://example.com", Metadata: map[string]any{"invalid": func() {}}}
+	d := &Document{URL: "https://example.com", Metadata: map[string]any{"invalid": func() {}}}
 	var encodingErr *json.UnsupportedTypeError
 	if err := c.AddDocumentJSON(d); !errors.As(err, &encodingErr) {
 		t.Errorf("encoding error = %v", err)
@@ -348,7 +345,7 @@ func TestBatchRequestResponseValidation(t *testing.T) {
 				calls++
 				return &http.Response{StatusCode: tt.status, Body: body}, nil
 			})}))
-			results, err := c.AddDocumentsJSON([]*document.Document{{URL: "https://example.com"}})
+			results, err := c.AddDocumentsJSON([]*Document{{URL: "https://example.com"}})
 			if len(results) != 0 || err == nil || !strings.Contains(err.Error(), tt.wantError) {
 				t.Errorf("results = %+v, error = %v, want %q", results, err, tt.wantError)
 			}

@@ -8,11 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-
-	"github.com/asciimoo/hister/server/indexer"
 )
 
-func (c *Client) Search(q *indexer.Query) (result *indexer.Results, err error) {
+func (c *Client) Search(q *SearchQuery) (result *SearchResults, err error) {
 	qJSON, err := json.Marshal(q)
 	if err != nil {
 		return nil, err
@@ -26,7 +24,7 @@ func (c *Client) Search(q *indexer.Query) (result *indexer.Results, err error) {
 		if err != nil {
 			return err
 		}
-		var decoded *indexer.Results
+		var decoded *SearchResults
 		if err := json.Unmarshal(body, &decoded); err != nil {
 			return err
 		}

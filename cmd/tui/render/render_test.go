@@ -12,8 +12,6 @@ import (
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
@@ -58,8 +56,8 @@ func prepareSearchRender(m *model.Model) {
 func TestDetailsRenderAsRightSideSearchPane(t *testing.T) {
 	m := renderModel()
 	m.Width = 120
-	doc := &document.Document{URL: "https://example.com/article", Title: "Left result", Text: "excerpt"}
-	m.Results = &indexer.Results{Documents: []*document.Document{doc}}
+	doc := &client.Document{URL: "https://example.com/article", Title: "Left result", Text: "excerpt"}
+	m.Results = &client.SearchResults{Documents: []*client.Document{doc}}
 	m.SelectedIdx = 0
 	m.State = model.StateDetails
 	m.DetailsURL = doc.URL
@@ -87,8 +85,8 @@ func TestDetailsRenderAsRightSideSearchPane(t *testing.T) {
 func TestDetailsUseFullWidthOnNarrowTerminal(t *testing.T) {
 	m := renderModel()
 	m.Width = 70
-	doc := &document.Document{URL: "https://example.com/article", Title: "Left-only result"}
-	m.Results = &indexer.Results{Documents: []*document.Document{doc}}
+	doc := &client.Document{URL: "https://example.com/article", Title: "Left-only result"}
+	m.Results = &client.SearchResults{Documents: []*client.Document{doc}}
 	m.SelectedIdx = 0
 	m.State = model.StateDetails
 	m.DetailsURL = doc.URL
@@ -301,7 +299,7 @@ func TestSearchEmptyStatesExplainTheNextStep(t *testing.T) {
 	}
 
 	m.TextInput.SetValue("wrod")
-	m.Results = &indexer.Results{QuerySuggestion: "word"}
+	m.Results = &client.SearchResults{QuerySuggestion: "word"}
 	RefreshViewport(m)
 	empty := ansi.Strip(m.Viewport.View())
 	for _, want := range []string{"No results for “wrod”", "Did you mean “word”?", "Press Enter to try it"} {
@@ -323,7 +321,7 @@ func TestOfflineSearchStateExplainsRecovery(t *testing.T) {
 
 func TestResultSelectionDistinguishesFocusFromRetention(t *testing.T) {
 	m := renderModel()
-	m.Results = &indexer.Results{Documents: []*document.Document{{
+	m.Results = &client.SearchResults{Documents: []*client.Document{{
 		URL: "https://example.com", Title: "Selected result",
 	}}}
 	m.SelectedIdx = 0
@@ -346,7 +344,7 @@ func TestSelectedResultTitleStyleResumesAfterSearchHighlight(t *testing.T) {
 	m := renderModel()
 	m.State = model.StateResults
 	highlight := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
-	doc := &document.Document{
+	doc := &client.Document{
 		URL:   "https://example.com",
 		Title: "Before " + highlight.Render("match") + " after",
 	}

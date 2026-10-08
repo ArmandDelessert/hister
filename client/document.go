@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-
-	"github.com/asciimoo/hister/server/document"
 )
 
 // AddDocumentResult describes the outcome of one document in a bulk request.
@@ -20,7 +18,7 @@ type AddDocumentResult struct {
 
 type addDocumentOperation struct {
 	Op string `json:"op"`
-	*document.Document
+	*Document
 }
 
 type encodedAddDocument struct {
@@ -30,7 +28,7 @@ type encodedAddDocument struct {
 const maxBatchOperations = 100
 
 // AddDocumentsJSON submits documents in byte bounded bulk requests.
-func (c *Client) AddDocumentsJSON(docs []*document.Document) (results []AddDocumentResult, err error) {
+func (c *Client) AddDocumentsJSON(docs []*Document) (results []AddDocumentResult, err error) {
 	if len(docs) == 0 {
 		return []AddDocumentResult{}, nil
 	}
@@ -155,22 +153,25 @@ func (c *Client) sendAddDocumentBatch(data []byte, documentCount int) (results [
 	return results, err
 }
 
-func (c *Client) AddDocumentJSON(doc *document.Document) error {
+func (c *Client) AddDocumentJSON(doc *Document) error {
 	return c.AddDocumentJSONContext(context.Background(), doc)
 }
 
 // AddDocumentJSONContext submits a prepared document until ctx is cancelled.
-func (c *Client) AddDocumentJSONContext(ctx context.Context, doc *document.Document) error {
+func (c *Client) AddDocumentJSONContext(ctx context.Context, doc *Document) error {
 	c.applyDocumentOptions(doc)
 	return c.requestJSON(ctx, http.MethodPost, "/api/add", doc, nil)
 }
 
-func (c *Client) applyDocumentOptions(doc *document.Document) {
+func (c *Client) applyDocumentOptions(doc *Document) {
 	if c.allowSensitive {
 		doc.SkipSensitiveCheck = true
 	}
 	if c.ignoreRules {
-		doc.SetIgnoreSkipRules(true)
+		if doc.Metadata == nil {
+			doc.Metadata = make(map[string]any)
+		}
+		doc.Metadata["ignore_skip_rules"] = true
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/files"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 
 	"github.com/rs/zerolog/log"
@@ -32,7 +31,7 @@ var listURLsCmd = &cobra.Command{
 		c := newClient(client.WithTimeout(0))
 		pageKey := ""
 		for {
-			res, err := c.Search(&indexer.Query{Text: "*", PageKey: pageKey, Sort: "domain"})
+			res, err := c.Search(&client.SearchQuery{Text: "*", PageKey: pageKey, Sort: "domain"})
 			if err != nil {
 				exit(1, "Failed to fetch URLs: "+err.Error())
 			}
@@ -119,7 +118,7 @@ Non-admin users are restricted to their own documents by the server.`,
 		if verbose {
 			var pageKey string
 			for {
-				res, err := c.Search(&indexer.Query{Text: args[0], PageKey: pageKey, Sort: "domain"})
+				res, err := c.Search(&client.SearchQuery{Text: args[0], PageKey: pageKey, Sort: "domain"})
 				if err != nil {
 					exit(1, "Failed to search: "+err.Error())
 				}
@@ -139,7 +138,7 @@ Non-admin users are restricted to their own documents by the server.`,
 				return
 			}
 		} else {
-			res, err := c.Search(&indexer.Query{Text: args[0]})
+			res, err := c.Search(&client.SearchQuery{Text: args[0]})
 			if err != nil {
 				exit(1, "Failed to search: "+err.Error())
 			}

@@ -16,8 +16,6 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -198,7 +196,7 @@ func TestSettingsKeybindingEditUsesBindingIndex(t *testing.T) {
 
 func TestArrowNavigationTransfersSearchFocusToResults(t *testing.T) {
 	m := handleTestModel(t)
-	m.Results = &indexer.Results{Documents: []*document.Document{
+	m.Results = &client.SearchResults{Documents: []*client.Document{
 		{URL: "https://example.com/first", Title: "First"},
 		{URL: "https://example.com/second", Title: "Second"},
 	}}
@@ -219,7 +217,7 @@ func TestSearchResponseDoesNotStealSelectionWhileTyping(t *testing.T) {
 	m.TextInput.SetValue("query")
 	m.SelectedIdx = -1
 
-	Update(m, model.ResultsMsg{Results: &indexer.Results{Documents: []*document.Document{{
+	Update(m, model.ResultsMsg{Results: &client.SearchResults{Documents: []*client.Document{{
 		URL: "https://example.com/first", Title: "First",
 	}}}})
 
@@ -235,7 +233,7 @@ func TestEmptyResponseReturnsOrphanedResultFocusToSearch(t *testing.T) {
 	m.TextInput.Blur()
 	m.SelectedIdx = 0
 
-	if cmd := Update(m, model.ResultsMsg{Results: &indexer.Results{}}); cmd == nil {
+	if cmd := Update(m, model.ResultsMsg{Results: &client.SearchResults{}}); cmd == nil {
 		t.Fatal("empty response did not resume input and websocket commands")
 	}
 	if m.State != model.StateInput || m.SelectedIdx != -1 || !m.TextInput.Focused() {
@@ -246,7 +244,7 @@ func TestEmptyResponseReturnsOrphanedResultFocusToSearch(t *testing.T) {
 
 func TestEmptyResponseUpdatesResultFocusUnderNestedOverlays(t *testing.T) {
 	m := handleTestModel(t)
-	m.Results = &indexer.Results{Documents: []*document.Document{{
+	m.Results = &client.SearchResults{Documents: []*client.Document{{
 		URL: "https://example.com/first", Title: "First",
 	}}}
 	m.State = model.StateResults
@@ -255,7 +253,7 @@ func TestEmptyResponseUpdatesResultFocusUnderNestedOverlays(t *testing.T) {
 	m.OpenOverlay(model.StateDetails)
 	m.OpenOverlay(model.StateHelp)
 
-	Update(m, model.ResultsMsg{Results: &indexer.Results{}})
+	Update(m, model.ResultsMsg{Results: &client.SearchResults{}})
 	if m.State != model.StateHelp {
 		t.Fatalf("empty response dismissed visible overlay: state=%s", m.State)
 	}
@@ -274,7 +272,7 @@ func TestEmptyResponseUpdatesResultFocusUnderNestedOverlays(t *testing.T) {
 func TestEnterAcceptsNoResultQuerySuggestion(t *testing.T) {
 	m := handleTestModel(t)
 	m.TextInput.SetValue("wrod")
-	m.Results = &indexer.Results{QuerySuggestion: "word"}
+	m.Results = &client.SearchResults{QuerySuggestion: "word"}
 
 	if cmd := Update(m, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})); cmd == nil {
 		t.Fatal("Enter did not schedule the suggested search")
@@ -290,8 +288,8 @@ func TestEnterAcceptsNoResultQuerySuggestion(t *testing.T) {
 func TestEnterAcceptsSuggestionInsteadOfRetainedResult(t *testing.T) {
 	m := handleTestModel(t)
 	m.TextInput.SetValue("wrod")
-	m.Results = &indexer.Results{
-		Documents:       []*document.Document{{URL: "https://example.com/result", Title: "Result"}},
+	m.Results = &client.SearchResults{
+		Documents:       []*client.Document{{URL: "https://example.com/result", Title: "Result"}},
 		QuerySuggestion: "word",
 	}
 	m.SelectedIdx = 0
@@ -327,7 +325,7 @@ func TestAddValidationReturnsFocusToRequiredURL(t *testing.T) {
 func TestResultWheelTransfersFocusAndRoutesPrintableActions(t *testing.T) {
 	m := handleTestModel(t)
 	m.TextInput.SetValue("query")
-	m.Results = &indexer.Results{Documents: []*document.Document{
+	m.Results = &client.SearchResults{Documents: []*client.Document{
 		{URL: "https://example.com/first", Title: "First"},
 		{URL: "https://example.com/second", Title: "Second"},
 	}}
@@ -379,8 +377,8 @@ func TestSuccessfulDeleteClosesPreviewAndClearsTerminalResources(t *testing.T) {
 
 func TestReloadDetailsPreservesOverlayState(t *testing.T) {
 	m := handleTestModel(t)
-	doc := &document.Document{URL: "https://example.com/new", Title: "New result"}
-	m.Results = &indexer.Results{Documents: []*document.Document{doc}}
+	doc := &client.Document{URL: "https://example.com/new", Title: "New result"}
+	m.Results = &client.SearchResults{Documents: []*client.Document{doc}}
 	m.SelectedIdx = 0
 	m.DetailsURL = "https://example.com/old"
 	m.State = model.StateContextMenu
@@ -399,8 +397,8 @@ func TestReloadDetailsPreservesOverlayState(t *testing.T) {
 
 func TestHelpOverDetailsClosesBackToResults(t *testing.T) {
 	m := handleTestModel(t)
-	doc := &document.Document{URL: "https://example.com/article", Title: "Article"}
-	m.Results = &indexer.Results{Documents: []*document.Document{doc}}
+	doc := &client.Document{URL: "https://example.com/article", Title: "Article"}
+	m.Results = &client.SearchResults{Documents: []*client.Document{doc}}
 	m.SelectedIdx = 0
 	m.State = model.StateResults
 

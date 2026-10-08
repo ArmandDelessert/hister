@@ -5,14 +5,13 @@ import (
 	"io"
 	"strings"
 
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui"
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 
 	"github.com/spf13/cobra"
 )
 
-func searchDocToMap(d *document.Document) map[string]any {
+func searchDocToMap(d *client.Document) map[string]any {
 	return map[string]any{
 		"id":          d.ID(),
 		"url":         d.URL,
@@ -90,11 +89,11 @@ var searchCmd = &cobra.Command{
 
 		c := newClient()
 		return writeSearchResults(cmd.OutOrStdout(), format, fields, limit,
-			indexer.Query{Text: qs, IncludeHTML: includeHTML, Sort: sortMode}, c.Search)
+			client.SearchQuery{Text: qs, IncludeHTML: includeHTML, Sort: sortMode}, c.Search)
 	},
 }
 
-func writeSearchResults(out io.Writer, format string, fields []string, limit int, query indexer.Query, search func(*indexer.Query) (*indexer.Results, error)) error {
+func writeSearchResults(out io.Writer, format string, fields []string, limit int, query client.SearchQuery, search func(*client.SearchQuery) (*client.SearchResults, error)) error {
 	csvFields := fields
 	if len(csvFields) == 0 {
 		csvFields = []string{"title", "url", "domain", "score", "added", "updated", "language", "text"}

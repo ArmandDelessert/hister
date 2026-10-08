@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/client"
 )
 
 func TestNormalizeOptionsRejectsRemoteDevTools(t *testing.T) {
@@ -364,11 +364,11 @@ func mustURL(t *testing.T, rawURL string) *url.URL {
 }
 
 type recordingSubmitter struct {
-	document *document.Document
+	document *client.Document
 	err      error
 }
 
-func (s *recordingSubmitter) AddDocumentJSON(doc *document.Document) error {
+func (s *recordingSubmitter) AddDocumentJSON(doc *client.Document) error {
 	s.document = doc
 	return s.err
 }

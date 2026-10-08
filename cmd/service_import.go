@@ -18,7 +18,6 @@ import (
 	"github.com/asciimoo/hister/server/crawler"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor"
-	"github.com/asciimoo/hister/server/indexer"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -541,7 +540,7 @@ func setServiceFavicon(d *document.Document, favicon string) {
 }
 
 func latestServiceUpdated(target *client.Client, source string) (int64, error) {
-	result, err := target.Search(&indexer.Query{
+	result, err := target.Search(&client.SearchQuery{
 		Text:  "metadata.source:" + source,
 		Limit: 1,
 		Sort:  "date",

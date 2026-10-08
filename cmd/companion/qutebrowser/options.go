@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/client"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 
 // DocumentSubmitter sends an extracted page to Hister.
 type DocumentSubmitter interface {
-	AddDocumentJSON(*document.Document) error
+	AddDocumentJSON(*client.Document) error
 }
 
 // Options configures qutebrowser monitoring and page submission.

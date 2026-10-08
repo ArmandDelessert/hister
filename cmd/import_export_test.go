@@ -469,7 +469,7 @@ func TestSubmissionOverrideInheritedByImports(t *testing.T) {
 				return jsonHTTPResponse(r, http.StatusCreated, ""), nil
 			})}))
 			c := client.New("http://hister.test", opts...)
-			if err := c.AddDocumentJSON(&document.Document{URL: "https://example.com"}); err != nil {
+			if err := c.AddDocumentJSON(&client.Document{URL: "https://example.com"}); err != nil {
 				t.Fatal(err)
 			}
 			if received.IgnoreSkipRules() != enabled {

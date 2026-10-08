@@ -19,7 +19,6 @@ import (
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 
 	"charm.land/lipgloss/v2"
 	"github.com/bodgit/sevenzip"
@@ -90,7 +89,7 @@ Use '-' as OUTPUT_FILE to write to stdout.`,
 		count := 0
 		pageKey := ""
 		for {
-			res, err := c.Search(&indexer.Query{
+			res, err := c.Search(&client.SearchQuery{
 				Text:        queryStr,
 				PageKey:     pageKey,
 				IncludeHTML: true,
@@ -519,7 +518,11 @@ func importJSONFile(
 }
 
 func addDocumentBatch(c *client.Client, docs []*document.Document) (imported, errCount int) {
-	results, err := c.AddDocumentsJSON(docs)
+	payload := make([]*client.Document, len(docs))
+	for i, doc := range docs {
+		payload[i] = clientDocument(doc)
+	}
+	results, err := c.AddDocumentsJSON(payload)
 	for i, result := range results {
 		if result.Status >= 200 && result.Status < 300 {
 			imported++

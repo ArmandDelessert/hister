@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/client"
 
 	"github.com/rs/zerolog/log"
 )
@@ -751,7 +751,7 @@ func (c *companion) isHisterPage(pageURL *url.URL) bool {
 }
 
 func (c *companion) submit(data pageData) (int, error) {
-	err := c.submitter.AddDocumentJSON(&document.Document{
+	err := c.submitter.AddDocumentJSON(&client.Document{
 		URL:     data.URL,
 		Title:   data.Title,
 		Text:    data.Text,

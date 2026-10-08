@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/net/html"
 
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui/model"
-	"github.com/asciimoo/hister/server/document"
 )
 
 func ResultDetailsContent(m *model.Model) string {
@@ -76,7 +76,7 @@ func wrapDetailsText(content string, width int) string {
 	return ansi.Hardwrap(ansi.Wordwrap(content, width, "/"), width, false)
 }
 
-func detailsDocument(m *model.Model, url string) *document.Document {
+func detailsDocument(m *model.Model, url string) *client.Document {
 	for _, doc := range m.VisibleDocuments() {
 		if doc != nil && doc.URL == url {
 			return doc
@@ -85,7 +85,7 @@ func detailsDocument(m *model.Model, url string) *document.Document {
 	return nil
 }
 
-func previewFacts(m *model.Model, doc *document.Document, meta map[string]any) []string {
+func previewFacts(m *model.Model, doc *client.Document, meta map[string]any) []string {
 	var facts []string
 	for _, key := range []string{"author", "published", "type", "site_name"} {
 		if value := metaString(meta, key); value != "" {

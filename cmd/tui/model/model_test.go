@@ -4,10 +4,8 @@ import (
 	"maps"
 	"testing"
 
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
-	smodel "github.com/asciimoo/hister/server/model"
 
 	"charm.land/lipgloss/v2"
 )
@@ -22,23 +20,23 @@ func testConfig() *config.Config {
 }
 
 func TestVisibleDocumentsMergesAndRanksSemanticResults(t *testing.T) {
-	keywordOne := &document.Document{URL: "https://one.test", Domain: "one.test", Score: 10}
-	keywordTwo := &document.Document{UserID: 42, URL: "https://two.test", Domain: "two.test", Score: 5}
-	semanticOnly := &document.Document{URL: "https://three.test", Domain: "three.test"}
+	keywordOne := &client.Document{URL: "https://one.test", Domain: "one.test", Score: 10}
+	keywordTwo := &client.Document{UserID: 42, URL: "https://two.test", Domain: "two.test", Score: 5}
+	semanticOnly := &client.Document{URL: "https://three.test", Domain: "three.test"}
 	m := InitialModel(testConfig())
 	m.SemanticOn = true
 	m.SemanticWeight = 0.4
-	m.Results = &indexer.Results{
-		History:   []*smodel.URLCount{{URL: "https://history.test"}},
-		Documents: []*document.Document{keywordOne, keywordTwo},
-		SemanticHits: []indexer.SemanticHit{
-			{DocID: document.GetDocID(keywordTwo.UserID, keywordTwo.URL), Similarity: 0.9},
+	m.Results = &client.SearchResults{
+		History:   []*client.SearchHistoryItem{{URL: "https://history.test"}},
+		Documents: []*client.Document{keywordOne, keywordTwo},
+		SemanticHits: []client.SemanticHit{
+			{DocID: keywordTwo.ID(), Similarity: 0.9},
 			{DocID: semanticOnly.URL, Similarity: 0.8, Document: semanticOnly},
 		},
 	}
 
 	got := m.VisibleDocuments()
-	want := []*document.Document{keywordTwo, keywordOne, semanticOnly}
+	want := []*client.Document{keywordTwo, keywordOne, semanticOnly}
 	if len(got) != len(want) {
 		t.Fatalf("VisibleDocuments length = %d, want %d", len(got), len(want))
 	}

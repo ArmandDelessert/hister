@@ -219,7 +219,7 @@ func importWatchedFile(ctx context.Context, c *client.Client, input importFileIn
 	if err != nil {
 		return false, err
 	}
-	return false, c.AddDocumentJSONContext(requestCtx, d)
+	return false, c.AddDocumentJSONContext(requestCtx, clientDocument(d))
 }
 
 type fileImportWork struct {

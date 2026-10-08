@@ -225,7 +225,7 @@ func importRemoteFile(
 		log.Warn().Err(fileSnapshotImportError(input.Path, err)).Str("file", input.Path).Msg("Failed to extract file content")
 		return 0, 0, 1
 	}
-	if err := c.AddDocumentJSON(d); err != nil {
+	if err := c.AddDocumentJSON(clientDocument(d)); err != nil {
 		log.Warn().Err(fileSnapshotImportError(input.Path, err)).Str("file", input.Path).Str("url", remoteURL).Msg("Failed to import file snapshot")
 		return 0, 0, 1
 	}

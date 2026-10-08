@@ -433,7 +433,7 @@ func indexURL(ctx context.Context, cr crawler.Crawler, u string, label string, c
 	}
 	d.Label = label
 	c := newClient(clientOpts...)
-	if err := c.AddDocumentJSON(d); err != nil {
+	if err := c.AddDocumentJSON(clientDocument(d)); err != nil {
 		return fmt.Errorf("failed to send page to hister: %w", err)
 	}
 	return nil
@@ -462,7 +462,7 @@ func crawlAndIndex(ctx context.Context, jobID string, startURL string, cr crawle
 			}
 		}
 		doc.Label = label
-		if err := c.AddDocumentJSON(doc); err != nil {
+		if err := c.AddDocumentJSON(clientDocument(doc)); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to index crawled document")
 			failed++
 			runErr = errors.Join(runErr, markPersistentIndexFailure(jobID, rawURL, err))

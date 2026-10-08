@@ -12,7 +12,6 @@ import (
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/indexer"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -62,7 +61,7 @@ type SearchQuery struct {
 
 // Message types for bubbletea
 type (
-	ResultsMsg             struct{ Results *indexer.Results }
+	ResultsMsg             struct{ Results *client.SearchResults }
 	ErrMsg                 struct{ Err error }
 	WsConnectedMsg         struct{ Conn *websocket.Conn }
 	WsDisconnectedMsg      struct{ Err error }

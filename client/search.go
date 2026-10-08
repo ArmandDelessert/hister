@@ -3,38 +3,35 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/url"
 
 	"github.com/asciimoo/hister/server/indexer"
 )
 
-func (c *Client) Search(q *indexer.Query) (_ *indexer.Results, err error) {
+func (c *Client) Search(q *indexer.Query) (result *indexer.Results, err error) {
 	qJSON, err := json.Marshal(q)
 	if err != nil {
 		return nil, err
 	}
 	u := "/search?query=" + url.QueryEscape(string(qJSON))
-	req, err := c.newRequest("GET", u, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody(resp, &err)
-	if err := checkStatus(resp); err != nil {
-		return nil, err
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var res *indexer.Results
-	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, err
-	}
-	return res, nil
+	err = c.request(context.Background(), http.MethodGet, u, nil, "", func(resp *http.Response) error {
+		if err := checkStatus(resp); err != nil {
+			return err
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		var decoded *indexer.Results
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			return err
+		}
+		result = decoded
+		return nil
+	})
+	return result, err
 }

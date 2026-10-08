@@ -4,27 +4,14 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/asciimoo/hister/server/types"
 )
 
-func (c *Client) FetchDiagnostics(ctx context.Context) (_ []types.DiagnosticCheck, err error) {
-	req, err := c.newRequest(http.MethodGet, "/api/diagnostics", nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody(resp, &err)
-	if err = checkStatus(resp); err != nil {
-		return nil, err
-	}
+func (c *Client) FetchDiagnostics(ctx context.Context) ([]types.DiagnosticCheck, error) {
 	var checks []types.DiagnosticCheck
-	if err = json.NewDecoder(resp.Body).Decode(&checks); err != nil {
+	if err := c.requestJSON(ctx, http.MethodGet, "/api/diagnostics", nil, &checks); err != nil {
 		return nil, err
 	}
 	return checks, nil

@@ -3,10 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -102,25 +99,13 @@ func New(baseURL string, opts ...Option) *Client {
 
 // FetchConfig retrieves capabilities from the server the client is connected
 // to. This avoids assuming that local configuration describes a remote server.
-func (c *Client) FetchConfig() (_ *ServerConfig, err error) {
+func (c *Client) FetchConfig() (*ServerConfig, error) {
 	return c.FetchConfigContext(context.Background())
 }
 
-func (c *Client) FetchConfigContext(ctx context.Context) (_ *ServerConfig, err error) {
-	req, err := c.newRequest(http.MethodGet, "/api/config", nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody(resp, &err)
-	if err = checkStatus(resp); err != nil {
-		return nil, err
-	}
+func (c *Client) FetchConfigContext(ctx context.Context) (*ServerConfig, error) {
 	var serverConfig ServerConfig
-	if err = json.NewDecoder(resp.Body).Decode(&serverConfig); err != nil {
+	if err := c.requestJSON(ctx, http.MethodGet, "/api/config", nil, &serverConfig); err != nil {
 		return nil, err
 	}
 	return &serverConfig, nil
@@ -136,102 +121,18 @@ func (c *Client) MaxBatchBodyBytes() int64 {
 			return
 		}
 		c.batchBodyBytes = legacyMaxBatchBodyBytes
-		req, err := c.newRequest(http.MethodGet, "/api/config", nil)
-		if err != nil {
-			return
-		}
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			return
-		}
-		var capabilities struct {
-			MaxBatchBodyBytes int64 `json:"maxBatchBodyBytes"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&capabilities); err == nil && capabilities.MaxBatchBodyBytes > 0 {
-			c.batchBodyBytes = capabilities.MaxBatchBodyBytes
-		}
+		_ = c.request(context.Background(), http.MethodGet, "/api/config", nil, "", func(resp *http.Response) error {
+			if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+				return nil
+			}
+			var capabilities struct {
+				MaxBatchBodyBytes int64 `json:"maxBatchBodyBytes"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&capabilities); err == nil && capabilities.MaxBatchBodyBytes > 0 {
+				c.batchBodyBytes = capabilities.MaxBatchBodyBytes
+			}
+			return nil
+		})
 	})
 	return c.batchBodyBytes
-}
-
-func checkStatus(resp *http.Response) error {
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	body, _ := io.ReadAll(resp.Body)
-	detail := strings.TrimSpace(string(body))
-	errWithStatus := func(msg string) error {
-		return &HTTPError{
-			StatusCode: resp.StatusCode,
-			Detail:     detail,
-			Message:    msg,
-		}
-	}
-
-	switch resp.StatusCode {
-	case http.StatusUnauthorized:
-		msg := "authentication required: the server requires an access token"
-		if detail != "" {
-			msg += " (" + detail + ")"
-		}
-		return errWithStatus(fmt.Sprintf("%s\nProvide one with --token / -t or set access_token in your config file", msg))
-	case http.StatusForbidden:
-		msg := "access denied: the token is invalid or does not have permission for this operation"
-		if detail != "" {
-			msg += " (" + detail + ")"
-		}
-		return errWithStatus(fmt.Sprintf("%s\nCheck the token with --token / -t or verify the user's permissions on the server", msg))
-	case http.StatusNotFound:
-		msg := "resource not found (404)"
-		if detail != "" {
-			msg += ": " + detail
-		}
-		return errWithStatus(msg)
-	case http.StatusNotAcceptable:
-		msg := "page skipped: this URL was rejected by the server (usually due to allow or skip rules)"
-		if detail != "" {
-			msg += " (" + detail + ")"
-		}
-		return errWithStatus(msg)
-	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		msg := fmt.Sprintf("server error (%d)", resp.StatusCode)
-		if detail != "" {
-			msg += ": " + detail
-		}
-		return errWithStatus(fmt.Sprintf("%s\nCheck the server logs for details", msg))
-	default:
-		if detail == "" {
-			detail = resp.Status
-		}
-		return errWithStatus(fmt.Sprintf("unexpected response (%d): %s", resp.StatusCode, detail))
-	}
-}
-
-func closeBody(resp *http.Response, errp *error) {
-	if cerr := resp.Body.Close(); cerr != nil && *errp == nil {
-		*errp = fmt.Errorf("closing response body: %w", cerr)
-	}
-}
-
-// builds an http.Request with Origin: hister:// set for CSRF bypass.
-func (c *Client) newRequest(method, path string, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequest(method, c.baseURL+path, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Origin", "hister://")
-	if c.userAgent != "" {
-		req.Header.Set("User-Agent", c.userAgent)
-	}
-	if c.accessToken != "" {
-		req.Header.Set("X-Access-Token", c.accessToken)
-	}
-	if c.targetUserID != nil {
-		req.Header.Set(targetUserIDHeader, strconv.FormatUint(uint64(*c.targetUserID), 10))
-	}
-	return req, nil
 }

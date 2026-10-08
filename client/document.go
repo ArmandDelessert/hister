@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/asciimoo/hister/server/document"
 )
@@ -139,54 +138,31 @@ func (c *Client) submitAddDocumentBatch(ops []encodedAddDocument) ([]AddDocument
 	return append(left, right...), err
 }
 
-func (c *Client) sendAddDocumentBatch(data []byte, documentCount int) (_ []AddDocumentResult, err error) {
-	req, err := c.newRequest(http.MethodPost, "/api/batch", bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody(resp, &err)
-	if err = checkStatus(resp); err != nil {
-		return nil, err
-	}
-	var result struct {
-		Results []AddDocumentResult `json:"results"`
-	}
-	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	if len(result.Results) != documentCount {
-		return nil, fmt.Errorf("batch response contained %d results for %d documents", len(result.Results), documentCount)
-	}
-	return result.Results, nil
+func (c *Client) sendAddDocumentBatch(data []byte, documentCount int) (results []AddDocumentResult, err error) {
+	err = c.request(context.Background(), http.MethodPost, "/api/batch", bytes.NewReader(data), "application/json", func(resp *http.Response) error {
+		var result struct {
+			Results []AddDocumentResult `json:"results"`
+		}
+		if err := decodeResponse(resp, &result); err != nil {
+			return err
+		}
+		if len(result.Results) != documentCount {
+			return fmt.Errorf("batch response contained %d results for %d documents", len(result.Results), documentCount)
+		}
+		results = result.Results
+		return nil
+	})
+	return results, err
 }
 
-func (c *Client) AddDocumentJSON(doc *document.Document) (err error) {
+func (c *Client) AddDocumentJSON(doc *document.Document) error {
 	return c.AddDocumentJSONContext(context.Background(), doc)
 }
 
 // AddDocumentJSONContext submits a prepared document until ctx is cancelled.
-func (c *Client) AddDocumentJSONContext(ctx context.Context, doc *document.Document) (err error) {
+func (c *Client) AddDocumentJSONContext(ctx context.Context, doc *document.Document) error {
 	c.applyDocumentOptions(doc)
-	data, err := json.Marshal(doc)
-	if err != nil {
-		return err
-	}
-	req, err := c.newRequest("POST", "/api/add", bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+	return c.requestJSON(ctx, http.MethodPost, "/api/add", doc, nil)
 }
 
 func (c *Client) applyDocumentOptions(doc *document.Document) {
@@ -198,123 +174,54 @@ func (c *Client) applyDocumentOptions(doc *document.Document) {
 	}
 }
 
-func (c *Client) AddPage(u, title, text string) (err error) {
+func (c *Client) AddPage(u, title, text string) error {
 	formData := url.Values{"url": {u}, "title": {title}, "text": {text}}
-	req, err := c.newRequest("POST", "/api/add", strings.NewReader(formData.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+	return c.postForm("/api/add", formData)
 }
 
-func (c *Client) DocumentExists(u string) (_ bool, err error) {
+func (c *Client) DocumentExists(u string) (bool, error) {
 	return c.DocumentExistsContext(context.Background(), u)
 }
 
-func (c *Client) DocumentExistsContext(ctx context.Context, u string) (_ bool, err error) {
-	req, err := c.newRequest("HEAD", "/api/document?url="+url.QueryEscape(u), nil)
-	if err != nil {
-		return false, err
-	}
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
-	if err != nil {
-		return false, err
-	}
-	defer closeBody(resp, &err)
-	if resp.StatusCode != http.StatusNotFound {
-		if err := checkStatus(resp); err != nil {
-			return false, err
+func (c *Client) DocumentExistsContext(ctx context.Context, u string) (exists bool, err error) {
+	err = c.request(ctx, http.MethodHead, "/api/document?url="+url.QueryEscape(u), nil, "", func(resp *http.Response) error {
+		if resp.StatusCode != http.StatusNotFound {
+			if err := checkStatus(resp); err != nil {
+				return err
+			}
 		}
-	}
-	return resp.StatusCode == http.StatusOK, nil
+		exists = resp.StatusCode == http.StatusOK
+		return nil
+	})
+	return exists, err
 }
 
-func (c *Client) Reindex(skipSensitive, detectLanguages bool) (err error) {
+func (c *Client) Reindex(skipSensitive, detectLanguages bool) error {
 	type reindexRequest struct {
 		SkipSensitive   bool `json:"skipSensitive"`
 		DetectLanguages bool `json:"detectLanguages"`
 	}
-	data, err := json.Marshal(reindexRequest{SkipSensitive: skipSensitive, DetectLanguages: detectLanguages})
-	if err != nil {
-		return err
-	}
-	req, err := c.newRequest("POST", "/api/reindex", bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+	return c.requestJSON(context.Background(), http.MethodPost, "/api/reindex", reindexRequest{SkipSensitive: skipSensitive, DetectLanguages: detectLanguages}, nil)
 }
 
-func (c *Client) DeleteDocument(u string) (err error) {
+func (c *Client) DeleteDocument(u string) error {
 	return c.DeleteDocuments("url:" + u)
 }
 
-func (c *Client) DeleteDocuments(query string) (err error) {
-	data, err := json.Marshal(map[string]string{"query": query})
-	if err != nil {
-		return err
-	}
-	req, err := c.newRequest("POST", "/api/delete", bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+func (c *Client) DeleteDocuments(query string) error {
+	return c.requestJSON(context.Background(), http.MethodPost, "/api/delete", map[string]string{"query": query}, nil)
 }
 
 // UpdateLabel sets or clears the user-defined label for a stored document.
-func (c *Client) UpdateLabel(urlStr, label string) (err error) {
-	data, err := json.Marshal(map[string]string{"url": urlStr, "label": label})
-	if err != nil {
-		return err
-	}
-	req, err := c.newRequest("POST", "/api/label", bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+func (c *Client) UpdateLabel(urlStr, label string) error {
+	return c.requestJSON(context.Background(), http.MethodPost, "/api/label", map[string]string{"url": urlStr, "label": label}, nil)
 }
 
 // FetchPreview retrieves the server-rendered readable representation of a
 // stored document.
-func (c *Client) FetchPreview(urlStr string) (_ *PreviewResponse, err error) {
-	req, err := c.newRequest("GET", "/api/preview?url="+url.QueryEscape(urlStr), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody(resp, &err)
-	if err = checkStatus(resp); err != nil {
-		return nil, err
-	}
+func (c *Client) FetchPreview(urlStr string) (*PreviewResponse, error) {
 	var preview PreviewResponse
-	if err = json.NewDecoder(resp.Body).Decode(&preview); err != nil {
+	if err := c.requestJSON(context.Background(), http.MethodGet, "/api/preview?url="+url.QueryEscape(urlStr), nil, &preview); err != nil {
 		return nil, err
 	}
 	return &preview, nil
@@ -330,18 +237,6 @@ type CleanupResult struct {
 }
 
 func (c *Client) Cleanup() (result CleanupResult, err error) {
-	req, err := c.newRequest("POST", "/api/cleanup", nil)
-	if err != nil {
-		return result, err
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return result, err
-	}
-	defer closeBody(resp, &err)
-	if err = checkStatus(resp); err != nil {
-		return result, err
-	}
-	err = json.NewDecoder(resp.Body).Decode(&result)
+	err = c.requestJSON(context.Background(), http.MethodPost, "/api/cleanup", nil, &result)
 	return result, err
 }

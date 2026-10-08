@@ -1,32 +1,20 @@
 package client
 
 import (
-	"encoding/json"
+	"context"
+	"net/http"
 	"net/url"
-	"strings"
 )
 
 func (c *Client) FetchRules() (_ *RulesResponse, err error) {
-	req, err := c.newRequest("GET", "/api/rules", nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody(resp, &err)
-	if err := checkStatus(resp); err != nil {
-		return nil, err
-	}
 	var data RulesResponse
-	err = json.NewDecoder(resp.Body).Decode(&data)
+	err = c.requestJSON(context.Background(), http.MethodGet, "/api/rules", nil, &data)
 	return &data, err
 }
 
 // SaveRules saves skip and priority patterns, followed by optional versioning
 // and allow patterns. Omitting allow leaves the server's allow rules unchanged.
-func (c *Client) SaveRules(skip, priority string, patterns ...string) (err error) {
+func (c *Client) SaveRules(skip, priority string, patterns ...string) error {
 	versioningRules := ""
 	if len(patterns) > 0 {
 		versioningRules = patterns[0]
@@ -35,45 +23,15 @@ func (c *Client) SaveRules(skip, priority string, patterns ...string) (err error
 	if len(patterns) > 1 {
 		formData.Set("allow", patterns[1])
 	}
-	req, err := c.newRequest("POST", "/api/rules", strings.NewReader(formData.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+	return c.postForm("/api/rules", formData)
 }
 
-func (c *Client) AddAlias(keyword, value string) (err error) {
+func (c *Client) AddAlias(keyword, value string) error {
 	formData := url.Values{"alias-keyword": {keyword}, "alias-value": {value}}
-	req, err := c.newRequest("POST", "/api/add_alias", strings.NewReader(formData.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+	return c.postForm("/api/add_alias", formData)
 }
 
-func (c *Client) DeleteAlias(alias string) (err error) {
+func (c *Client) DeleteAlias(alias string) error {
 	formData := url.Values{"alias": {alias}}
-	req, err := c.newRequest("POST", "/api/delete_alias", strings.NewReader(formData.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp, &err)
-	return checkStatus(resp)
+	return c.postForm("/api/delete_alias", formData)
 }

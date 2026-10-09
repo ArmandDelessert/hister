@@ -151,9 +151,9 @@ const (
 )
 
 // LowAccuracyLanguageDetection reports whether lingua should run in its reduced
-// memory mode.
+// memory mode. An unspecified accuracy uses the low accuracy default.
 func (i Indexer) LowAccuracyLanguageDetection() bool {
-	return i.LanguageDetectionAccuracy == LanguageDetectionAccuracyLow
+	return i.LanguageDetectionAccuracy == "" || i.LanguageDetectionAccuracy == LanguageDetectionAccuracyLow
 }
 
 // Validate checks what can be checked without knowing which languages the
@@ -620,7 +620,7 @@ func CreateDefaultConfig() *Config {
 			DetectLanguages:           true,
 			KeepStopwords:             false,
 			MaxFileSize:               1,
-			LanguageDetectionAccuracy: LanguageDetectionAccuracyHigh,
+			LanguageDetectionAccuracy: LanguageDetectionAccuracyLow,
 		},
 		Crawler: CrawlerConfig{
 			Backend: "http",

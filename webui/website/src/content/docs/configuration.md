@@ -220,13 +220,13 @@ description: 'Explore every configuration section, option, default value, enviro
       name: 'languages',
       type: 'string[]',
       defaultValue: '(none)',
-      description: 'Restricts language detection to these ISO 639-1 codes, which reduces memory use. Empty detects every supported language. Changing this setting does not require reindexing.',
+      description: 'Restricts detection to at least two distinct supported language codes. Empty detects every supported language. Restricted detection requires a confidence of at least 0.8; uncertain text uses the default index. Excluded languages can still be misclassified. See Language Detection below for tradeoffs.',
     },
     {
       name: 'language_detection_accuracy',
       type: 'string',
-      defaultValue: 'high',
-      description: 'Detection accuracy, high or low. Low uses only trigram models and less memory. The two settings detect text of 120 letters or more identically, so only shorter text is affected.',
+      defaultValue: 'low',
+      description: 'Detection accuracy, low (the default) or high. Low uses only trigram models and less memory, with reduced accuracy on short text. Both modes use trigrams for text of at least 120 letters. Select high to restore the previous behavior for short text.',
     },
     {
       name: 'keep_stopwords',
@@ -1134,13 +1134,39 @@ The login page hides the username/password form when `oauth_only` is active, sho
 
 ## Language Detection
 
-The `indexer.detect_languages` option (default: `true`) controls automatic language detection for indexed pages. When enabled, Hister uses language detection libraries to identify the language of each page's content, creating separate language-specific indexes that improve search accuracy through language-aware tokenization and stemming.
+The `indexer.detect_languages` option (default: `true`) controls automatic language detection for indexed pages. When enabled, Hister uses Lingua to identify the language of each page's content, creating separate indexes with language specific tokenization and stemming. These settings also apply to service imports processed by the command line client. Configure them on each machine that processes documents.
+
+```yaml
+indexer:
+  detect_languages: true
+  language_detection_accuracy: 'low'
+  languages: []
+```
+
+**Accuracy and memory**: `indexer.language_detection_accuracy` accepts `low` (the default) or `high`. Omitting the setting or leaving it empty selects low accuracy, including in configurations created before this option existed. Low accuracy loads only trigram models. Both modes use trigrams for text of at least 120 letters, but high accuracy also uses other model sizes for shorter text. Low accuracy can be less reliable on short text and may return `unknown`, which uses the default index. Script rules can still identify some very short text in either mode. Set `language_detection_accuracy: high` to restore the previous behavior for short text. Lingua caches loaded models for the lifetime of the process, so restart Hister after changing these settings to release models already loaded.
+
+The default combination of `language_detection_accuracy: low` and `languages: []` retains all supported languages while reducing memory use. The [measurements reported in PR #584](https://github.com/asciimoo/hister/pull/584#issuecomment-5304219844) found that low accuracy reduced Lingua's heap from about 377 MB to 18.5 MB with all 30 supported languages. Restricting low accuracy detection to four languages reduced it further to about 3.6 MB. These are measurements from one corpus, not memory guarantees or an accuracy benchmark.
+
+**Restricting languages**: `indexer.languages` defaults to an empty list, meaning all supported languages. A nonempty list needs at least two distinct supported codes. Codes ignore case and surrounding whitespace; duplicates do not count as separate languages. Supported codes are `ar`, `bg`, `ca`, `da`, `de`, `el`, `en`, `es`, `eu`, `fa`, `fi`, `fr`, `ga`, `hi`, `hr`, `hu`, `hy`, `id`, `it`, `ja`, `ko`, `nl`, `no`, `pl`, `pt`, `ro`, `ru`, `sv`, `tr`, and `zh`. Use `no` for Norwegian Bokmal, not `nb`.
+
+For a collection whose languages are known, this example avoids loading models outside the list and limits which language indexes newly processed documents can create:
+
+```yaml
+indexer:
+  detect_languages: true
+  language_detection_accuracy: 'low'
+  languages: ['en', 'de', 'nl', 'id']
+```
+
+The equivalent environment overrides are `HISTER__INDEXER__LANGUAGE_DETECTION_ACCURACY=low` and `HISTER__INDEXER__LANGUAGES=en,de,nl,id`.
+
+Restricted detection uses Lingua's confidence values and requires the highest score to be at least `0.8`, with no tie. Otherwise the document is classified as `unknown` and uses the default analyzer, which keeps it searchable without language specific stemming. The cutoff is a heuristic, not a calibrated probability of correct classification. An empty language list preserves the existing decision rule without this cutoff.
+
+**Tradeoffs**: Confidence is relative to the configured candidates. Text in an excluded language can still receive a high score for an included language, especially when they share a script. For example, French text can be classified as English with an English, German, Dutch, and Indonesian list, even with a score above `0.99`. The confidence cutoff reduces uncertain guesses; it cannot guarantee that excluded languages use the default index. An incorrect analyzer or the default analyzer can both reduce search accuracy compared with the correct language analyzer. Restrict the list only when the smaller additional memory savings and fewer new language indexes justify that tradeoff for your collection.
 
 The `indexer.keep_stopwords` option defaults to `false`. When enabled together with language detection, Hister retains stop words while continuing to apply the other language analyzer operations, including normalization and stemming. This is useful when quoted phrases must include common words such as `for` and `your`.
 
-**Performance considerations**: Language detection increases both CPU usage and memory consumption. Each document requires additional processing to analyze text and determine its language, and separate indexes are maintained for each detected language. If you're experiencing memory pressure or slow indexing performance, especially with large numbers of documents, consider disabling this feature.
-
-**Important**: Changing `detect_languages` or `keep_stopwords` requires a full reindex to take effect. Neither `languages` nor `language_detection_accuracy` does; both apply to documents indexed after the change, and existing indexes stay searchable. After changing `detect_languages` or `keep_stopwords`, run:
+**Reindexing**: Changing `languages` or `language_detection_accuracy` applies to newly processed documents after restarting. With detection enabled, existing language indexes remain searchable even if their language is removed from the list. No reindex is required to keep searching them; run a reindex if you want existing documents classified using the new settings. Changing `detect_languages` or `keep_stopwords` requires a full reindex to apply the analyzer change to existing documents:
 
 ```bash
 hister reindex

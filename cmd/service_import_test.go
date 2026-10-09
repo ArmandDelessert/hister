@@ -5,10 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/asciimoo/hister/client"
+	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
+
+	"github.com/spf13/cobra"
 )
 
 func TestServiceImportBufferDownloadsMissingFavicon(t *testing.T) {
@@ -66,6 +70,65 @@ func TestServiceImportBufferDownloadsMissingFavicon(t *testing.T) {
 	}
 	if buffer.stats.Imported != 1 || buffer.stats.Errors != 0 {
 		t.Errorf("stats = %+v, want one import without errors", buffer.stats)
+	}
+}
+
+func TestServiceImportRejectsUnsupportedLanguages(t *testing.T) {
+	oldCfg := cfg
+	t.Cleanup(func() { cfg = oldCfg })
+	for _, enabled := range []bool{true, false} {
+		cfg = config.CreateDefaultConfig()
+		cfg.Indexer.DetectLanguages = enabled
+		cfg.Indexer.Languages = []string{"en", "xx"}
+		command := &cobra.Command{Use: "import-test"}
+		addCommonImportFlags(command)
+		runtime, err := newServiceImportRuntime(command)
+		if runtime != nil {
+			_ = runtime.Close()
+		}
+		if err == nil || !strings.Contains(err.Error(), "indexer.languages") || !strings.Contains(err.Error(), "xx") {
+			t.Errorf("detect_languages=%v: error = %v, want unsupported language xx", enabled, err)
+		}
+	}
+}
+
+func TestServiceImportLanguageSettings(t *testing.T) {
+	oldCfg := cfg
+	t.Cleanup(func() { cfg = oldCfg })
+	for _, tc := range []struct {
+		name     string
+		enabled  bool
+		accuracy string
+		want     string
+	}{
+		{"default accuracy", true, "", "en"},
+		{"low accuracy", true, "low", "en"},
+		{"high accuracy", true, "high", document.UnknownLanguage},
+		{"disabled", false, "low", document.UnknownLanguage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg = config.CreateDefaultConfig()
+			cfg.Indexer.DetectLanguages = tc.enabled
+			cfg.Indexer.Languages = []string{"en", "de", "nl", "id"}
+			cfg.Indexer.LanguageDetectionAccuracy = tc.accuracy
+			command := &cobra.Command{Use: "import-test"}
+			addCommonImportFlags(command)
+			runtime, err := newServiceImportRuntime(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Close()
+			for text, want := range map[string]string{"hello world": tc.want, "bonjour": document.UnknownLanguage} {
+				d := &document.Document{URL: "https://example.com/article"}
+				fetched := &document.Document{URL: d.URL, Text: text}
+				if err := applyServiceContent(context.Background(), d, fetched, "", "", runtime.languageDetector); err != nil {
+					t.Fatal(err)
+				}
+				if d.Language != want {
+					t.Errorf("imported %q: language = %q, want %q", text, d.Language, want)
+				}
+			}
+		})
 	}
 }
 

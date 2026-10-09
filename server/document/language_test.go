@@ -3,6 +3,8 @@ package document
 import (
 	"slices"
 	"testing"
+
+	"github.com/asciimoo/lingua-go"
 )
 
 func codesOf(t *testing.T, codes []string) []string {
@@ -75,9 +77,119 @@ func TestDetectLanguageRespectsAllowlist(t *testing.T) {
 	if got := NewLanguageDetectorFor([]string{"en", "de"}, true).DetectLanguage(german); got != "de" {
 		t.Fatalf("DetectLanguage(german) with de allowed = %q, want \"de\"", got)
 	}
-	// Outside the allowlist German can only be answered with one of the
-	// configured languages, never "de".
+	// A restricted detector must not report a language outside the list.
+	// Uncertain text may be classified as unknown.
 	if got := NewLanguageDetectorFor([]string{"en", "id"}, true).DetectLanguage(german); got == "de" {
 		t.Fatal("DetectLanguage(german) returned \"de\" although de is not in the allowlist")
+	}
+}
+
+func TestRestrictedLanguageDetectionRejectsUncertainText(t *testing.T) {
+	for _, lowAccuracy := range []bool{false, true} {
+		d := NewLanguageDetectorFor([]string{"en", "de", "nl", "id"}, lowAccuracy)
+		for _, text := range []string{"", "12345 !?", "a", "test", "bonjour", "Hola mundo", "Это русский текст"} {
+			if got := d.DetectLanguage(text); got != UnknownLanguage {
+				t.Errorf("lowAccuracy=%v: DetectLanguage(%q) = %q, want unknown", lowAccuracy, text, got)
+			}
+		}
+		if got := d.DetectLanguage("languages are awesome"); got != "en" {
+			t.Errorf("lowAccuracy=%v: confident English detected as %q", lowAccuracy, got)
+		}
+	}
+}
+
+func TestDefaultLanguageDetectorUsesLowAccuracy(t *testing.T) {
+	d := NewLanguageDetector()
+	if got := d.DetectLanguage("a"); got != UnknownLanguage {
+		t.Errorf("default detector classified a single Latin letter as %q, want unknown", got)
+	}
+	// Short phrases can be misclassified in low accuracy mode. Check ordinary
+	// page content with enough letters for both modes to use trigram models.
+	const english = "This document explains how a search engine stores web pages and helps people find useful information. " +
+		"Readers can search through their saved documents and return to the original pages whenever they need more details."
+	if got := d.DetectLanguage(english); got != "en" {
+		t.Errorf("default detector classified English text as %q, want en", got)
+	}
+}
+
+type fixedLanguageConfidence struct {
+	language lingua.Language
+	value    float64
+}
+
+func (v fixedLanguageConfidence) Language() lingua.Language { return v.language }
+func (v fixedLanguageConfidence) Value() float64            { return v.value }
+
+type fixedConfidenceDetector struct {
+	lingua.LanguageDetector
+	values []lingua.ConfidenceValue
+}
+
+func (d fixedConfidenceDetector) ComputeLanguageConfidenceValues(string) []lingua.ConfidenceValue {
+	return d.values
+}
+
+func TestLanguageConfidenceCutoff(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		codes      []string
+		confidence float64
+		want       string
+	}{
+		{"below cutoff", []string{"en", "de"}, 0.799, UnknownLanguage},
+		{"at cutoff", []string{"en", "de"}, 0.8, "en"},
+		{"certain", []string{"en", "de"}, 1, "en"},
+		{"unrestricted preserves winner", nil, 0.6, "en"},
+		{"unrestricted rejects tie", nil, 0.5, UnknownLanguage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := NewLanguageDetectorFor(tc.codes, false).(*langDetector)
+			d.detector = fixedConfidenceDetector{values: []lingua.ConfidenceValue{
+				fixedLanguageConfidence{lingua.English, tc.confidence},
+				fixedLanguageConfidence{lingua.German, 1 - tc.confidence},
+			}}
+			if got := d.DetectLanguage("text"); got != tc.want {
+				t.Fatalf("DetectLanguage = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLanguageDetectionSelectsHighestQualifyingConfidence(t *testing.T) {
+	// Use a lower cutoff to allow multiple normalized scores to qualify.
+	// Lingua returns confidence values in descending order.
+	for _, tc := range []struct {
+		name   string
+		values []lingua.ConfidenceValue
+		want   string
+	}{
+		{
+			name: "multiple qualifying languages",
+			values: []lingua.ConfidenceValue{
+				fixedLanguageConfidence{lingua.German, 0.5},
+				fixedLanguageConfidence{lingua.English, 0.35},
+				fixedLanguageConfidence{lingua.Dutch, 0.15},
+			},
+			want: "de",
+		},
+		{
+			name: "tied highest scores remain unknown",
+			values: []lingua.ConfidenceValue{
+				fixedLanguageConfidence{lingua.German, 0.4},
+				fixedLanguageConfidence{lingua.English, 0.4},
+				fixedLanguageConfidence{lingua.Dutch, 0.2},
+			},
+			want: UnknownLanguage,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &langDetector{
+				detector:      fixedConfidenceDetector{values: tc.values},
+				minConfidence: 0.3,
+			}
+			if got := d.DetectLanguage("text"); got != tc.want {
+				t.Fatalf("DetectLanguage = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

@@ -101,6 +101,9 @@ func (c *Config) Validate() error {
 	if err := c.validateSemanticSearch(); err != nil {
 		return err
 	}
+	if err := c.Indexer.Validate(); err != nil {
+		return err
+	}
 	if err := c.validateOAuth(); err != nil {
 		return err
 	}

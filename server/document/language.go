@@ -95,8 +95,8 @@ var SupportedLanguages = func() map[string]lingua.Language {
 }()
 
 // UnsupportedLanguages returns the codes that ResolveLanguages would drop, so
-// callers can reject a misspelled configuration instead of silently indexing
-// the affected documents into the default index.
+// callers can reject a misspelled configuration instead of silently changing
+// the set of detection candidates.
 func UnsupportedLanguages(codes []string) []string {
 	var unsupported []string
 	for _, code := range codes {
@@ -135,11 +135,19 @@ type LanguageDetector interface {
 type nullLangDetector struct{}
 
 type langDetector struct {
-	detector lingua.LanguageDetector
+	detector      lingua.LanguageDetector
+	minConfidence float64
 }
 
+// restrictedLanguageMinConfidence rejects ambiguous results when the caller
+// narrows the candidate languages. This is a heuristic, not a calibrated
+// probability that the text belongs to one of those languages: lingua's scores
+// are relative to the configured candidates, so excluded languages can still
+// receive a confident but incorrect classification.
+const restrictedLanguageMinConfidence = 0.8
+
 func NewLanguageDetector() LanguageDetector {
-	return NewLanguageDetectorFor(nil, false)
+	return NewLanguageDetectorFor(nil, true)
 }
 
 // NewLanguageDetectorFor builds a detector limited to the given ISO 639-1
@@ -151,6 +159,8 @@ func NewLanguageDetector() LanguageDetector {
 // Loading is lazy, so narrowing the language set keeps the excluded models from
 // being decompressed at all, and lowAccuracy restricts lingua to trigram models
 // instead of the unigram through fivegram set.
+// Restricted detection requires a confidence of at least 0.8. An empty list
+// preserves lingua's default decision rule, rejecting only tied results.
 func NewLanguageDetectorFor(codes []string, lowAccuracy bool) LanguageDetector {
 	langs := ResolveLanguages(codes)
 	if len(langs) < 2 {
@@ -162,7 +172,11 @@ func NewLanguageDetectorFor(codes []string, lowAccuracy bool) LanguageDetector {
 	if lowAccuracy {
 		b = b.WithLowAccuracyMode()
 	}
-	return &langDetector{detector: b.Build()}
+	d := &langDetector{detector: b.Build()}
+	if len(codes) > 0 {
+		d.minConfidence = restrictedLanguageMinConfidence
+	}
+	return d
 }
 
 func NewNullLanguageDetector() LanguageDetector {
@@ -170,10 +184,12 @@ func NewNullLanguageDetector() LanguageDetector {
 }
 
 func (d *langDetector) DetectLanguage(s string) string {
-	if language, exists := d.detector.DetectLanguageOf(s); exists {
-		return languageCode(language)
+	// Lingua sorts scores in descending order, so the first result is the best match.
+	values := d.detector.ComputeLanguageConfidenceValues(s)
+	if len(values) < 2 || values[0].Value() == values[1].Value() || values[0].Value() < d.minConfidence {
+		return UnknownLanguage
 	}
-	return UnknownLanguage
+	return languageCode(values[0].Language())
 }
 
 func (d *nullLangDetector) DetectLanguage(s string) string {

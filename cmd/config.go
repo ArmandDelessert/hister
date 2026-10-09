@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/diagnostics"
+	"github.com/asciimoo/hister/server/document"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -74,6 +76,9 @@ var configValidateCmd = &cobra.Command{
 		c, name, err := inspectConfig()
 		if err != nil {
 			return err
+		}
+		if unsupported := document.UnsupportedLanguages(c.Indexer.Languages); len(unsupported) > 0 {
+			return fmt.Errorf("unsupported language(s) in indexer.languages: %s", strings.Join(unsupported, ", "))
 		}
 		if _, err := diagnostics.Extractors(c); err != nil {
 			return err

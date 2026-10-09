@@ -297,6 +297,9 @@ func newServiceImportRuntime(cmd *cobra.Command) (*serviceImportRuntime, error) 
 	global, _ := cmd.Flags().GetBool("global")
 	clientOptions := append([]client.Option{client.WithTimeout(0)}, targetUserIDClientOptions(cmd, global)...)
 	clientOptions = append(clientOptions, documentSubmissionClientOptions(cmd)...)
+	if unsupported := document.UnsupportedLanguages(cfg.Indexer.Languages); len(unsupported) > 0 {
+		return nil, fmt.Errorf("unsupported language(s) in indexer.languages: %s", strings.Join(unsupported, ", "))
+	}
 	languageDetector := document.LanguageDetector(document.NewNullLanguageDetector())
 	if cfg.Indexer.DetectLanguages {
 		languageDetector = document.NewLanguageDetectorFor(

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"regexp"
+	"slices"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -188,6 +189,88 @@ func TestIndexerDefaults(t *testing.T) {
 	}
 	if !cfg.Indexer.KeepStopwords {
 		t.Fatal("configured indexer.keep_stopwords=false, want true")
+	}
+}
+
+func TestIndexerValidate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		indexer Indexer
+		wantErr bool
+	}{
+		{"no languages detects everything", Indexer{}, false},
+		{"two languages", Indexer{Languages: []string{"en", "de"}}, false},
+		{"one language", Indexer{Languages: []string{"en"}}, true},
+		// A repeated code resolves to a single language, which would leave the
+		// detector disabled rather than narrowed.
+		{"repeated language", Indexer{Languages: []string{"en", " EN "}}, true},
+		{"unknown accuracy", Indexer{LanguageDetectionAccuracy: "medium"}, true},
+		{"low accuracy", Indexer{LanguageDetectionAccuracy: "low"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.indexer.Validate(); (err != nil) != tc.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestIndexerLanguageConfiguration(t *testing.T) {
+	generated, err := yaml.Marshal(CreateDefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var defaults struct {
+		Indexer map[string]any `yaml:"indexer"`
+	}
+	if err := yaml.Unmarshal(generated, &defaults); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := defaults.Indexer["languages"]; !exists {
+		t.Fatal("generated config is missing indexer.languages")
+	}
+	if got := defaults.Indexer["language_detection_accuracy"]; got != "low" {
+		t.Fatalf("generated accuracy = %v, want low", got)
+	}
+	const raw = "indexer:\n  languages: [en, de]\n  language_detection_accuracy: low\n"
+	cfg, err := parseConfig([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cfg.Indexer.Languages, []string{"en", "de"}) || !cfg.Indexer.LowAccuracyLanguageDetection() {
+		t.Fatalf("language settings did not load from YAML: %+v", cfg.Indexer)
+	}
+	t.Setenv("HISTER__INDEXER__LANGUAGES", "fr,no")
+	t.Setenv("HISTER__INDEXER__LANGUAGE_DETECTION_ACCURACY", "high")
+	cfg, err = parseConfig([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cfg.Indexer.Languages, []string{"fr", "no"}) || cfg.Indexer.LowAccuracyLanguageDetection() {
+		t.Fatalf("environment did not override language settings: %+v", cfg.Indexer)
+	}
+}
+
+func TestLanguageDetectionAccuracyDefaultsAndOverrides(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		low  bool
+	}{
+		{"omitted", "{}", true},
+		{"empty", "indexer:\n  language_detection_accuracy: ''\n", true},
+		{"explicit low", "indexer:\n  language_detection_accuracy: low\n", true},
+		{"explicit high", "indexer:\n  language_detection_accuracy: high\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := parseConfig([]byte(tc.yaml))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Indexer.LowAccuracyLanguageDetection(); got != tc.low {
+				t.Errorf("LowAccuracyLanguageDetection = %v, want %v", got, tc.low)
+			}
+		})
 	}
 }
 

@@ -297,9 +297,15 @@ func newServiceImportRuntime(cmd *cobra.Command) (*serviceImportRuntime, error) 
 	global, _ := cmd.Flags().GetBool("global")
 	clientOptions := append([]client.Option{client.WithTimeout(0)}, targetUserIDClientOptions(cmd, global)...)
 	clientOptions = append(clientOptions, documentSubmissionClientOptions(cmd)...)
+	if unsupported := document.UnsupportedLanguages(cfg.Indexer.Languages); len(unsupported) > 0 {
+		return nil, fmt.Errorf("unsupported language(s) in indexer.languages: %s", strings.Join(unsupported, ", "))
+	}
 	languageDetector := document.LanguageDetector(document.NewNullLanguageDetector())
 	if cfg.Indexer.DetectLanguages {
-		languageDetector = document.NewLanguageDetector()
+		languageDetector = document.NewLanguageDetectorFor(
+			cfg.Indexer.Languages,
+			cfg.Indexer.LowAccuracyLanguageDetection(),
+		)
 	}
 	cfg.Crawler.UserAgent = UserAgent
 	applyCrawlerBackendFlags(cmd)
@@ -495,6 +501,7 @@ func applyServiceContent(
 	if fetched == nil {
 		return errors.New("downloaded page is missing")
 	}
+	alreadyProcessed := fetched.IsProcessed()
 	if err := fetched.ProcessContext(ctx, languageDetector, extractor.ExtractContext); err != nil {
 		return fmt.Errorf("process downloaded content: %w", err)
 	}
@@ -518,7 +525,12 @@ func applyServiceContent(
 			d.Metadata[key] = value
 		}
 	}
-	d.Language = languageDetector.DetectLanguage(d.Text)
+	if !alreadyProcessed && d.Text == fetched.Text {
+		// Processing just detected this text with the current detector.
+		d.Language = fetched.Language
+	} else {
+		d.Language = languageDetector.DetectLanguage(d.Text)
+	}
 	return nil
 }
 

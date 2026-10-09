@@ -83,3 +83,30 @@ func TestConfigCreateKeepsYAMLSeparateFromDeprecationNotice(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigValidateRejectsInvalidLanguageSettings(t *testing.T) {
+	for _, tc := range []struct{ name, yaml, want string }{
+		{"accuracy", "indexer:\n  language_detection_accuracy: medium\n", "indexer.language_detection_accuracy"},
+		{"single language", "indexer:\n  languages: [en]\n", "indexer.languages"},
+		{"duplicate language", "indexer:\n  languages: [en, EN]\n", "indexer.languages"},
+		{"unsupported language", "indexer:\n  languages: [en, xx]\n", "indexer.languages"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			filename := filepath.Join(dir, "config.yml")
+			if err := os.WriteFile(filename, []byte(tc.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("HISTER_CONFIG", filename)
+			t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "data"))
+			output, err := executeInspection(t, "config", "validate")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want %s; output = %q", err, tc.want, output)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("validation created runtime files: %v, err=%v", entries, err)
+			}
+		})
+	}
+}

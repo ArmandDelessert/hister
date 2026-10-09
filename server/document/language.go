@@ -74,6 +74,59 @@ var Languages = []lingua.Language{
 	// supported by bleve but not by lingua: gl, in
 }
 
+// languageCode returns the ISO 639-1 code Hister uses for a lingua language.
+func languageCode(l lingua.Language) string {
+	code := strings.ToLower(l.IsoCode639_1().String())
+	if code == "nb" {
+		// use generic "no" code for Norwegian
+		return "no"
+	}
+	return code
+}
+
+// SupportedLanguages maps every code Hister accepts in indexer.languages to its
+// lingua counterpart. It is derived from Languages so the two cannot drift.
+var SupportedLanguages = func() map[string]lingua.Language {
+	m := make(map[string]lingua.Language, len(Languages))
+	for _, l := range Languages {
+		m[languageCode(l)] = l
+	}
+	return m
+}()
+
+// UnsupportedLanguages returns the codes that ResolveLanguages would drop, so
+// callers can reject a misspelled configuration instead of silently changing
+// the set of detection candidates.
+func UnsupportedLanguages(codes []string) []string {
+	var unsupported []string
+	for _, code := range codes {
+		if _, ok := SupportedLanguages[strings.ToLower(strings.TrimSpace(code))]; !ok {
+			unsupported = append(unsupported, code)
+		}
+	}
+	return unsupported
+}
+
+// ResolveLanguages maps ISO 639-1 codes onto lingua languages, preserving the
+// order of Languages and dropping codes that are not supported. An empty list
+// resolves to every supported language.
+func ResolveLanguages(codes []string) []lingua.Language {
+	if len(codes) == 0 {
+		return Languages
+	}
+	wanted := make(map[string]struct{}, len(codes))
+	for _, c := range codes {
+		wanted[strings.ToLower(strings.TrimSpace(c))] = struct{}{}
+	}
+	langs := make([]lingua.Language, 0, len(wanted))
+	for _, l := range Languages {
+		if _, ok := wanted[languageCode(l)]; ok {
+			langs = append(langs, l)
+		}
+	}
+	return langs
+}
+
 // LanguageDetector detects the language of a text.
 type LanguageDetector interface {
 	DetectLanguage(string) string
@@ -82,13 +135,48 @@ type LanguageDetector interface {
 type nullLangDetector struct{}
 
 type langDetector struct {
-	detector lingua.LanguageDetector
+	detector      lingua.LanguageDetector
+	minConfidence float64
 }
 
+// restrictedLanguageMinConfidence rejects ambiguous results when the caller
+// narrows the candidate languages. This is a heuristic, not a calibrated
+// probability that the text belongs to one of those languages: lingua's scores
+// are relative to the configured candidates, so excluded languages can still
+// receive a confident but incorrect classification.
+const restrictedLanguageMinConfidence = 0.8
+
 func NewLanguageDetector() LanguageDetector {
-	return &langDetector{
-		detector: lingua.NewLanguageDetectorBuilder().FromLanguages(Languages...).Build(),
+	return NewLanguageDetectorFor(nil, true)
+}
+
+// NewLanguageDetectorFor builds a detector limited to the given ISO 639-1
+// codes, or to every supported language when codes is empty.
+//
+// Both arguments bound memory. lingua caches decompressed n-gram models in
+// package level maps that are never evicted, so every language and every n-gram
+// order it is asked for stays on the heap for the lifetime of the process.
+// Loading is lazy, so narrowing the language set keeps the excluded models from
+// being decompressed at all, and lowAccuracy restricts lingua to trigram models
+// instead of the unigram through fivegram set.
+// Restricted detection requires a confidence of at least 0.8. An empty list
+// preserves lingua's default decision rule, rejecting only tied results.
+func NewLanguageDetectorFor(codes []string, lowAccuracy bool) LanguageDetector {
+	langs := ResolveLanguages(codes)
+	if len(langs) < 2 {
+		// lingua's builder panics with fewer than two languages, and detection
+		// between fewer than two is meaningless in any case.
+		return NewNullLanguageDetector()
 	}
+	b := lingua.NewLanguageDetectorBuilder().FromLanguages(langs...)
+	if lowAccuracy {
+		b = b.WithLowAccuracyMode()
+	}
+	d := &langDetector{detector: b.Build()}
+	if len(codes) > 0 {
+		d.minConfidence = restrictedLanguageMinConfidence
+	}
+	return d
 }
 
 func NewNullLanguageDetector() LanguageDetector {
@@ -96,16 +184,12 @@ func NewNullLanguageDetector() LanguageDetector {
 }
 
 func (d *langDetector) DetectLanguage(s string) string {
-	if language, exists := d.detector.DetectLanguageOf(s); exists {
-		code := strings.ToLower(language.IsoCode639_1().String())
-		switch code {
-		case "nb":
-			// use generic "no" code for Norwegian
-			return "no"
-		}
-		return code
+	// Lingua sorts scores in descending order, so the first result is the best match.
+	values := d.detector.ComputeLanguageConfidenceValues(s)
+	if len(values) < 2 || values[0].Value() == values[1].Value() || values[0].Value() < d.minConfidence {
+		return UnknownLanguage
 	}
-	return UnknownLanguage
+	return languageCode(values[0].Language())
 }
 
 func (d *nullLangDetector) DetectLanguage(s string) string {

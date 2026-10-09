@@ -118,7 +118,11 @@ func TestServiceImportLanguageSettings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer runtime.Close()
+			t.Cleanup(func() {
+				if err := runtime.Close(); err != nil {
+					t.Errorf("close service import runtime: %v", err)
+				}
+			})
 			for text, want := range map[string]string{"hello world": tc.want, "bonjour": document.UnknownLanguage} {
 				d := &document.Document{URL: "https://example.com/article"}
 				fetched := &document.Document{URL: d.URL, Text: text}

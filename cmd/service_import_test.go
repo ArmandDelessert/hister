@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -144,5 +145,55 @@ func TestApplyServiceContentPreservesFetchedFavicon(t *testing.T) {
 	}
 	if d.Favicon != fetched.Favicon {
 		t.Errorf("favicon = %q, want fetched favicon %q", d.Favicon, fetched.Favicon)
+	}
+}
+
+type serviceLanguageDetectorFunc func(string) string
+
+func (f serviceLanguageDetectorFunc) DetectLanguage(text string) string { return f(text) }
+
+func TestApplyServiceContentReusesFreshLanguageDetection(t *testing.T) {
+	const body = "The contents of the fetched page."
+	const prefix = "Eine deutsche Zusammenfassung."
+	const combined = prefix + "\n\n" + body
+	for _, tc := range []struct {
+		name             string
+		prefix           string
+		alreadyProcessed bool
+		bodyLanguage     string
+		wantText         string
+		wantLanguage     string
+		wantInputs       []string
+	}{
+		{"unchanged text", "", false, "en", body, "en", []string{body}},
+		{"blank prefix", " \n\t", false, "en", body, "en", []string{body}},
+		{"duplicate prefix", body, false, "en", body, "en", []string{body}},
+		{"unknown language", "", false, document.UnknownLanguage, body, document.UnknownLanguage, []string{body}},
+		{"changed text", prefix, false, "en", combined, "de", []string{body, combined}},
+		{"previously processed text", "", true, "en", body, "en", []string{body}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var inputs []string
+			detector := serviceLanguageDetectorFunc(func(text string) string {
+				inputs = append(inputs, text)
+				if text == combined {
+					return "de"
+				}
+				return tc.bodyLanguage
+			})
+			d := &document.Document{URL: "https://example.com/article", Language: "fr"}
+			fetched := &document.Document{
+				URL: d.URL, Text: body, Language: "fr", Processed: tc.alreadyProcessed,
+			}
+			if err := applyServiceContent(context.Background(), d, fetched, tc.prefix, "", detector); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(inputs, tc.wantInputs) {
+				t.Errorf("detected texts = %q, want %q", inputs, tc.wantInputs)
+			}
+			if d.Text != tc.wantText || d.Language != tc.wantLanguage {
+				t.Errorf("imported text = %q, language = %q; want %q, %q", d.Text, d.Language, tc.wantText, tc.wantLanguage)
+			}
+		})
 	}
 }

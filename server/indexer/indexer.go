@@ -294,6 +294,7 @@ type Results struct {
 }
 
 type documentWritePlan struct {
+	data           *dataWrite
 	target         bleve.Index
 	staleIndexes   []bleve.Index
 	oldHTMLKeys    []string
@@ -303,6 +304,8 @@ type documentWritePlan struct {
 	needsEmbedding bool
 }
 
+// documentWriteFunc takes ownership of the plan's pending data. Immediate
+// writes release it on return; staged writes keep it until Save or Discard.
 type documentWriteFunc func(*document.Document, documentWritePlan) error
 
 type addOptions struct {
@@ -337,6 +340,7 @@ func (s storedDocumentState) embeddingContentChanged(d *document.Document) bool 
 
 type MultiBatch struct {
 	indexer             *Indexer
+	pendingData         []*dataWrite
 	batches             map[string]*indexBatch
 	orphanedHTMLKeys    []string
 	orphanedFaviconKeys []string
@@ -781,7 +785,11 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	// separate file from the Bleve indexes).
 	vs := idx.vectorStore
 	embedder := idx.embedder
+	var b *MultiBatch
 	abortReindex := func(err error) error {
+		if b != nil {
+			b.Discard()
+		}
 		// The live indexer still owns the shared vector store when reindexing
 		// aborts. Do not let closing the temporary indexer close that store.
 		tmpIdx.vectorStore = nil
@@ -833,7 +841,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 				break
 			}
 			n := len(res.Hits)
-			b := newMultiBatch(tmpIdx)
+			b = newMultiBatch(tmpIdx)
 			for _, h := range res.Hits {
 				d := idx.resFromHit(h, resultIncludeAll)
 				if d.Type == document.Local {
@@ -1013,9 +1021,8 @@ func (i *Indexer) Cleanup(dirs []*config.Directory) (CleanupResult, error) {
 // directories (files that exist on disk but are no longer referenced by any
 // document in the index). It returns the number of HTML and favicon files
 // removed, and any walk error encountered.
-// Each candidate file is checked with a live ref-count query while holding the
-// per-key shard lock, so the check and the removal are atomic and safe against
-// concurrent /api/add calls.
+// Each candidate is checked against pending writes and committed references
+// while holding its shard lock, including documents staged in a batch.
 func (i *Indexer) CleanupDataFiles() (int, int, error) {
 	htmlRemoved, err := i.data.cleanup("html_key", htmlSubdir, i.countKeyRefs)
 	if err != nil {
@@ -1252,6 +1259,9 @@ func (i *Indexer) addDocument(ctx context.Context, d *document.Document, increme
 		return err
 	}
 	if err := ctx.Err(); err != nil {
+		if plan != nil {
+			plan.data.release()
+		}
 		return err
 	}
 	if plan != nil {
@@ -1382,9 +1392,11 @@ func (i *Indexer) prepareStorageWrite(d *document.Document, state storedDocument
 			existingIndexes[name] = struct{}{}
 		}
 	}
-	if err := i.prepareForStorage(d); err != nil {
+	data, err := i.prepareForStorage(d)
+	if err != nil {
 		return plan, err
 	}
+	plan.data = data
 	plan.oldHTMLKeys = state.htmlKeys
 	plan.oldFaviconKeys = state.faviconKeys
 	plan.newHTMLKey = d.HTMLKey
@@ -1404,6 +1416,7 @@ func (i *Indexer) prepareStorageWrite(d *document.Document, state storedDocument
 }
 
 func (i *Indexer) applyDocumentWrite(d *document.Document, plan documentWritePlan) error {
+	defer plan.data.release()
 	log.Debug().Str("URL", d.URL).Msg("item added to index")
 	if err := plan.target.Index(d.ID(), d); err != nil {
 		return err
@@ -1537,33 +1550,42 @@ func (i *Indexer) countKeyRefs(field, key string) uint64 {
 // When disablePreviews is true, HTML is discarded entirely and HTMLKey is cleared.
 // Inline blobs are cleared whenever a key is set, so they are never written into
 // the Bleve index DB (e.g. during reindex where resFromHit populates both fields).
-func (i *Indexer) prepareForStorage(d *document.Document) error {
+// The caller owns the returned dataWrite until the document is committed or discarded.
+func (i *Indexer) prepareForStorage(d *document.Document) (_ *dataWrite, err error) {
+	data := i.data.newWrite()
+	defer func() {
+		if err != nil {
+			data.release()
+		}
+	}()
 	if i.disablePreviews {
 		d.HTML = ""
 		d.HTMLKey = ""
 	} else {
 		if d.HTML != "" {
-			key, err := i.data.write(htmlSubdir, []byte(d.HTML))
+			key, err := data.write(htmlSubdir, []byte(d.HTML))
 			if err != nil {
-				return fmt.Errorf("store HTML: %w", err)
+				return nil, fmt.Errorf("store HTML: %w", err)
 			}
 			d.HTMLKey = key
 		}
 		if d.HTMLKey != "" {
+			data.retain(htmlSubdir, d.HTMLKey)
 			d.HTML = ""
 		}
 	}
 	if d.Favicon != "" {
-		key, err := i.data.write(faviconSubdir, []byte(d.Favicon))
+		key, err := data.write(faviconSubdir, []byte(d.Favicon))
 		if err != nil {
-			return fmt.Errorf("store favicon: %w", err)
+			return nil, fmt.Errorf("store favicon: %w", err)
 		}
 		d.FaviconKey = key
 	}
 	if d.FaviconKey != "" {
+		data.retain(faviconSubdir, d.FaviconKey)
 		d.Favicon = ""
 	}
-	return nil
+	return data, nil
 }
 
 // Saves a document without any processing
@@ -1748,7 +1770,12 @@ func (b *MultiBatch) recordIndexingMetric(documentType string, startedAt time.Ti
 	b.stagedMetrics = append(b.stagedMetrics, indexingMetric{documentType: documentType, startedAt: startedAt})
 }
 
-func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWritePlan) error {
+func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWritePlan) (err error) {
+	defer func() {
+		if err != nil {
+			plan.data.release()
+		}
+	}()
 	delete(b.deletedIDs, d.ID())
 	if plan.needsEmbedding {
 		if b.indexer.embeddingWorkers > 0 {
@@ -1773,6 +1800,7 @@ func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWrite
 			b.orphanedFaviconKeys = append(b.orphanedFaviconKeys, key)
 		}
 	}
+	b.pendingData = append(b.pendingData, plan.data)
 	return nil
 }
 
@@ -1787,7 +1815,25 @@ func (b *MultiBatch) Delete(id string) {
 	b.orphanedFaviconKeys = append(b.orphanedFaviconKeys, oldFaviconKeys...)
 }
 
+// Discard releases pending blobs and clears staged operations. Call it when a
+// batch is abandoned before Save. The batch can be reused after Discard or Save.
+func (b *MultiBatch) Discard() {
+	for _, data := range b.pendingData {
+		data.release()
+	}
+	b.pendingData = nil
+	clear(b.batches)
+	clear(b.embeddingIDs)
+	clear(b.deletedIDs)
+	b.orphanedHTMLKeys = nil
+	b.orphanedFaviconKeys = nil
+	b.stagedMetrics = nil
+}
+
+// Save commits staged operations and clears the batch, including on failure.
+// A failure can leave some indexes committed; those references protect their blobs.
 func (b *MultiBatch) Save() error {
+	defer b.Discard()
 	for _, entry := range b.batches {
 		if err := entry.index.Batch(entry.batch); err != nil {
 			return err

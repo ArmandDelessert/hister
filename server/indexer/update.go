@@ -216,6 +216,7 @@ func (i *Indexer) UpdateByQuery(
 			state := i.getStoredDocumentState(d.ID())
 			plan, err := i.prepareStorageWrite(d, state)
 			if err != nil {
+				batch.Discard()
 				return result, fmt.Errorf("prepare update for %s: %w", d.URL, err)
 			}
 			// Storage can normalize a legacy language even for a label
@@ -223,6 +224,7 @@ func (i *Indexer) UpdateByQuery(
 			plan.needsEmbedding = i.embedder != nil && i.vectorStore != nil &&
 				(update.embeddingContextDirty || state.embeddingContentChanged(d))
 			if err := batch.applyDocumentWrite(d, plan); err != nil {
+				batch.Discard()
 				return result, fmt.Errorf("stage update for %s: %w", d.URL, err)
 			}
 			if update.originalID != d.ID() {

@@ -2070,6 +2070,7 @@ func serveBatch(c *webContext) {
 	}
 
 	batch := c.Indexer.NewMultiBatch()
+	defer batch.Discard()
 	uid := targetUserID(c)
 	results := make([]batchOpResult, len(req.Ops))
 	for i, op := range req.Ops {

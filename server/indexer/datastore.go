@@ -27,10 +27,73 @@ const (
 // same shard while allowing fully parallel access across different shards.
 //
 // The struct is shared between the live indexer and the temporary indexer
-// created during reindex so that both always use the same locks.
+// created during reindex so that both share locks and pending references.
 type dataStore struct {
 	dir    string
-	shards [256]sync.RWMutex
+	shards [256]dataShard
+}
+
+type dataReference struct {
+	subdir string
+	key    string
+}
+
+type dataShard struct {
+	sync.RWMutex
+	pending map[dataReference]uint
+}
+
+// dataWrite keeps blobs reachable between storage preparation and index commit.
+// It belongs to one document write, then to its batch if the write is staged.
+type dataWrite struct {
+	store      *dataStore
+	references map[dataReference]struct{}
+}
+
+func (ds *dataStore) newWrite() *dataWrite {
+	return &dataWrite{store: ds, references: make(map[dataReference]struct{})}
+}
+
+// retainLocked registers a reference while its shard is locked. Registering a
+// newly written blob before unlocking leaves no gap for orphan cleanup.
+func (w *dataWrite) retainLocked(shard *dataShard, ref dataReference) {
+	if _, exists := w.references[ref]; exists {
+		return
+	}
+	if shard.pending == nil {
+		shard.pending = make(map[dataReference]uint)
+	}
+	shard.pending[ref]++
+	w.references[ref] = struct{}{}
+}
+
+func (w *dataWrite) retain(subdir, key string) {
+	if key == "" {
+		return
+	}
+	shard := w.store.shard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	w.retainLocked(shard, dataReference{subdir: subdir, key: key})
+}
+
+// release makes uncommitted blobs eligible for cleanup again. Committed blobs
+// remain protected by their index references. It is safe to release twice.
+func (w *dataWrite) release() {
+	if w == nil {
+		return
+	}
+	for ref := range w.references {
+		shard := w.store.shard(ref.key)
+		shard.Lock()
+		if shard.pending[ref] <= 1 {
+			delete(shard.pending, ref)
+		} else {
+			shard.pending[ref]--
+		}
+		shard.Unlock()
+	}
+	clear(w.references)
 }
 
 func newDataStore(dir string) *dataStore {
@@ -39,7 +102,7 @@ func newDataStore(dir string) *dataStore {
 
 // shard returns the mutex responsible for key, using the first byte of the
 // hex-encoded SHA-256 string as the shard index (256 shards total).
-func (ds *dataStore) shard(key string) *sync.RWMutex {
+func (ds *dataStore) shard(key string) *dataShard {
 	if len(key) < 2 {
 		return &ds.shards[0]
 	}
@@ -60,22 +123,20 @@ func hexNibble(c byte) byte {
 	}
 }
 
-// write compresses data and writes it to the content-addressed store under
-// subdir. The SHA-256 hash is computed first (no lock needed), then the
-// key's shard is exclusively locked for the stat+create to prevent races
-// between a concurrent delete of the same key.
-func (ds *dataStore) write(subdir string, data []byte) (string, error) {
+// write stores and retains a blob until this document write is released.
+func (w *dataWrite) write(subdir string, data []byte) (string, error) {
 	if len(data) == 0 {
 		return "", nil
 	}
 	sum := sha256.Sum256(data)
 	key := fmt.Sprintf("%x", sum)
-	mu := ds.shard(key)
+	mu := w.store.shard(key)
 	mu.Lock()
 	defer mu.Unlock()
-	if err := writeFileLocked(ds.dir, subdir, key, data); err != nil {
+	if err := writeFileLocked(w.store.dir, subdir, key, data); err != nil {
 		return "", err
 	}
+	w.retainLocked(mu, dataReference{subdir: subdir, key: key})
 	return key, nil
 }
 
@@ -90,9 +151,7 @@ func (ds *dataStore) read(subdir, key string) ([]byte, error) {
 
 // deleteIfOrphaned acquires the exclusive shard lock for key, calls refCount
 // to check whether any indexed document still references it, and removes the
-// file if the count is zero. Holding the lock across both the check and the
-// remove makes the operation atomic with respect to concurrent writes or
-// deletes of the same key.
+// file only when neither pending writes nor committed documents need it.
 func (ds *dataStore) deleteIfOrphaned(field, subdir, key string, refCount func(string, string) uint64) {
 	path, err := dataFilePath(ds.dir, subdir, key)
 	if err != nil {
@@ -102,7 +161,7 @@ func (ds *dataStore) deleteIfOrphaned(field, subdir, key string, refCount func(s
 	mu := ds.shard(key)
 	mu.Lock()
 	defer mu.Unlock()
-	if refCount(field, key) == 0 {
+	if mu.pending[dataReference{subdir: subdir, key: key}] == 0 && refCount(field, key) == 0 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			log.Warn().Err(err).Str("key", key).Str("subdir", subdir).Msg("failed to remove orphaned data file")
 		} else {
@@ -112,9 +171,8 @@ func (ds *dataStore) deleteIfOrphaned(field, subdir, key string, refCount func(s
 }
 
 // cleanup removes unreferenced .gz files under subdir. For each candidate file
-// the per-key shard lock is acquired and refCount is called while holding the
-// lock, so the check and the removal are atomic with respect to concurrent
-// writes or deletes of the same key
+// the per-key shard lock protects both pending references and the live
+// refCount query, keeping the check and removal atomic with storage writes.
 func (ds *dataStore) cleanup(field, subdir string, refCount func(string, string) uint64) (int, error) {
 	root := filepath.Join(ds.dir, subdir)
 	if _, err := os.Stat(root); os.IsNotExist(err) {
@@ -146,7 +204,7 @@ func (ds *dataStore) cleanup(field, subdir string, refCount func(string, string)
 		}
 		mu := ds.shard(key)
 		mu.Lock()
-		if refCount(field, key) == 0 {
+		if mu.pending[dataReference{subdir: subdir, key: key}] == 0 && refCount(field, key) == 0 {
 			if rerr := os.Remove(path); rerr != nil {
 				log.Warn().Err(rerr).Str("path", path).Msg("failed to remove orphaned data file")
 			} else {

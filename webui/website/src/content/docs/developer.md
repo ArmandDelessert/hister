@@ -97,19 +97,21 @@ Install the frontend dependencies once before running frontend commands:
 
 Use these commands for common work:
 
-| Goal                                  | Command                            |
-| ------------------------------------- | ---------------------------------- |
-| Build the Go program                  | `go build`                         |
-| Run Go tests                          | `go test ./...`                    |
-| Rebuild embedded frontend assets      | `go generate`                      |
-| Build the complete Hister binary      | `./manage.sh build`                |
-| Build the web application             | `npm run build -w @hister/app`     |
-| Build this documentation website      | `npm run build -w @hister/website` |
-| Build the browser extension           | `npm run build -w @hister/ext`     |
-| Run the app development servers       | `npm run serve:app`                |
-| Format and lint Go code               | `golangci-lint run --fix ./...`    |
-| Check frontend formatting and linting | `npm run check`                    |
-| Apply frontend formatting             | `npm run format`                   |
+| Goal                                  | Command                               |
+| ------------------------------------- | ------------------------------------- |
+| Build the Go program                  | `go build`                            |
+| Run Go tests                          | `go test ./...`                       |
+| Run app browser tests                 | `npm run test:browser -w @hister/app` |
+| Run browser extension tests           | `npm test -w @hister/ext`             |
+| Rebuild embedded frontend assets      | `go generate`                         |
+| Build the complete Hister binary      | `./manage.sh build`                   |
+| Build the web application             | `npm run build -w @hister/app`        |
+| Build this documentation website      | `npm run build -w @hister/website`    |
+| Build the browser extension           | `npm run build -w @hister/ext`        |
+| Run the app development servers       | `npm run serve:app`                   |
+| Format and lint Go code               | `golangci-lint run --fix ./...`       |
+| Check frontend formatting and linting | `npm run check`                       |
+| Apply frontend formatting             | `npm run format`                      |
 
 `go generate` runs `webui/build.sh`. That script builds `@hister/app`, replaces
 `server/static/app`, and copies the new frontend build into the embedded asset
@@ -122,6 +124,23 @@ available.
 
 Use focused tests while developing. Run the complete Go suite before handing
 off a broad or high risk change.
+
+The app browser tests use Chromium with desktop and mobile layouts. Install the
+browser before the first run:
+
+```bash
+npm exec -w @hister/app -- playwright install --with-deps chromium
+```
+
+Playwright starts the app development server and the tests mock the HTTP API and
+search WebSocket, so these tests do not require a running Go server. Set
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use an existing Chromium installation.
+
+Pull requests run app browser tests and extension tests in separate jobs when
+their workspace, shared components, root npm dependencies, or the test workflow
+changes. CI rejects focused browser tests such as `test.only` and runs one browser
+worker. Failed browser runs upload an `app-browser-failures` artifact containing
+the HTML report, traces, and screenshots, retained for seven days.
 
 ## HTTP API Development
 

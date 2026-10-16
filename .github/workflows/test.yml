@@ -42,3 +42,96 @@ jobs:
       - name: Run Go tests
         if: steps.changes.outputs.skip != 'true'
         run: go test -race -cover ./...
+
+  app-browser-test:
+    name: App browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for app/component changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- 'webui/app/**' 'webui/components/**' 'package.json' 'package-lock.json' '.github/workflows/test.yml'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node
+        if: steps.changes.outputs.skip != 'true'
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: latest
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.changes.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Install Chromium and system dependencies
+        if: steps.changes.outputs.skip != 'true'
+        run: npm exec -w @hister/app -- playwright install --with-deps chromium
+
+      - name: Run browser tests
+        id: browser-tests
+        if: steps.changes.outputs.skip != 'true'
+        run: npm run test:browser -w @hister/app
+
+      - name: Upload browser failure reports
+        if: failure() && steps.browser-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-browser-failures
+          path: |
+            webui/app/playwright-report/
+            webui/app/test-results/
+          retention-days: 7
+
+  extension-test:
+    name: Browser extension tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for extension/component changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- 'webui/ext/**' 'webui/components/**' 'package.json' 'package-lock.json' '.github/workflows/test.yml'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node
+        if: steps.changes.outputs.skip != 'true'
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: latest
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.changes.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Run extension tests
+        if: steps.changes.outputs.skip != 'true'
+        run: npm test -w @hister/ext

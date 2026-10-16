@@ -159,7 +159,7 @@ func TestMCPHistoryMarksSourceFieldsUntrusted(t *testing.T) {
 			Added:    10,
 			AddCount: 2,
 		},
-	}, 1)
+	}, 1, "1970-01-01T00:00:10Z")
 	if len(result.UntrustedContent) != 1 {
 		t.Fatalf("untrusted content length = %d, want 1", len(result.UntrustedContent))
 	}

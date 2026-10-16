@@ -289,7 +289,11 @@ func mcpToolList(semanticSearchEnabled bool) []map[string]any {
 					},
 					"last_id": map[string]any{
 						"type":        "integer",
-						"description": `Pagination cursor for opened mode. Use the "next_last_id" value from the previous response.`,
+						"description": `Pagination cursor for opened mode. Use "next_last_id" together with "next_last_updated_at" from the previous response as last_id and last_updated_at.`,
+					},
+					"last_updated_at": map[string]any{
+						"type":        "string",
+						"description": `RFC 3339 timestamp cursor for opened mode. Use "next_last_updated_at" together with "next_last_id" from the previous response as last_updated_at and last_id. Preserve fractional seconds to avoid skipping entries.`,
 					},
 					"page_key": map[string]any{
 						"type":        "string",
@@ -458,10 +462,11 @@ type mcpGetPreviewArgs struct {
 }
 
 type mcpGetHistoryArgs struct {
-	Mode    string `json:"mode"`
-	Limit   int    `json:"limit"`
-	LastID  uint   `json:"last_id"`
-	PageKey string `json:"page_key"`
+	Mode          string `json:"mode"`
+	Limit         int    `json:"limit"`
+	LastID        uint   `json:"last_id"`
+	LastUpdatedAt string `json:"last_updated_at"`
+	PageKey       string `json:"page_key"`
 }
 
 type mcpHistoryOpenedItem struct {
@@ -528,7 +533,16 @@ func mcpToolGetHistory(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 
 	switch args.Mode {
 	case "opened":
-		items, err := model.GetLatestHistoryItems(c.UserID, args.Limit, args.LastID)
+		var lastUpdatedAt time.Time
+		if args.LastUpdatedAt != "" {
+			var err error
+			lastUpdatedAt, err = time.Parse(time.RFC3339Nano, args.LastUpdatedAt)
+			if err != nil {
+				mcpWriteError(c, id, mcpErrInvalidParam, "invalid last_updated_at (expected RFC 3339): "+err.Error())
+				return
+			}
+		}
+		items, err := model.GetLatestHistoryItemsFilteredByDate(c.UserID, args.Limit, args.LastID, lastUpdatedAt, "", 0, 0)
 		if err != nil {
 			log.Error().Err(err).Msg("MCP get_history opened mode failed")
 			mcpWriteError(c, id, mcpErrInternal, "history lookup failed")
@@ -546,10 +560,12 @@ func mcpToolGetHistory(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 			})
 		}
 		var nextLastID uint
+		var nextLastUpdatedAt string
 		if len(historyItems) == args.Limit && len(historyItems) > 0 {
 			nextLastID = historyItems[len(historyItems)-1].ID
+			nextLastUpdatedAt = items[len(items)-1].UpdatedAt.Format(time.RFC3339Nano)
 		}
-		mcpWriteToolResult(c, id, mcpBuildOpenedHistoryResult(historyItems, nextLastID))
+		mcpWriteToolResult(c, id, mcpBuildOpenedHistoryResult(historyItems, nextLastID, nextLastUpdatedAt))
 
 	case "indexed":
 		res := c.Indexer.GetLatestDocuments(args.Limit, args.PageKey, c.UserID)
@@ -755,12 +771,13 @@ func mcpPreviewMetadata(meta map[string]any) map[string]any {
 	return result
 }
 
-func mcpBuildOpenedHistoryResult(items []mcpHistoryOpenedItem, nextLastID uint) mcpStructuredResult {
+func mcpBuildOpenedHistoryResult(items []mcpHistoryOpenedItem, nextLastID uint, nextLastUpdatedAt string) mcpStructuredResult {
 	result := newMCPStructuredResult("get_history")
 	result.Trusted["mode"] = "opened"
 	result.Trusted["result_count"] = len(items)
 	if nextLastID > 0 {
 		result.Trusted["next_last_id"] = nextLastID
+		result.Trusted["next_last_updated_at"] = nextLastUpdatedAt
 	}
 	for _, item := range items {
 		title := item.Title

@@ -148,17 +148,22 @@ Example:
 Retrieve items from the Hister history views. This tool is available only when
 public mode is disabled or the caller is authenticated.
 
-| Argument   | Type    | Required | Default   | Description                                                                           |
-| ---------- | ------- | -------- | --------- | ------------------------------------------------------------------------------------- |
-| `mode`     | string  | no       | `indexed` | `indexed` returns recently indexed pages. `opened` returns opened result history.     |
-| `limit`    | integer | no       | 20        | Maximum items to return. Values below 1 or above 100 use the default.                 |
-| `page_key` | string  | no       |           | Pagination cursor for `indexed` mode. Use `next_page_key` from the previous response. |
-| `last_id`  | integer | no       |           | Pagination cursor for `opened` mode. Use `next_last_id` from the previous response.   |
+| Argument          | Type    | Required | Default   | Description                                                                             |
+| ----------------- | ------- | -------- | --------- | --------------------------------------------------------------------------------------- |
+| `mode`            | string  | no       | `indexed` | `indexed` returns recently indexed pages. `opened` returns opened result history.       |
+| `limit`           | integer | no       | 20        | Maximum items to return. Values below 1 or above 100 use the default.                   |
+| `page_key`        | string  | no       |           | Pagination cursor for `indexed` mode. Use `next_page_key` from the previous response.   |
+| `last_id`         | integer | no       |           | ID cursor for `opened` mode. Use `next_last_id` together with `last_updated_at`.        |
+| `last_updated_at` | string  | no       |           | Timestamp cursor for `opened` mode. Use `next_last_updated_at` together with `last_id`. |
 
 Indexed history results include title, URL, indexed time, indexed version count,
 and `next_page_key` when another page is available. Opened history results
-include title, URL, original query, opened time, indexed version count, and
-`next_last_id` when another page is available.
+include title, URL, original query, opened time, and indexed version count.
+When an opened history page is full, its `trusted` object includes
+`next_last_id` and `next_last_updated_at`. Pass both values as `last_id` and
+`last_updated_at` to request the next page. Copy the RFC 3339 timestamp exactly,
+including fractional seconds. Using only `last_id` can skip entries when an older
+result has been reopened. A final request can return an empty page.
 
 Examples:
 
@@ -168,6 +173,17 @@ Examples:
 
 ```json
 { "mode": "opened", "limit": 20 }
+```
+
+To continue opened history using the cursor from the previous response:
+
+```json
+{
+  "mode": "opened",
+  "limit": 20,
+  "last_id": 42,
+  "last_updated_at": "2026-10-16T12:00:00.123456Z"
+}
 ```
 
 ## Client Configuration

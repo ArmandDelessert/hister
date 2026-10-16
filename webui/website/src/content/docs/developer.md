@@ -140,6 +140,29 @@ Authorization: Bearer <access-token>
 X-Access-Token: <access-token>
 ```
 
+### Request Limits
+
+API request bodies have a default limit of 1 MiB, including MCP requests and
+login requests. The following endpoints have their own limits:
+
+| Requests                                                             | Body limit                                       |
+| -------------------------------------------------------------------- | ------------------------------------------------ |
+| `POST /api/add`, `POST /add`, `POST /api/add_pdf`, `POST /api/batch` | `server.max_batch_body_size` MiB, default 40 MiB |
+| `POST /api/rules/preview`                                            | 1 MiB                                            |
+
+Limits apply to JSON and form data, including requests sent with chunked transfer
+encoding. The PDF upload limit includes the base64 content and the surrounding
+JSON. An oversized request returns HTTP `413` with a JSON body containing
+`error`, `code: "request_too_large"`, and `limit_bytes`.
+
+Search WebSocket messages have a limit of 64 KiB across all frames in a message.
+An oversized message closes the connection with code `1009`.
+
+The HTTP server allows 10 seconds to receive request headers and two minutes to
+receive the entire request, including its body. It closes idle keepalive
+connections after one minute. These limits do not impose a duration limit on
+handlers such as reindexing after the request has been received.
+
 ### Document Versions
 
 ```http

@@ -74,6 +74,7 @@ func registerEndpoints(cfg *config.Config, idx *indexer.Indexer, overrides ...fu
 		if e.CSRFRequired {
 			h = withCSRF(h)
 		}
+		h = withRequestBodyLimit(h, e.BodyLimit)
 		requiresAuth := endpointRequiresAuth(cfg, e)
 		if tokenAuth && !userHandling && requiresAuth {
 			h = withTokenAuth(h)
@@ -293,8 +294,7 @@ func serveLogin(c *webContext) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		serve500(c)
+	if !decodeRequestJSON(c, &req) {
 		return
 	}
 	user, err := model.AuthenticateUser(req.Username, req.Password)
@@ -323,8 +323,7 @@ func serveTokenLogin(c *webContext) {
 	var req struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		serve500(c)
+	if !decodeRequestJSON(c, &req) {
 		return
 	}
 	if c.Config.App.AccessToken == "" || req.Token != c.Config.App.AccessToken {
@@ -542,6 +541,7 @@ func serveSearchWebSocket(c *webContext) {
 			log.Warn().Err(err).Msg("failed to close websocket connection")
 		}
 	}()
+	conn.SetReadLimit(maxSearchMessageBytes)
 	if lease, ok := c.Request.Context().Value(runtimeRequestKey{}).(*runtimeRequest); ok {
 		stop := context.AfterFunc(lease.sockets, func() { _ = conn.Close() })
 		defer stop()
@@ -785,17 +785,11 @@ func serveAdd(c *webContext) {
 	if strings.Contains(c.Request.Header.Get("Content-Type"), "json") {
 		maxBodyBytes := c.Config.Server.MaxBatchBodyBytes()
 		c.Request.Body = http.MaxBytesReader(c.Response, c.Request.Body, maxBodyBytes)
-		if err := json.NewDecoder(c.Request.Body).Decode(d); err != nil {
-			if maxBytesErr, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				http.Error(c.Response, fmt.Sprintf("request body exceeds the %d MiB limit", maxBytesErr.Limit>>20), http.StatusRequestEntityTooLarge)
-				return
-			}
-			http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		if !decodeRequestJSON(c, d) {
 			return
 		}
 	} else {
-		if err := c.Request.ParseForm(); err != nil {
-			serve500(c)
+		if !parseRequestForm(c) {
 			return
 		}
 		f := c.Request.PostForm
@@ -851,8 +845,7 @@ func serveAddPDF(c *webContext) {
 		Document *document.Document `json:"document"`
 		PDF      string             `json:"pdf"`
 	}
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+	if !decodeRequestJSON(c, &req) {
 		return
 	}
 	if req.Document == nil {
@@ -903,8 +896,7 @@ func serveUpdateLabel(c *webContext) {
 		URL   string `json:"url"`
 		Label string `json:"label"`
 	}
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+	if !decodeRequestJSON(c, &req) {
 		return
 	}
 	if req.URL == "" {
@@ -927,8 +919,7 @@ func serveUpdateLabel(c *webContext) {
 
 func serveUpdateDocuments(c *webContext) {
 	var req types.UpdateDocumentsRequest
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+	if !decodeRequestJSON(c, &req) {
 		return
 	}
 	if req.Changes.UserID != nil {
@@ -1227,9 +1218,7 @@ func serveSaveHistory(c *webContext) {
 		return
 	}
 	h := &historyItem{}
-	err := json.NewDecoder(c.Request.Body).Decode(h)
-	if err != nil {
-		serve500(c)
+	if !decodeRequestJSON(c, h) {
 		return
 	}
 	if h.Delete {
@@ -1245,7 +1234,7 @@ func serveSaveHistory(c *webContext) {
 		}
 		return
 	}
-	err = model.UpdateHistory(c.UserID, strings.TrimSpace(h.Query), strings.TrimSpace(h.URL), strings.TrimSpace(h.Title))
+	err := model.UpdateHistory(c.UserID, strings.TrimSpace(h.Query), strings.TrimSpace(h.URL), strings.TrimSpace(h.Title))
 	if err != nil {
 		log.Error().Err(err).Msg("failed to update history")
 		serve500(c)
@@ -1302,9 +1291,7 @@ func serveRules(c *webContext) {
 		serve500(c)
 		return
 	}
-	err := c.Request.ParseForm()
-	if err != nil {
-		serve500(c)
+	if !parseRequestForm(c) {
 		return
 	}
 	f := c.Request.PostForm
@@ -1430,9 +1417,11 @@ func exactURLRulePattern(value string) (string, error) {
 
 func serveRulePreview(c *webContext) {
 	var request rulePreviewRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(c.Response, c.Request.Body, 64<<10))
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Response, c.Request.Body, maxRulePreviewBytes))
 	if err := decoder.Decode(&request); err != nil {
-		http.Error(c.Response, "Invalid rule preview request", http.StatusBadRequest)
+		if !requestBodyTooLarge(c, err) {
+			http.Error(c.Response, "Invalid rule preview request", http.StatusBadRequest)
+		}
 		return
 	}
 	pattern, domain := strings.TrimSpace(request.Pattern), strings.TrimSpace(request.Domain)
@@ -1911,9 +1900,7 @@ func previewSuggestionURL(cfg *config.Config, documentURL, title string) string 
 }
 
 func serveAddAlias(c *webContext) {
-	err := c.Request.ParseForm()
-	if err != nil {
-		serve500(c)
+	if !parseRequestForm(c) {
 		return
 	}
 	f := c.Request.PostForm
@@ -1942,9 +1929,7 @@ func serveAddAlias(c *webContext) {
 }
 
 func serveDeleteAlias(c *webContext) {
-	err := c.Request.ParseForm()
-	if err != nil {
-		serve500(c)
+	if !parseRequestForm(c) {
 		return
 	}
 	a := c.Request.PostForm.Get("alias")
@@ -1976,8 +1961,7 @@ func serveDelete(c *webContext) {
 		Query  string `json:"query"`
 		DryRun bool   `json:"dry_run"`
 	}
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+	if !decodeRequestJSON(c, &req) {
 		return
 	}
 	// Non-admin users may only delete their own documents.
@@ -2047,12 +2031,7 @@ func serveBatch(c *webContext) {
 	c.Request.Body = http.MaxBytesReader(c.Response, c.Request.Body, maxBodyBytes)
 	var req batchRequest
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		if maxBytesErr, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			c.JSONStatus(http.StatusRequestEntityTooLarge, batchResponse{
-				Error:      fmt.Sprintf("request body exceeds the %d MiB limit", maxBytesErr.Limit>>20),
-				Code:       "request_too_large",
-				LimitBytes: maxBytesErr.Limit,
-			})
+		if requestBodyTooLarge(c, err) {
 			return
 		}
 		c.JSONStatus(http.StatusBadRequest, batchResponse{Error: "invalid JSON"})
@@ -2140,8 +2119,7 @@ type reindexRequest struct {
 
 func serveReindex(c *webContext) {
 	var req reindexRequest
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		serve500(c)
+	if !decodeRequestJSON(c, &req) {
 		return
 	}
 	if err := c.Indexer.ReindexContext(c.Request.Context(), c.Config.Rules, req.SkipSensitive, req.DetectLanguages, c.Config.Indexer.KeepStopwords, c.Config.Indexer.Directories); err != nil {

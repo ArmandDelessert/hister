@@ -110,6 +110,9 @@ func serveMCPGet(c *webContext) {
 func serveMCP(c *webContext) {
 	var req mcpRequest
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		if requestBodyTooLarge(c, err) {
+			return
+		}
 		mcpWriteError(c, nil, mcpErrParse, "parse error: "+err.Error())
 		return
 	}

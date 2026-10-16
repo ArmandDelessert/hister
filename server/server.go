@@ -401,7 +401,16 @@ func withCSRF(handler endpointHandler) endpointHandler {
 				http.Error(c.Response, errCSRFMismatch.Error(), http.StatusForbidden)
 				return
 			}
-			token := c.Request.PostFormValue(tokName)
+			if !parseRequestForm(c) {
+				return
+			}
+			if err := c.Request.ParseMultipartForm(maxRequestBodyBytes); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+				if !requestBodyTooLarge(c, err) {
+					http.Error(c.Response, "invalid form: "+err.Error(), http.StatusBadRequest)
+				}
+				return
+			}
+			token := c.Request.PostForm.Get(tokName)
 			if token == "" {
 				token = c.Request.Header.Get("X-CSRF-Token")
 			}

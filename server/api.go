@@ -2,6 +2,8 @@ package server
 
 import (
 	"fmt"
+
+	"github.com/asciimoo/hister/config"
 )
 
 const (
@@ -47,8 +49,10 @@ type Endpoint struct {
 	AdminOnly    bool
 	Public       bool
 	Handler      endpointHandler `json:"-"`
-	Description  string
-	Args         []*EndpointArg
+	// BodyLimit overrides the default request body limit, using the active config.
+	BodyLimit   func(*config.Config) int64 `json:"-"`
+	Description string
+	Args        []*EndpointArg
 	// JSONSchema describes the fields of the JSON request body, if the endpoint
 	// consumes application/json instead of (or in addition to) form data.
 	JSONSchema []*JSONSchemaField
@@ -287,6 +291,7 @@ func init() {
 			Name:         "Add",
 			Path:         "/api/add",
 			Method:       POST,
+			BodyLimit:    documentBodyLimit,
 			CSRFRequired: true,
 			Handler:      serveAdd,
 			Description:  "Index a document. Accepts either application/x-www-form-urlencoded or application/json." + skipRulesOverrideDescription,
@@ -368,6 +373,7 @@ func init() {
 			Name:         "Add (legacy path)",
 			Path:         "/add",
 			Method:       POST,
+			BodyLimit:    documentBodyLimit,
 			CSRFRequired: true,
 			Handler:      serveAdd,
 			Description:  "Index a document (legacy path; prefer /api/add)." + skipRulesOverrideDescription,
@@ -430,6 +436,7 @@ func init() {
 			Name:         "Add PDF",
 			Path:         "/api/add_pdf",
 			Method:       POST,
+			BodyLimit:    documentBodyLimit,
 			CSRFRequired: true,
 			Handler:      serveAddPDF,
 			Description:  "Index a PDF document. Accepts application/json with a document object and base64-encoded PDF content." + skipRulesOverrideDescription,
@@ -653,6 +660,7 @@ func init() {
 			Name:         "Preview rule",
 			Path:         "/api/rules/preview",
 			Method:       POST,
+			BodyLimit:    func(*config.Config) int64 { return maxRulePreviewBytes },
 			CSRFRequired: true,
 			Handler:      serveRulePreview,
 			Description:  "Validate a draft rule or generate a domain or exact URL rule, and optionally test a URL using the indexing rule matcher. Returns pattern and, when a test URL is supplied, matches. Does not fetch URLs or save rules. Tests only the supplied draft, without evaluating other saved rules. Provide exactly one of pattern, domain, or exact_url.",
@@ -962,6 +970,7 @@ func init() {
 			Name:         "Batch",
 			Path:         "/api/batch",
 			Method:       POST,
+			BodyLimit:    documentBodyLimit,
 			CSRFRequired: true,
 			Handler:      serveBatch,
 			Description:  "Execute up to 100 add/delete/get operations in a single request (body limit configured by server.max_batch_body_size, default 40 MiB). Each add operation has its own metadata." + skipRulesOverrideDescription,

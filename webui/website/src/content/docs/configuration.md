@@ -161,7 +161,7 @@ description: 'Explore every configuration section, option, default value, enviro
       name: 'max_batch_body_size',
       type: 'int',
       defaultValue: '40',
-      description: 'Maximum request body size in MiB accepted by the batch API. Import clients use this value to keep submitted batches within the server limit.',
+      description: 'Maximum request size in MiB for document uploads, PDF uploads, and batches. For PDFs, the limit includes the encoded content. Import clients use this value to keep submitted batches within the server limit.',
     },
     {
       name: 'metrics',

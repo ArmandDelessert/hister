@@ -97,7 +97,14 @@ func (r *serverRuntime) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *serverRuntime) startListener(listener net.Listener) *runtimeListener {
-	s := &runtimeListener{listener: listener, server: &http.Server{Handler: r}, done: make(chan struct{})}
+	// Leave WriteTimeout unset so reindexing and other long running handlers
+	// can finish their responses after the request body has been read.
+	s := &runtimeListener{listener: listener, server: &http.Server{
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		IdleTimeout:       time.Minute,
+	}, done: make(chan struct{})}
 	go func() {
 		defer close(s.done)
 		err := s.server.Serve(listener)

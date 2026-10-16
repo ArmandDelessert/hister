@@ -7,6 +7,27 @@ description: 'Monitor Hister with Prometheus using authenticated scrapes, search
 
 Hister exposes optional Prometheus metrics at `GET /metrics`. Prometheus periodically fetches this endpoint and stores the measurements. Enabling metrics does not automatically send statistics to an external service.
 
+## Expose the Running Version
+
+Version reporting is disabled by default. To let monitoring tools read the running Hister version, add this setting and run `hister reload` or restart the server:
+
+```yaml
+server:
+  expose_version: true
+```
+
+Alternatively, set `HISTER__SERVER__EXPOSE_VERSION=true` when starting the server.
+
+Enabling this option makes the version publicly available without authentication, even when Hister requires a token or user login for other features. Fetch it with:
+
+```bash
+curl --fail http://127.0.0.1:4433/api/config
+```
+
+The configuration response includes a `version` field, such as `"version": "v0.20.0"`. The value can also include a source revision. Include any path prefix from `server.base_url`, such as `/hister/api/config`.
+
+Set `server.expose_version: false` and reload or restart Hister to disable reporting. The `version` field is omitted while disabled. Version reporting and Prometheus metrics can be enabled independently.
+
 ## Enable Metrics
 
 Metrics are disabled by default. Add this setting to your Hister configuration, then restart the server:

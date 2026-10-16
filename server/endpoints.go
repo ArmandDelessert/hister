@@ -390,6 +390,7 @@ func serveGenerateToken(c *webContext) {
 // serveConfig returns app configuration as JSON and refreshes CSRF token.
 func serveConfig(c *webContext) {
 	type configResponse struct {
+		Version              string                    `json:"version,omitempty"`
 		BaseURL              string                    `json:"baseUrl"`
 		BasePath             string                    `json:"basePath"`
 		WsURL                string                    `json:"wsUrl"`
@@ -433,7 +434,7 @@ func serveConfig(c *webContext) {
 	for name := range c.Config.Server.OAuth {
 		oauthProviders = append(oauthProviders, name)
 	}
-	c.JSON(configResponse{
+	resp := configResponse{
 		BaseURL:              c.Config.BaseURL(""),
 		BasePath:             c.Config.BasePathPrefix(),
 		WsURL:                c.Config.WebSocketURL(),
@@ -459,7 +460,12 @@ func serveConfig(c *webContext) {
 		DisablePreviews:      c.Config.App.DisablePreviews,
 		MaxBatchBodyBytes:    c.Config.Server.MaxBatchBodyBytes(),
 		Search:               searchschema.CapabilitiesDefinition(),
-	})
+	}
+	if c.Config.Server.ExposeVersion {
+		resp.Version = Version
+	}
+	c.Response.Header().Set("Cache-Control", "no-store")
+	c.JSON(resp)
 }
 
 // parseSearchQueryParams parses URL query parameters into an indexer.Query.

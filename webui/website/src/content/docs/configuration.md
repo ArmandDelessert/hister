@@ -170,6 +170,12 @@ description: 'Explore every configuration section, option, default value, enviro
       description: 'Exposes Prometheus metrics at /metrics under the configured base URL. Uses token authentication when configured and requires an administrator in multiple user mode. See Monitoring for setup and metric definitions.',
     },
     {
+      name: 'expose_version',
+      type: 'bool',
+      defaultValue: 'false',
+      description: 'Includes the running Hister version in the public /api/config response without authentication. Disabled by default. See Monitoring for setup.',
+    },
+    {
       name: 'proxy_auth_header',
       type: 'string',
       defaultValue: '(empty, disabled)',
@@ -769,7 +775,7 @@ Each option below has one or both scope tags. The `server` tag marks settings us
 
 <ConfigReference items={serverOptions} scopes={['server']} />
 
-For `server.metrics`, see [Monitoring](monitoring) for authentication, Prometheus scrape configuration, and metric definitions.
+For `server.metrics` and `server.expose_version`, see [Monitoring](monitoring) for setup, access rules, and available information.
 
 For Unix socket permissions and reverse proxy examples, see [Unix sockets](server-setup#unix-sockets).
 

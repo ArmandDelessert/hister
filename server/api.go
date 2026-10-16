@@ -116,7 +116,7 @@ func init() {
 			NoAuth:       true,
 			Public:       true,
 			Handler:      serveConfig,
-			Description:  "Return server configuration, search capabilities, authentication mode, and CSRF state",
+			Description:  "Return server configuration, search capabilities, authentication mode, and CSRF state. Includes the running Hister version in the version field only when server.expose_version is enabled.",
 		},
 		{
 			Name:        "Search",

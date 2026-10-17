@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -238,6 +239,10 @@ func mcpToolList(semanticSearchEnabled bool) []map[string]any {
 						"type":        "integer",
 						"description": "Maximum combined number of history, keyword, and semantic results to return (default: 10, max: 50).",
 					},
+					"page_key": map[string]any{
+						"type":        "string",
+						"description": "Pagination cursor. Use next_page_key from the previous response and keep the query, date filters, and semantic setting unchanged.",
+					},
 					"date_from": map[string]any{
 						"type":        "string",
 						"description": `Only return documents updated on or after this date (ISO 8601, e.g. "2024-01-15").`,
@@ -403,10 +408,21 @@ func mcpCallTool(c *webContext, req mcpRequest) {
 type mcpSearchArgs struct {
 	Query    string   `json:"query"`
 	Limit    int      `json:"limit"`
+	PageKey  string   `json:"page_key"`
 	Semantic bool     `json:"semantic"`
 	Fields   []string `json:"fields"`
 	DateFrom string   `json:"date_from"`
 	DateTo   string   `json:"date_to"`
+}
+
+const mcpSearchBatchSize = 50
+
+// Keep the index cursor and the position within a batch separate because history
+// and semantic matches share the response limit with keyword matches.
+type mcpSearchCursor struct {
+	PageKey      string   `json:"page_key,omitempty"`
+	Offset       int      `json:"offset,omitempty"`
+	SeenSemantic []string `json:"seen_semantic,omitempty"`
 }
 
 // mcpToolSearch executes a Hister search and formats the results as MCP content.
@@ -422,8 +438,15 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 		mcpWriteError(c, id, mcpErrInvalidParam, "query is required")
 		return
 	}
-	if args.Limit <= 0 || args.Limit > 50 {
+	if args.Limit <= 0 || args.Limit > mcpSearchBatchSize {
 		args.Limit = 10
+	}
+	var cursor mcpSearchCursor
+	if args.PageKey != "" {
+		if err := json.Unmarshal([]byte(args.PageKey), &cursor); err != nil || cursor.Offset < 0 {
+			mcpWriteError(c, id, mcpErrInvalidParam, "invalid search page_key")
+			return
+		}
 	}
 	fieldSet, err := mcpSearchFieldSet(args.Fields)
 	if err != nil {
@@ -433,7 +456,8 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 
 	q := &indexer.Query{
 		Text:            args.Query,
-		Limit:           args.Limit,
+		Limit:           mcpSearchBatchSize,
+		PageKey:         cursor.PageKey,
 		SemanticEnabled: args.Semantic && c.Config.SemanticSearch.Enable,
 	}
 	if args.DateFrom != "" {
@@ -470,7 +494,7 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 		return
 	}
 
-	mcpWriteToolResult(c, id, mcpBuildSearchResult(args.Query, args.Limit, res, fieldSet))
+	mcpWriteToolResult(c, id, mcpBuildSearchPage(args.Query, args.Limit, res, fieldSet, cursor))
 }
 
 type mcpGetPreviewArgs struct {
@@ -633,6 +657,53 @@ func mcpSearchFieldSet(fields []string) (map[string]bool, error) {
 		fieldSet[field] = true
 	}
 	return fieldSet, nil
+}
+
+func mcpBuildSearchPage(query string, limit int, res *indexer.Results, fieldSet map[string]bool, cursor mcpSearchCursor) mcpStructuredResult {
+	if res == nil {
+		return mcpBuildSearchResult(query, limit, nil, fieldSet)
+	}
+	pageResults := *res
+	pageResults.SemanticHits = nil
+	for _, hit := range res.SemanticHits {
+		// The indexer leaves Document nil for semantic candidates already in
+		// this keyword batch. Remember them when advancing to another batch.
+		if hit.Document == nil {
+			if hit.DocID != "" && !slices.Contains(cursor.SeenSemantic, hit.DocID) {
+				cursor.SeenSemantic = append(cursor.SeenSemantic, hit.DocID)
+			}
+			continue
+		}
+		// Semantic matches follow all keyword batches, excluding candidates
+		// that have already appeared as keyword results on an earlier page.
+		if res.PageKey == "" && !slices.Contains(cursor.SeenSemantic, hit.DocID) {
+			pageResults.SemanticHits = append(pageResults.SemanticHits, hit)
+		}
+	}
+	count := len(res.History) + len(res.Documents) + len(pageResults.SemanticHits)
+	result := mcpBuildSearchResult(query, count, &pageResults, fieldSet)
+	if cursor.PageKey != "" {
+		// Keep history available for deduplication, but only emit it before
+		// the first keyword batch.
+		for len(result.UntrustedContent) > 0 && result.UntrustedContent[0].SourceType == "search_history" {
+			result.UntrustedContent = result.UntrustedContent[1:]
+		}
+	}
+	start := min(cursor.Offset, len(result.UntrustedContent))
+	end := min(start+limit, len(result.UntrustedContent))
+	if end < len(result.UntrustedContent) {
+		cursor.Offset = end
+	} else {
+		cursor.PageKey = res.PageKey
+		cursor.Offset = 0
+	}
+	if cursor.Offset > 0 || cursor.PageKey != "" {
+		key, _ := json.Marshal(cursor)
+		result.Trusted["next_page_key"] = string(key)
+	}
+	result.UntrustedContent = result.UntrustedContent[start:end]
+	result.Trusted["result_count"] = len(result.UntrustedContent)
+	return result
 }
 
 func mcpBuildSearchResult(query string, limit int, res *indexer.Results, fieldSet map[string]bool) mcpStructuredResult {

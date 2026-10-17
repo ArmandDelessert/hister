@@ -561,6 +561,14 @@ curl -s -X POST http://127.0.0.1:4433/mcp \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search","arguments":{"query":"python async","limit":5}}}'
 ```
 
+If `result.structuredContent.trusted.next_page_key` is present, pass its value
+as `arguments.page_key` in the next call. Treat the cursor as opaque and keep
+the query, date filters, and semantic setting unchanged. Each response respects
+`limit`; the last page may be empty. Search cursors track both the index batch
+and the position within the combined results so pagination does not skip
+keyword matches when history fills a page. Semantic matches follow the keyword
+batches, with earlier keyword and history matches excluded.
+
 Include full text and language fields when testing optional result data:
 
 ```bash

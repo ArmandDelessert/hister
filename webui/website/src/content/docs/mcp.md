@@ -97,6 +97,7 @@ Search your personal browsing history and indexed documents.
 | ----------- | --------------- | -------- | ------- | --------------------------------------------------------------------------- |
 | `query`     | string          | yes      |         | Search query (see [Query Language](/docs/query-language))                   |
 | `limit`     | integer         | no       | 10      | Maximum results to return. Values below 1 or above 50 use the default.      |
+| `page_key`  | string          | no       |         | Pagination cursor. Use `next_page_key` from the previous response.          |
 | `date_from` | string          | no       |         | Return only documents updated on or after this date. Format: `YYYY-MM-DD`.  |
 | `date_to`   | string          | no       |         | Return only documents updated on or before this date. Format: `YYYY-MM-DD`. |
 | `semantic`  | boolean         | no       | false   | Enable AI semantic search alongside keyword matching                        |
@@ -105,6 +106,12 @@ Search your personal browsing history and indexed documents.
 The limit applies to the combined list of history, keyword, and semantic matches.
 Matching history entries come first, followed by keyword matches and additional
 semantic matches.
+
+To continue a search, pass the response's `trusted.next_page_key` as `page_key`.
+Keep the same query, date filters, and semantic setting. You can change `limit`
+between requests. Continue until `next_page_key` is absent, even if a page has
+fewer results than the requested limit. A final request can return an empty page.
+Results can shift if documents or opened history change between requests.
 
 Semantic search is used only when it is enabled and available on the Hister
 server. If the server does not have semantic search configured, `"semantic":

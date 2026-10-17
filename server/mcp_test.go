@@ -80,6 +80,186 @@ func TestMCPSearchRespectsLimit(t *testing.T) {
 	}
 }
 
+func TestMCPSearchPagination(t *testing.T) {
+	cfg := testutil.InitModel(t)
+	cfg.App.AccessToken = "secret"
+	cfg.App.Public = true
+	cfg.Indexer.DetectLanguages = false
+	sessionStore = newSessionStore([]byte(strings.Repeat("x", 32)), cfg.BaseURL(""), sessionMaxAge)
+	idx := newServerTestIndexer(t, cfg)
+	handler := registerEndpoints(cfg, idx)
+	const query = "pagination"
+	want := make(map[string]bool)
+	for i := range 55 {
+		u := fmt.Sprintf("https://example.com/%02d", i)
+		if err := idx.Add(&document.Document{URL: u, Title: query, Text: "Article text", Processed: true}); err != nil {
+			t.Fatal(err)
+		}
+		want[u] = true
+	}
+	if err := idx.Add(&document.Document{URL: "https://example.com/private", Title: query, UserID: 777, Processed: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []string{"https://example.com/00", "https://example.com/54", "https://example.com/history"} {
+		if err := model.UpdateHistory(0, query, u, "Opened article"); err != nil {
+			t.Fatal(err)
+		}
+		want[u] = true
+	}
+
+	for _, authenticated := range []bool{true, false} {
+		t.Run(fmt.Sprintf("authenticated=%v", authenticated), func(t *testing.T) {
+			var headers map[string]string
+			if authenticated {
+				headers = map[string]string{"Authorization": "Bearer secret"}
+			}
+			seen := make(map[string]bool)
+			pageKey := ""
+			for page := range 100 {
+				// Changing the page size must not lose the remaining batch results.
+				limit := []int{1, 2, 7, 50}[page%4]
+				args := map[string]any{"query": query, "limit": limit, "page_key": pageKey, "fields": []string{"text"}}
+				body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "search", "arguments": args}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(string(body)), headers)
+				var response struct {
+					Result struct {
+						Content           []mcpTextContent    `json:"content"`
+						StructuredContent mcpStructuredResult `json:"structuredContent"`
+					} `json:"result"`
+					Error *mcpRPCError `json:"error"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				if rec.Code != http.StatusOK || response.Error != nil {
+					t.Fatalf("page %d: status %d, error %+v", page, rec.Code, response.Error)
+				}
+				result := response.Result.StructuredContent
+				if len(result.UntrustedContent) > limit || result.Trusted["result_count"] != float64(len(result.UntrustedContent)) {
+					t.Fatalf("page %d: invalid page size: %+v", page, result.Trusted)
+				}
+				for _, record := range result.UntrustedContent {
+					u, _ := record.Fields["url"].(string)
+					if seen[u] || !want[u] {
+						t.Fatalf("page %d: duplicate or unexpected URL %q", page, u)
+					}
+					if !authenticated && (record.SourceType == "search_history" || u == "https://example.com/history") {
+						t.Fatalf("anonymous search exposed history: %+v", record)
+					}
+					if record.SourceType != "search_history" && record.Fields["text"] != "Article text" {
+						t.Fatalf("page %d lost requested text: %+v", page, record.Fields)
+					}
+					seen[u] = true
+				}
+				next, _ := result.Trusted["next_page_key"].(string)
+				if len(response.Result.Content) != 1 {
+					t.Fatal("missing text fallback")
+				}
+				fallback := response.Result.Content[0].Text
+				start := strings.IndexByte(fallback, '{')
+				var textResult mcpStructuredResult
+				if start < 0 || json.Unmarshal([]byte(fallback[start:]), &textResult) != nil {
+					t.Fatal("invalid text fallback")
+				}
+				if textResult.Trusted["next_page_key"] != result.Trusted["next_page_key"] || len(textResult.UntrustedContent) != len(result.UntrustedContent) {
+					t.Fatal("text fallback differs from the structured page")
+				}
+				if next == "" {
+					wantCount := len(want)
+					if !authenticated {
+						wantCount--
+					}
+					if len(seen) != wantCount {
+						t.Fatalf("pagination ended after %d results, want %d", len(seen), wantCount)
+					}
+					return
+				}
+				if next == pageKey {
+					t.Fatal("pagination did not advance")
+				}
+				pageKey = next
+			}
+			t.Fatal("pagination did not finish")
+		})
+	}
+}
+
+func TestMCPSearchRejectsInvalidPageKey(t *testing.T) {
+	_, handler := newPublicTokenTestServer(t)
+	for _, key := range []string{"invalid", `[]`, `{"offset":-1}`} {
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"query":"pagination","page_key":%q}}}`, key)
+		rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(body), nil)
+		var response struct {
+			Error *mcpRPCError `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error == nil || response.Error.Code != mcpErrInvalidParam {
+			t.Errorf("page key %q returned %s, want invalid argument", key, rec.Body)
+		}
+	}
+}
+
+func TestMCPBuildSearchPageSemanticPagination(t *testing.T) {
+	history := &model.URLCount{URL: "https://example.com/history"}
+	a := &document.Document{URL: "https://example.com/a"}
+	b := &document.Document{URL: "https://example.com/b"}
+	c := &document.Document{URL: "https://example.com/c"}
+	d := &document.Document{URL: "https://example.com/semantic"}
+	batches := map[string]*indexer.Results{
+		"": {
+			History:   []*model.URLCount{nil, history},
+			Documents: []*document.Document{nil, a, b},
+			PageKey:   "next batch",
+			SemanticHits: []indexer.SemanticHit{
+				{DocID: "a"}, // A keyword match in this batch.
+				{DocID: "c", Document: c},
+				{DocID: "d", Document: d},
+			},
+		},
+		"next batch": {
+			History:   []*model.URLCount{history},
+			Documents: []*document.Document{c},
+			SemanticHits: []indexer.SemanticHit{
+				{DocID: "a", Document: a}, // Must not repeat the earlier keyword match.
+				{DocID: "c"},
+				{DocID: "history", Document: &document.Document{URL: history.URL}},
+				{DocID: "d", Document: d},
+				{DocID: "d", Document: d},
+			},
+		},
+	}
+	want := []string{history.URL, a.URL, b.URL, c.URL, d.URL}
+	for _, limit := range []int{1, 2, 3, 50} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			var cursor mcpSearchCursor
+			var got []string
+			for range 10 {
+				result := mcpBuildSearchPage("semantic", limit, batches[cursor.PageKey], nil, cursor)
+				for _, record := range result.UntrustedContent {
+					got = append(got, record.Fields["url"].(string))
+				}
+				key, _ := result.Trusted["next_page_key"].(string)
+				if key == "" {
+					if strings.Join(got, "\n") != strings.Join(want, "\n") {
+						t.Fatalf("paginated URLs = %v, want %v", got, want)
+					}
+					return
+				}
+				cursor = mcpSearchCursor{}
+				if err := json.Unmarshal([]byte(key), &cursor); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Fatal("pagination did not finish")
+		})
+	}
+}
+
 func TestMCPBuildSearchResultLimitsCombinedMatches(t *testing.T) {
 	historyURL := "https://example.com/history"
 	keywordURL := "https://example.com/keyword"

@@ -100,14 +100,31 @@ type mcpUntrustedRecord struct {
 	Fields     map[string]any `json:"fields"`
 }
 
+func validateMCPOrigin(c *webContext) bool {
+	origins := c.Request.Header.Values("Origin")
+	// Native MCP clients need not send an Origin header. Supplied origins use
+	// the same policy as the rest of Hister, including CLI and loopback aliases.
+	if len(origins) == 0 || (len(origins) == 1 && c.Config.IsSameHost(origins[0])) {
+		return true
+	}
+	http.Error(c.Response, "invalid MCP origin", http.StatusForbidden)
+	return false
+}
+
 // serveMCPGet reports that server initiated event streams are not supported.
 func serveMCPGet(c *webContext) {
+	if !validateMCPOrigin(c) {
+		return
+	}
 	c.Response.Header().Set("Allow", http.MethodPost)
 	c.Response.WriteHeader(http.StatusMethodNotAllowed)
 }
 
 // serveMCP handles POST /mcp requests using the MCP Streamable HTTP transport.
 func serveMCP(c *webContext) {
+	if !validateMCPOrigin(c) {
+		return
+	}
 	var req mcpRequest
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
 		if requestBodyTooLarge(c, err) {

@@ -18,6 +18,16 @@ POST /mcp
 
 Configure MCP clients to use this URL with the Streamable HTTP transport.
 
+MCP applies Hister's usual origin checks when a client sends an `Origin` header.
+The `hister://` origin is supported, and `localhost` and `127.0.0.1` are
+interchangeable for local configurations with the same scheme and port. Requests
+from unrelated origins receive HTTP 403, even with a valid access token or login
+session. Native clients that omit `Origin` continue to use the normal
+authentication settings.
+
+When using a reverse proxy, set `server.base_url` to the public URL used by your
+client. Browser clients on a different origin are not supported.
+
 ## Untrusted Content And Prompt Injection
 
 Every indexed title, URL, metadata value, document body, and history field is

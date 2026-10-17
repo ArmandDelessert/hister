@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -249,5 +250,156 @@ func TestMCPNormalizeUntrustedStripsInvisibleControls(t *testing.T) {
 	input := "safe\x00\x1b\u200b\u202e\ue000 text\r\nnext"
 	if got, want := mcpNormalizeUntrusted(input), "safe text\nnext"; got != want {
 		t.Fatalf("normalized value = %q, want %q", got, want)
+	}
+}
+
+func TestMCPOriginValidation(t *testing.T) {
+	_, handler := newPublicTokenTestServer(t)
+	cookie := tokenLoginCookie(t, handler, nil)
+	tests := []struct {
+		name    string
+		origins []string
+		allowed bool
+	}{
+		{name: "absent", allowed: true},
+		{name: "configured origin", origins: []string{"http://127.0.0.1:4433"}, allowed: true},
+		{name: "unrelated origin", origins: []string{"https://untrusted.example"}},
+		{name: "different scheme", origins: []string{"https://127.0.0.1:4433"}},
+		{name: "different port", origins: []string{"http://127.0.0.1:4434"}},
+		{name: "localhost alias", origins: []string{"http://localhost:4433"}, allowed: true},
+		{name: "null", origins: []string{"null"}},
+		{name: "empty", origins: []string{""}},
+		{name: "malformed", origins: []string{"http://["}},
+		{name: "relative", origins: []string{"//127.0.0.1:4433"}},
+		{name: "CLI scheme", origins: []string{"hister://"}, allowed: true},
+		{name: "extension scheme", origins: []string{chromeExtensionOrigin}},
+		{name: "multiple origins", origins: []string{"http://127.0.0.1:4433 https://untrusted.example"}},
+		{name: "duplicate headers", origins: []string{"http://127.0.0.1:4433", "https://untrusted.example"}},
+	}
+	for _, auth := range []string{"anonymous", "bearer", "session"} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			for _, tt := range tests {
+				t.Run(auth+"/"+method+"/"+tt.name, func(t *testing.T) {
+					req := httptest.NewRequest(method, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+					// Supplied host headers must not establish a trusted origin.
+					req.Host = "untrusted.example"
+					req.Header.Set("X-Forwarded-Host", "untrusted.example")
+					req.Header.Set("X-Forwarded-Proto", "https")
+					req.Header.Set("Forwarded", `host=untrusted.example;proto=https`)
+					req.Header.Set("Content-Type", "text/plain")
+					for _, origin := range tt.origins {
+						req.Header.Add("Origin", origin)
+					}
+					switch auth {
+					case "bearer":
+						req.Header.Set("Authorization", "Bearer secret")
+					case "session":
+						req.AddCookie(cookie)
+					}
+					rec := httptest.NewRecorder()
+					handler.ServeHTTP(rec, req)
+					want := http.StatusForbidden
+					if tt.allowed {
+						want = http.StatusOK
+						if method == http.MethodGet {
+							want = http.StatusMethodNotAllowed
+						}
+					}
+					if rec.Code != want {
+						t.Fatalf("status = %d, want %d; body=%s", rec.Code, want, rec.Body.String())
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestMCPOriginUsesConfiguredBaseURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		origin  string
+		allowed bool
+	}{
+		{name: "HTTPS base path", baseURL: "https://hister.example/hister", origin: "https://hister.example", allowed: true},
+		{name: "explicit HTTPS port", baseURL: "https://hister.example:443/hister", origin: "https://hister.example:443", allowed: true},
+		{name: "HTTP base path", baseURL: "http://hister.example/hister", origin: "http://hister.example", allowed: true},
+		{name: "explicit HTTP port", baseURL: "http://hister.example:80/hister", origin: "http://hister.example:80", allowed: true},
+		{name: "loopback alias", baseURL: "http://localhost:4433/hister", origin: "http://127.0.0.1:4433", allowed: true},
+		{name: "IPv6", baseURL: "http://[::1]:4433/hister", origin: "http://[::1]:4433", allowed: true},
+		{name: "different scheme", baseURL: "https://hister.example/hister", origin: "http://hister.example"},
+		{name: "different port", baseURL: "https://hister.example:8443/hister", origin: "https://hister.example"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, _ := newPublicTokenTestServer(t)
+			if err := cfg.UpdateBaseURL(tt.baseURL); err != nil {
+				t.Fatal(err)
+			}
+			// Ping needs no indexer. Register again to apply the base path.
+			handler := registerEndpoints(cfg, nil)
+			rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/hister/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), map[string]string{"Origin": tt.origin})
+			want := http.StatusForbidden
+			if tt.allowed {
+				want = http.StatusOK
+			}
+			if rec.Code != want {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestMCPOriginPreservesAuthentication(t *testing.T) {
+	cfg, handler := newTokenTestServer(t, false)
+	cookie := tokenLoginCookie(t, handler, nil)
+	for _, auth := range []string{"missing", "bearer", "invalid bearer", "session"} {
+		for _, origin := range []string{"", cfg.Server.BaseURL, "https://untrusted.example"} {
+			t.Run(auth+"/"+origin, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+				if origin != "" {
+					req.Header.Set("Origin", origin)
+				}
+				switch auth {
+				case "bearer":
+					req.Header.Set("Authorization", "Bearer secret")
+				case "invalid bearer":
+					req.Header.Set("Authorization", "Bearer invalid")
+				case "session":
+					req.AddCookie(cookie)
+				}
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				want := http.StatusForbidden
+				if (auth == "bearer" || auth == "session") && origin != "https://untrusted.example" {
+					want = http.StatusOK
+				}
+				if rec.Code != want {
+					t.Fatalf("status = %d, want %d; body=%s", rec.Code, want, rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestMCPOriginWithoutAuthentication(t *testing.T) {
+	cfg, _ := newTokenTestServer(t, false)
+	cfg.App.AccessToken = ""
+	handler := registerEndpoints(cfg, nil)
+	for _, origin := range []string{"", cfg.Server.BaseURL, "https://untrusted.example"} {
+		t.Run(origin, func(t *testing.T) {
+			headers := make(map[string]string)
+			if origin != "" {
+				headers["Origin"] = origin
+			}
+			rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), headers)
+			want := http.StatusOK
+			if origin == "https://untrusted.example" {
+				want = http.StatusForbidden
+			}
+			if rec.Code != want {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, want, rec.Body.String())
+			}
+		})
 	}
 }

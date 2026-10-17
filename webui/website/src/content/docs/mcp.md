@@ -102,6 +102,10 @@ Search your personal browsing history and indexed documents.
 | `semantic`  | boolean         | no       | false   | Enable AI semantic search alongside keyword matching                        |
 | `fields`    | array of string | no       | `[]`    | Extra fields to include in each result. See below.                          |
 
+The limit applies to the combined list of history, keyword, and semantic matches.
+Matching history entries come first, followed by keyword matches and additional
+semantic matches.
+
 Semantic search is used only when it is enabled and available on the Hister
 server. If the server does not have semantic search configured, `"semantic":
 true` falls back to normal keyword search.

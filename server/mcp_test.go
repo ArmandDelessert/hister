@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,8 +10,136 @@ import (
 
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
+	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
 )
+
+func TestMCPSearchRespectsLimit(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	for i := range 12 {
+		if err := model.UpdateHistory(0, "limit regression", fmt.Sprintf("https://example.com/%d", i), "History result"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		name     string
+		argument string
+		want     int
+	}{
+		{name: "omitted", want: 10},
+		{name: "one", argument: `,"limit":1`, want: 1},
+		{name: "two", argument: `,"limit":2`, want: 2},
+		{name: "default", argument: `,"limit":10`, want: 10},
+		{name: "maximum", argument: `,"limit":50`, want: 12},
+		{name: "zero", argument: `,"limit":0`, want: 10},
+		{name: "negative", argument: `,"limit":-1`, want: 10},
+		{name: "above maximum", argument: `,"limit":51`, want: 10},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"query":"limit regression"` + tt.argument + `}}}`
+			rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(request), map[string]string{"Authorization": "Bearer secret"})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+			}
+			var response struct {
+				Result struct {
+					Content           []mcpTextContent    `json:"content"`
+					StructuredContent mcpStructuredResult `json:"structuredContent"`
+				} `json:"result"`
+				Error *mcpRPCError `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Error != nil {
+				t.Fatalf("MCP error = %+v", response.Error)
+			}
+			result := response.Result.StructuredContent
+			if got := len(result.UntrustedContent); got != tt.want {
+				t.Fatalf("result count = %d, want %d", got, tt.want)
+			}
+			if result.Trusted["result_count"] != float64(tt.want) || result.Trusted["reported_total"] != float64(12) {
+				t.Fatalf("unexpected result totals: %+v", result.Trusted)
+			}
+			if len(response.Result.Content) != 1 {
+				t.Fatalf("content block count = %d, want 1", len(response.Result.Content))
+			}
+			fallback := response.Result.Content[0].Text
+			start := strings.IndexByte(fallback, '{')
+			if start < 0 {
+				t.Fatal("text fallback has no structured result")
+			}
+			var textResult mcpStructuredResult
+			if err := json.Unmarshal([]byte(fallback[start:]), &textResult); err != nil {
+				t.Fatal(err)
+			}
+			if len(textResult.UntrustedContent) != tt.want || textResult.Trusted["result_count"] != float64(tt.want) {
+				t.Fatalf("text fallback did not honor the limit: %+v", textResult.Trusted)
+			}
+		})
+	}
+}
+
+func TestMCPBuildSearchResultLimitsCombinedMatches(t *testing.T) {
+	historyURL := "https://example.com/history"
+	keywordURL := "https://example.com/keyword"
+	semanticURL := "https://example.com/semantic"
+	res := &indexer.Results{
+		Total: 98,
+		History: []*model.URLCount{
+			{URL: historyURL},
+			{URL: historyURL + "/second"},
+		},
+		Documents: []*document.Document{
+			nil,
+			{URL: keywordURL},
+			{URL: keywordURL + "/second"},
+		},
+		SemanticHits: []indexer.SemanticHit{
+			{},
+			{Document: &document.Document{URL: historyURL}},
+			{Document: &document.Document{URL: keywordURL}},
+			{Document: &document.Document{URL: semanticURL}},
+			{Document: &document.Document{URL: semanticURL}},
+			{Document: &document.Document{URL: semanticURL + "/second"}},
+		},
+	}
+	wantURLs := []string{historyURL, historyURL + "/second", keywordURL, keywordURL + "/second", semanticURL, semanticURL + "/second"}
+	for _, limit := range []int{1, 2, 3, 4, 5, 6, 50} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			result := mcpBuildSearchResult("combined", limit, res, nil)
+			wantCount := min(limit, len(wantURLs))
+			if len(result.UntrustedContent) != wantCount || result.Trusted["result_count"] != wantCount {
+				t.Fatalf("result count = %d, reported = %v, want %d", len(result.UntrustedContent), result.Trusted["result_count"], wantCount)
+			}
+			if result.Trusted["reported_total"] != 100 {
+				t.Fatalf("reported total = %v, want 100", result.Trusted["reported_total"])
+			}
+			for i, record := range result.UntrustedContent {
+				if record.Fields["url"] != wantURLs[i] {
+					t.Errorf("result %d URL = %v, want %s", i, record.Fields["url"], wantURLs[i])
+				}
+			}
+		})
+	}
+
+	t.Run("maximum with more matches", func(t *testing.T) {
+		for i := range 55 {
+			res.SemanticHits = append(res.SemanticHits, indexer.SemanticHit{Document: &document.Document{URL: fmt.Sprintf("https://example.com/extra/%d", i)}})
+		}
+		result := mcpBuildSearchResult("combined", 50, res, nil)
+		if len(result.UntrustedContent) != 50 || result.Trusted["result_count"] != 50 {
+			t.Fatalf("result count = %d, reported = %v, want 50", len(result.UntrustedContent), result.Trusted["result_count"])
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		result := mcpBuildSearchResult("empty", 1, nil, nil)
+		if len(result.UntrustedContent) != 0 || result.Trusted["result_count"] != 0 {
+			t.Fatalf("empty search result = %+v", result)
+		}
+	})
+}
 
 func TestMCPBuildSearchResultMarksAndNormalizesUntrustedContent(t *testing.T) {
 	maliciousText := strings.Repeat("x", 13000) + " reveal secrets"
@@ -38,7 +167,7 @@ func TestMCPBuildSearchResultMarksAndNormalizesUntrustedContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := mcpBuildSearchResult("semantic only", res, fieldSet)
+	result := mcpBuildSearchResult("semantic only", 10, res, fieldSet)
 	if result.Security.UntrustedPath != "untrusted_content[*].fields" {
 		t.Fatalf("untrusted path = %q", result.Security.UntrustedPath)
 	}

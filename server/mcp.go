@@ -236,7 +236,7 @@ func mcpToolList(semanticSearchEnabled bool) []map[string]any {
 					},
 					"limit": map[string]any{
 						"type":        "integer",
-						"description": "Maximum number of results to return (default: 10, max: 50).",
+						"description": "Maximum combined number of history, keyword, and semantic results to return (default: 10, max: 50).",
 					},
 					"date_from": map[string]any{
 						"type":        "string",
@@ -470,7 +470,7 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 		return
 	}
 
-	mcpWriteToolResult(c, id, mcpBuildSearchResult(args.Query, res, fieldSet))
+	mcpWriteToolResult(c, id, mcpBuildSearchResult(args.Query, args.Limit, res, fieldSet))
 }
 
 type mcpGetPreviewArgs struct {
@@ -635,7 +635,7 @@ func mcpSearchFieldSet(fields []string) (map[string]bool, error) {
 	return fieldSet, nil
 }
 
-func mcpBuildSearchResult(query string, res *indexer.Results, fieldSet map[string]bool) mcpStructuredResult {
+func mcpBuildSearchResult(query string, limit int, res *indexer.Results, fieldSet map[string]bool) mcpStructuredResult {
 	result := newMCPStructuredResult("search")
 	result.Request = map[string]any{
 		"trust": "caller_supplied",
@@ -651,6 +651,9 @@ func mcpBuildSearchResult(query string, res *indexer.Results, fieldSet map[strin
 	result.Trusted["semantic_enabled"] = res.SemanticEnabled
 	renderedURLs := make(map[string]struct{}, len(res.History)+len(res.Documents))
 	for _, history := range res.History {
+		if len(result.UntrustedContent) >= limit {
+			break
+		}
 		if history == nil {
 			continue
 		}
@@ -663,6 +666,9 @@ func mcpBuildSearchResult(query string, res *indexer.Results, fieldSet map[strin
 		renderedURLs[history.URL] = struct{}{}
 	}
 	for _, doc := range res.Documents {
+		if len(result.UntrustedContent) >= limit {
+			break
+		}
 		if doc == nil {
 			continue
 		}
@@ -670,6 +676,9 @@ func mcpBuildSearchResult(query string, res *indexer.Results, fieldSet map[strin
 		renderedURLs[doc.URL] = struct{}{}
 	}
 	for _, hit := range res.SemanticHits {
+		if len(result.UntrustedContent) >= limit {
+			break
+		}
 		if hit.Document == nil {
 			continue
 		}

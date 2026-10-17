@@ -225,6 +225,9 @@ public mode is disabled or the caller is authenticated.
 | Argument          | Type    | Required | Default   | Description                                                                             |
 | ----------------- | ------- | -------- | --------- | --------------------------------------------------------------------------------------- |
 | `mode`            | string  | no       | `indexed` | `indexed` returns recently indexed pages. `opened` returns opened result history.       |
+| `filter`          | string  | no       |           | Filter titles and URLs using the same text matching as the history view.                |
+| `date_from`       | string  | no       |           | Return items last opened or indexed on or after this UTC date. Format: `YYYY-MM-DD`.    |
+| `date_to`         | string  | no       |           | Return items last opened or indexed on or before this UTC date. Format: `YYYY-MM-DD`.   |
 | `limit`           | integer | no       | 20        | Maximum items to return. Values below 1 or above 100 use the default.                   |
 | `page_key`        | string  | no       |           | Pagination cursor for `indexed` mode. Use `next_page_key` from the previous response.   |
 | `last_id`         | integer | no       |           | ID cursor for `opened` mode. Use `next_last_id` together with `last_updated_at`.        |
@@ -239,6 +242,13 @@ When an opened history page is full, its `trusted` object includes
 including fractional seconds. Using only `last_id` can skip entries when an older
 result has been reopened. A final request can return an empty page.
 
+`filter` matches titles and URLs, ignoring case and surrounding whitespace.
+It does not search page content or the original query, and it does not accept
+the `search` tool's query syntax. Dates refer to the last opening in `opened`
+mode and the last indexing update in `indexed` mode. Both dates include the
+entire UTC day, and `date_from` must be on or before `date_to`. Keep the same
+text and date filters when requesting another page.
+
 Examples:
 
 ```json
@@ -247,6 +257,17 @@ Examples:
 
 ```json
 { "mode": "opened", "limit": 20 }
+```
+
+To find opened pages about Go during January:
+
+```json
+{
+  "mode": "opened",
+  "filter": "golang",
+  "date_from": "2026-01-01",
+  "date_to": "2026-01-31"
+}
 ```
 
 To continue opened history using the cursor from the previous response:

@@ -816,6 +816,176 @@ func TestMCPPreviewIncludesRenderedHTMLAndMarksMetadataUntrusted(t *testing.T) {
 	}
 }
 
+func TestMCPGetHistoryFilters(t *testing.T) {
+	cfg := testutil.InitModel(t)
+	cfg.App.UserHandling = true
+	cfg.App.Public = true
+	if err := cfg.SaveRules(); err != nil {
+		t.Fatal(err)
+	}
+	sessionStore = newSessionStore([]byte(strings.Repeat("x", 32)), cfg.BaseURL(""), sessionMaxAge)
+	alice := testutil.CreateUser(t, "alice")
+	bob := testutil.CreateUser(t, "bob")
+	idx := newServerTestIndexer(t, cfg)
+	handler := registerEndpoints(cfg, idx)
+	day := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+	entries := []struct {
+		path    string
+		title   string
+		updated time.Time
+		userID  uint
+	}{
+		{"before", "Alpha before", day.Add(-time.Second), alice.ID},
+		{"start", "Alpha guide", day, alice.ID},
+		{"alpha-end", "Last page", day.AddDate(0, 0, 1).Add(-time.Microsecond), alice.ID},
+		{"alpha-tie", "Tied page", day.AddDate(0, 0, 1).Add(-time.Microsecond), alice.ID},
+		{"after", "Alpha after", day.AddDate(0, 0, 1), alice.ID},
+		{"unrelated", "Unrelated page", day.Add(time.Hour), alice.ID},
+		{"private", "Alpha private", day.Add(2 * time.Hour), bob.ID},
+		{"global", "Alpha global", day.Add(3 * time.Hour), 0},
+	}
+	timestamps := make(map[string]time.Time)
+	for _, entry := range entries {
+		url := "https://example.com/" + entry.path
+		timestamps[url] = entry.updated
+		if err := idx.Add(&document.Document{
+			URL: url, Title: entry.title, Text: "contentonly", Updated: entry.updated.Unix(), UserID: entry.userID, Processed: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := model.UpdateHistory(entry.userID, "contentonly", url, entry.title); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, userID := range []uint{alice.ID, bob.ID, 0} {
+		items, err := model.GetLatestHistoryItems(userID, 100, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range items {
+			if err := model.DB.Model(&model.HistoryLink{}).Where("id = ?", item.ID).
+				UpdateColumn("updated_at", timestamps[item.URL]).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	call := func(t *testing.T, args map[string]any, token string) (mcpStructuredResult, *mcpRPCError) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "get_history", "arguments": args}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var headers map[string]string
+		if token != "" {
+			headers = map[string]string{"Authorization": "Bearer " + token}
+		}
+		rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(string(body)), headers)
+		var response struct {
+			Result struct {
+				StructuredContent mcpStructuredResult `json:"structuredContent"`
+			} `json:"result"`
+			Error *mcpRPCError `json:"error"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &response) != nil {
+			t.Fatalf("get_history status %d: %s", rec.Code, rec.Body)
+		}
+		return response.Result.StructuredContent, response.Error
+	}
+
+	for _, mode := range []string{"opened", "indexed"} {
+		for _, tt := range []struct {
+			name   string
+			args   map[string]any
+			paths  []string
+			global bool
+		}{
+			{name: "title phrase", args: map[string]any{"filter": "  ALPHA GUIDE  "}, paths: []string{"start"}},
+			{name: "URL", args: map[string]any{"filter": "ALPHA-END"}, paths: []string{"alpha-end"}},
+			{name: "text filter", args: map[string]any{"filter": "alpha"}, paths: []string{"before", "start", "alpha-end", "alpha-tie", "after"}, global: true},
+			{name: "inclusive day", args: map[string]any{"date_from": "2026-01-31", "date_to": "2026-01-31"}, paths: []string{"start", "alpha-end", "alpha-tie", "unrelated"}, global: true},
+			{name: "combined", args: map[string]any{"filter": "alpha", "date_from": "2026-01-31", "date_to": "2026-01-31"}, paths: []string{"start", "alpha-end", "alpha-tie"}, global: true},
+			{name: "from only", args: map[string]any{"date_from": "2026-02-01"}, paths: []string{"after"}},
+			{name: "to only", args: map[string]any{"date_to": "2026-01-30"}, paths: []string{"before"}},
+			{name: "no matches", args: map[string]any{"filter": "nonexistent"}},
+			{name: "body and query excluded", args: map[string]any{"filter": "contentonly"}},
+		} {
+			t.Run(mode+"/"+tt.name, func(t *testing.T) {
+				tt.args["mode"] = mode
+				result, rpcErr := call(t, tt.args, alice.Token)
+				if rpcErr != nil {
+					t.Fatal(rpcErr)
+				}
+				want := make(map[string]bool)
+				for _, path := range tt.paths {
+					want["https://example.com/"+path] = true
+				}
+				if mode == "indexed" && tt.global {
+					want["https://example.com/global"] = true
+				}
+				got := make(map[string]bool)
+				for _, record := range result.UntrustedContent {
+					got[record.Fields["url"].(string)] = true
+				}
+				if !reflect.DeepEqual(got, want) || len(result.UntrustedContent) != len(want) || result.Trusted["result_count"] != float64(len(want)) {
+					t.Fatalf("URLs = %v, want %v; trusted = %+v", got, want, result.Trusted)
+				}
+				if tt.name != "combined" {
+					return
+				}
+
+				// Follow every filtered page, including tied timestamps and the final empty page.
+				tt.args["limit"] = 1
+				var paged []mcpUntrustedRecord
+				for range len(want) + 1 {
+					page, rpcErr := call(t, tt.args, alice.Token)
+					if rpcErr != nil || len(page.UntrustedContent) > 1 {
+						t.Fatalf("unexpected history page: %+v, error: %+v", page, rpcErr)
+					}
+					if len(page.UntrustedContent) == 0 {
+						break
+					}
+					paged = append(paged, page.UntrustedContent...)
+					if mode == "opened" {
+						tt.args["last_id"] = page.Trusted["next_last_id"]
+						tt.args["last_updated_at"] = page.Trusted["next_last_updated_at"]
+					} else {
+						tt.args["page_key"] = page.Trusted["next_page_key"]
+					}
+				}
+				if !reflect.DeepEqual(paged, result.UntrustedContent) {
+					t.Fatalf("paged records = %+v, want %+v", paged, result.UntrustedContent)
+				}
+			})
+		}
+		if _, rpcErr := call(t, map[string]any{"mode": mode, "filter": "alpha", "date_from": "2026-01-31"}, ""); rpcErr == nil || rpcErr.Code != mcpErrNotFound {
+			t.Errorf("anonymous %s history: error = %+v, want unavailable", mode, rpcErr)
+		}
+	}
+}
+
+func TestMCPGetHistoryInvalidFilters(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	for _, mode := range []string{"opened", "indexed"} {
+		for _, args := range []string{
+			`"filter":42`, `"date_from":"yesterday"`, `"date_to":"2026-02-30"`,
+			`"date_from":"2026-02-01","date_to":"2026-01-31"`,
+		} {
+			body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_history","arguments":{"mode":"` + mode + `",` + args + `}}}`
+			rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(body), map[string]string{"Authorization": "Bearer secret"})
+			var response struct {
+				Error *mcpRPCError `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Error == nil || response.Error.Code != mcpErrInvalidParam {
+				t.Errorf("%s arguments %s: error = %+v, want invalid argument", mode, args, response.Error)
+			}
+		}
+	}
+}
+
 func TestMCPHistoryMarksSourceFieldsUntrusted(t *testing.T) {
 	result := mcpBuildOpenedHistoryResult([]mcpHistoryOpenedItem{
 		{

@@ -610,6 +610,23 @@ curl -s -X POST http://127.0.0.1:4433/mcp \
   -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"get_history","arguments":{"mode":"indexed","limit":10}}}'
 ```
 
+### Facet Counts
+
+```bash
+curl -s -X POST http://127.0.0.1:4433/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-access-token>" \
+  -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"get_facets","arguments":{"query":"python","limit":5}}}'
+```
+
+The response's `trusted.reported_total` counts matching indexed documents.
+Facet data is in `untrusted_content[0].fields`, with `terms` and
+`date_histogram` using the same shape as `/api/facets`. A term facet contains
+`terms` with `term`, `count`, and optional `label` values, plus an optional
+`other` count. Date buckets have `name` and `count` values and may be absent
+when there are no matches. Facet source values remain inside the untrusted
+content boundary in both structured content and the text fallback.
+
 ### Supported Methods
 
 The endpoint implements MCP specification version `2025-06-18` with these

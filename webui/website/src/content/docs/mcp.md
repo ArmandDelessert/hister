@@ -7,8 +7,8 @@ description: 'Connect assistants to Hister search, previews, and history through
 
 Hister exposes a [Model Context Protocol](https://modelcontextprotocol.io) (MCP)
 endpoint that lets AI assistants read from your Hister index directly. Once
-connected, the assistant can search indexed pages, retrieve stored previews,
-and inspect Hister history through MCP tools.
+connected, the assistant can search indexed pages, explore search counts,
+retrieve stored previews, and inspect Hister history through MCP tools.
 
 ## Endpoint
 
@@ -83,8 +83,8 @@ Authorization: Bearer <your-user-token>
 ### Public mode
 
 When `app.public: true` is enabled, unauthenticated MCP access is allowed for
-public routes. MCP tools can read public search results and previews for global
-documents. The `get_history` tool remains unavailable to anonymous callers but
+public routes. MCP tools can read public search results, facet counts, and previews
+for global documents. The `get_history` tool remains unavailable to anonymous callers but
 is enabled when the request includes a valid global or personal access token.
 
 ## Available Tools
@@ -141,6 +141,34 @@ Example with a date range:
 ```json
 { "query": "postgres migration", "date_from": "2026-01-01", "date_to": "2026-01-31" }
 ```
+
+### `get_facets`
+
+Count indexed documents matching a query by domain, language, document type,
+visit count, and update date. Use these counts to choose filters before requesting
+search results. Omitting the query summarizes all documents you can access.
+
+| Argument    | Type    | Required | Default | Description                                                                  |
+| ----------- | ------- | -------- | ------- | ---------------------------------------------------------------------------- |
+| `query`     | string  | no       | `*`     | Search query with the same filters and aliases as `search`.                  |
+| `limit`     | integer | no       | 10      | Maximum domain and language values. Values outside 1 to 100 use the default. |
+| `date_from` | string  | no       |         | Count documents updated on or after this date. Format: `YYYY-MM-DD`.         |
+| `date_to`   | string  | no       |         | Count documents updated on or before this date. Format: `YYYY-MM-DD`.        |
+
+Counts cover matching indexed documents. Opened history and semantic matches
+are excluded. Anonymous callers receive counts for global documents; signed in
+users also receive counts for their own documents.
+
+Domain and language counts include an `other` count when additional values fall
+outside the limit. Type, visit count, and date groups use predefined ranges.
+Date ranges overlap, so their counts should not be added together.
+
+```json
+{ "query": "python", "limit": 5 }
+```
+
+Use a returned domain or language to narrow a subsequent search, for example
+`python domain:docs.python.org` or `python language:en`.
 
 ### `get_preview`
 

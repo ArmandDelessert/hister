@@ -1181,7 +1181,7 @@ func init() {
 							Name:        "name",
 							Type:        "string",
 							Required:    false,
-							Description: "Tool name required by tools/call: search, get_preview, or get_history",
+							Description: "Tool name required by tools/call: search, get_facets, get_preview, or get_history",
 						},
 						{
 							Name:        "arguments",

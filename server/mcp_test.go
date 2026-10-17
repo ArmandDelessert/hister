@@ -8,13 +8,188 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
+	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
 )
+
+func TestMCPGetFacets(t *testing.T) {
+	cfg := testutil.InitModel(t)
+	cfg.App.UserHandling = true
+	cfg.App.Public = true
+	if err := cfg.SaveRules(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Rules.Aliases["reading"] = "other"
+	sessionStore = newSessionStore([]byte(strings.Repeat("x", 32)), cfg.BaseURL(""), sessionMaxAge)
+	alice := testutil.CreateUser(t, "alice")
+	bob := testutil.CreateUser(t, "bob")
+	if err := model.SaveUserRules(alice.ID, &config.Rules{Aliases: config.Aliases{"reading": "needle"}}); err != nil {
+		t.Fatal(err)
+	}
+	idx := newServerTestIndexer(t, cfg)
+	handler := registerEndpoints(cfg, idx)
+	day := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC).Unix()
+	for _, doc := range []*document.Document{
+		{URL: "https://one.example/a", Domain: "one.example", Title: "needle", Language: "en", Updated: day},
+		{URL: "https://one.example/b", Domain: "one.example", Title: "needle", Language: "en", Updated: day + 86399},
+		{URL: "https://two.example/c", Domain: "two.example", Title: "other", Language: "hu", Updated: day + 86400},
+		{URL: "https://alice.example/private", Domain: "alice.example", Title: "needle", Language: "hu", Updated: day, UserID: alice.ID},
+		{URL: "https://bob.example/private", Domain: "bob.example", Title: "needle", Language: "de", Updated: day, UserID: bob.ID},
+	} {
+		doc.Processed = true
+		if err := idx.Add(doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := model.UpdateHistory(alice.ID, "needle", "https://history.example/only", "Opened only"); err != nil {
+		t.Fatal(err)
+	}
+
+	listed := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`), nil)
+	var inventory struct {
+		Result struct {
+			Tools []struct{ Name string } `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &inventory); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tool := range inventory.Result.Tools {
+		found = found || tool.Name == "get_facets"
+	}
+	if !found {
+		t.Error("get_facets is not advertised")
+	}
+
+	for _, tt := range []struct {
+		name    string
+		token   string
+		args    map[string]any
+		domains map[string]int
+		total   int
+		other   int
+	}{
+		{name: "public index", args: map[string]any{}, domains: map[string]int{"one.example": 2, "two.example": 1}, total: 3},
+		{name: "personal index", token: alice.Token, args: map[string]any{}, domains: map[string]int{"one.example": 2, "two.example": 1, "alice.example": 1}, total: 4},
+		{name: "query", token: alice.Token, args: map[string]any{"query": "needle"}, domains: map[string]int{"one.example": 2, "alice.example": 1}, total: 3},
+		{name: "global alias", args: map[string]any{"query": "reading"}, domains: map[string]int{"two.example": 1}, total: 1},
+		{name: "personal alias", token: alice.Token, args: map[string]any{"query": "reading"}, domains: map[string]int{"one.example": 2, "alice.example": 1}, total: 3},
+		{name: "inclusive day", args: map[string]any{"date_from": "2026-01-31", "date_to": "2026-01-31"}, domains: map[string]int{"one.example": 2}, total: 2},
+		{name: "date and query", token: alice.Token, args: map[string]any{"query": "needle", "date_from": "2026-02-01"}, domains: map[string]int{}},
+		{name: "limited buckets", token: alice.Token, args: map[string]any{"limit": 1}, domains: map[string]int{"one.example": 2}, total: 4, other: 2},
+		{name: "empty", args: map[string]any{"query": "no-such-word"}, domains: map[string]int{}},
+		{name: "owner filter cannot bypass scope", token: alice.Token, args: map[string]any{"query": fmt.Sprintf("user_id:%d", bob.ID)}, domains: map[string]int{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "get_facets", "arguments": tt.args}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var headers map[string]string
+			if tt.token != "" {
+				headers = map[string]string{"Authorization": "Bearer " + tt.token}
+			}
+			rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(string(body)), headers)
+			var response struct {
+				Result struct {
+					Content           []mcpTextContent    `json:"content"`
+					StructuredContent mcpStructuredResult `json:"structuredContent"`
+				} `json:"result"`
+				Error *mcpRPCError `json:"error"`
+			}
+			if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &response) != nil || response.Error != nil {
+				t.Fatalf("get_facets status %d: %s", rec.Code, rec.Body)
+			}
+			result := response.Result.StructuredContent
+			if result.Tool != "get_facets" || result.Trusted["reported_total"] != float64(tt.total) || len(result.UntrustedContent) != 1 {
+				t.Fatalf("unexpected facet result: %+v", result)
+			}
+			record := result.UntrustedContent[0]
+			if record.Trust != "untrusted" || record.TrustScope != "all values in fields" {
+				t.Fatalf("facet values lack trust markers: %+v", record)
+			}
+			data, err := json.Marshal(record.Fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var facets indexer.FacetsResult
+			if err := json.Unmarshal(data, &facets); err != nil {
+				t.Fatal(err)
+			}
+			domains := make(map[string]int)
+			for _, bucket := range facets.Terms["domains"].Terms {
+				domains[bucket.Term] = bucket.Count
+			}
+			if !reflect.DeepEqual(domains, tt.domains) || facets.Terms["domains"].Other != tt.other {
+				t.Fatalf("domain counts = %+v, want %v with other=%d", facets.Terms["domains"], tt.domains, tt.other)
+			}
+			for _, name := range []string{"languages", "types", "visits"} {
+				facet, ok := facets.Terms[name]
+				count := facet.Other
+				for _, bucket := range facet.Terms {
+					count += bucket.Count
+				}
+				if !ok || count != tt.total {
+					t.Errorf("%s counts = %+v, want total %d", name, facet, tt.total)
+				}
+			}
+			if tt.total > 0 && len(facets.DateHistogram) == 0 {
+				t.Error("missing update date buckets")
+			}
+			if len(response.Result.Content) != 1 {
+				t.Fatal("missing text fallback")
+			}
+			fallback := response.Result.Content[0].Text
+			start := strings.IndexByte(fallback, '{')
+			var textResult mcpStructuredResult
+			if start < 0 || json.Unmarshal([]byte(fallback[start:]), &textResult) != nil || !reflect.DeepEqual(textResult, result) {
+				t.Fatal("text fallback differs from structured facets")
+			}
+		})
+	}
+}
+
+func TestMCPGetFacetsInvalidArguments(t *testing.T) {
+	_, handler := newPublicTokenTestServer(t)
+	for _, args := range []string{`{"query":42}`, `{"query":"needle OR"}`, `{"date_from":"yesterday"}`, `{"date_to":"2026-02-30"}`} {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_facets","arguments":` + args + `}}`
+		rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(body), nil)
+		var response struct {
+			Error *mcpRPCError `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error == nil || response.Error.Code != mcpErrInvalidParam {
+			t.Errorf("arguments %s: error = %+v, want invalid argument", args, response.Error)
+		}
+	}
+}
+
+func TestMCPFacetValuesAreNormalized(t *testing.T) {
+	res := &indexer.Results{
+		Total: 2,
+		Facets: &indexer.FacetsResult{Terms: map[string]indexer.TermFacet{
+			"domains": {Terms: []indexer.TermCount{{Term: "source\u202e.example", Label: "Source\x00 name", Count: 2}}},
+		}},
+	}
+	result := mcpBuildFacetsResult("source", res)
+	terms := result.UntrustedContent[0].Fields["terms"].(map[string]indexer.TermFacet)
+	bucket := terms["domains"].Terms[0]
+	if bucket.Term != "source.example" || bucket.Label != "Source name" || bucket.Count != 2 {
+		t.Fatalf("unexpected source bucket: %+v", bucket)
+	}
+	if res.Facets.Terms["domains"].Terms[0].Term != "source\u202e.example" {
+		t.Fatal("formatting mutated the indexer's facet values")
+	}
+}
 
 func TestMCPSearchRespectsLimit(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)

@@ -587,6 +587,20 @@ curl -s -X POST http://127.0.0.1:4433/mcp \
   -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_preview","arguments":{"url":"https://example.com/article"}}}'
 ```
 
+Use `fields` to select `text`, `html`, and `metadata`. Omitted fields default
+to all three; an empty array returns only document identity and timestamps.
+HTML preview rendering runs only when HTML is selected.
+
+For bounded responses, set `max_chars` and continue with `text_offset` or
+`html_offset`. These values count Unicode code points after source normalization,
+not UTF-8 bytes. Each returned body reports its length and whether more remains
+in `trusted.text_total_chars` / `trusted.html_total_chars` and
+`trusted.text_truncated` / `trusted.html_truncated`. When more remains, use
+`trusted.next_text_offset` or `trusted.next_html_offset` for the next request.
+Zero `max_chars` means unlimited, and offsets at or beyond the end return an
+empty body without a continuation offset. Metadata is not truncated. HTML
+portions may split tags or entities and must be reassembled before rendering.
+
 ### Indexed History
 
 ```bash

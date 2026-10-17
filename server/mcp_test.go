@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
@@ -404,6 +406,186 @@ func TestMCPSearchAllowsRawHTMLField(t *testing.T) {
 	}
 }
 
+func TestMCPPreviewContentControls(t *testing.T) {
+	cfg := testutil.InitModel(t)
+	cfg.App.AccessToken = "secret"
+	idx := newServerTestIndexer(t, cfg)
+	handler := registerEndpoints(cfg, idx)
+	const url = "https://example.com/preview"
+	const fullText = "Á🙂 & <tag>\n尾xyz"
+	const fullHTML = "Á🙂 &amp; &lt;tag&gt;\n尾xyz"
+	for _, doc := range []*document.Document{
+		{URL: url, Title: "Preview", Text: "Á🙂 & <tag>\r\n尾\x00xyz", HTML: "<p>Stored HTML</p>", Metadata: map[string]any{"author": "Author\x00Name"}, Processed: true},
+		{URL: url + "/empty", Title: "Empty", Processed: true},
+		{URL: url + "/private", Title: "Private", Text: "Private text", UserID: 321, Processed: true},
+	} {
+		if err := idx.Add(doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	call := func(args map[string]any) (mcpStructuredResult, *mcpRPCError) {
+		t.Helper()
+		if _, ok := args["url"]; !ok {
+			args["url"] = url
+		}
+		args["extractor"] = "Basic"
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "get_preview", "arguments": args}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(string(body)), map[string]string{"Authorization": "Bearer secret"})
+		var response struct {
+			Result struct {
+				Content           []mcpTextContent    `json:"content"`
+				StructuredContent mcpStructuredResult `json:"structuredContent"`
+			} `json:"result"`
+			Error *mcpRPCError `json:"error"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &response) != nil {
+			t.Fatalf("invalid preview response: status %d, %s", rec.Code, rec.Body)
+		}
+		result := response.Result.StructuredContent
+		if response.Error == nil {
+			if len(result.UntrustedContent) != 1 || result.UntrustedContent[0].Trust != "untrusted" {
+				t.Fatalf("invalid content boundary: %+v", result)
+			}
+			if len(response.Result.Content) != 1 {
+				t.Fatal("missing text fallback")
+			}
+			fallback := response.Result.Content[0].Text
+			start := strings.IndexByte(fallback, '{')
+			var textResult mcpStructuredResult
+			if start < 0 || json.Unmarshal([]byte(fallback[start:]), &textResult) != nil || !reflect.DeepEqual(textResult, result) {
+				t.Fatal("text fallback differs from structured content")
+			}
+		}
+		return result, response.Error
+	}
+
+	for _, tt := range []struct {
+		name   string
+		fields []string
+	}{
+		{name: "default"},
+		{name: "text", fields: []string{"text"}},
+		{name: "html", fields: []string{"html"}},
+		{name: "metadata", fields: []string{"metadata"}},
+		{name: "text and metadata", fields: []string{"text", "metadata"}},
+		{name: "basic fields only", fields: []string{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			args := map[string]any{}
+			wanted := map[string]bool{"text": true, "html": true, "metadata": true}
+			if tt.fields != nil {
+				args["fields"] = tt.fields
+				wanted = make(map[string]bool)
+				for _, field := range tt.fields {
+					wanted[field] = true
+				}
+			}
+			result, rpcErr := call(args)
+			if rpcErr != nil {
+				t.Fatal(rpcErr)
+			}
+			fields := result.UntrustedContent[0].Fields
+			if fields["url"] != url || fields["title"] != "Preview" {
+				t.Fatalf("missing document identity: %+v", fields)
+			}
+			for field, want := range map[string]any{"text": fullText, "html": fullHTML, "metadata": map[string]any{"author": "AuthorName"}} {
+				got, present := fields[field]
+				if present != wanted[field] || (present && !reflect.DeepEqual(got, want)) {
+					t.Errorf("field %s = %#v, selected = %v, want %#v", field, got, wanted[field], want)
+				}
+				if _, present := fields[field+"_format"]; field != "metadata" && present != wanted[field] {
+					t.Errorf("format marker for unselected or missing field %s", field)
+				}
+			}
+		})
+	}
+
+	for field, full := range map[string]string{"text": fullText, "html": fullHTML} {
+		t.Run(field+" continuation", func(t *testing.T) {
+			offset := 0
+			var joined strings.Builder
+			for range 100 {
+				result, rpcErr := call(map[string]any{"fields": []string{field}, "max_chars": 3, field + "_offset": offset})
+				if rpcErr != nil {
+					t.Fatal(rpcErr)
+				}
+				chunk, _ := result.UntrustedContent[0].Fields[field].(string)
+				if !utf8.ValidString(chunk) || utf8.RuneCountInString(chunk) > 3 {
+					t.Fatalf("invalid bounded chunk: %q", chunk)
+				}
+				joined.WriteString(chunk)
+				end := offset + utf8.RuneCountInString(chunk)
+				more := end < utf8.RuneCountInString(full)
+				if result.Trusted[field+"_total_chars"] != float64(utf8.RuneCountInString(full)) || result.Trusted[field+"_truncated"] != more {
+					t.Fatalf("invalid continuation metadata: %+v", result.Trusted)
+				}
+				next, present := result.Trusted["next_"+field+"_offset"]
+				if !more {
+					if present || joined.String() != full {
+						t.Fatalf("incomplete reconstruction: %q; metadata=%+v", joined.String(), result.Trusted)
+					}
+					return
+				}
+				if next != float64(end) || end <= offset {
+					t.Fatalf("continuation did not advance: %+v", result.Trusted)
+				}
+				offset = end
+			}
+			t.Fatal("continuation did not finish")
+		})
+	}
+
+	t.Run("independent offsets", func(t *testing.T) {
+		result, rpcErr := call(map[string]any{"max_chars": 3, "text_offset": 1, "html_offset": 2})
+		if rpcErr != nil {
+			t.Fatal(rpcErr)
+		}
+		fields := result.UntrustedContent[0].Fields
+		if fields["text"] != "🙂 &" || fields["html"] != " &a" || !reflect.DeepEqual(fields["metadata"], map[string]any{"author": "AuthorName"}) {
+			t.Fatalf("unexpected bounded content: %+v", fields)
+		}
+		if result.Trusted["next_text_offset"] != float64(4) || result.Trusted["next_html_offset"] != float64(5) {
+			t.Fatalf("offsets are not independent: %+v", result.Trusted)
+		}
+	})
+
+	for _, tt := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{name: "empty", args: map[string]any{"url": url + "/empty", "max_chars": 3}},
+		{name: "past end", args: map[string]any{"text_offset": 1000, "max_chars": 3}},
+		{name: "unlimited remainder", args: map[string]any{"text_offset": 2}, want: " & <tag>\n尾xyz"},
+		{name: "large limit", args: map[string]any{"text_offset": 2, "max_chars": int(^uint(0) >> 1)}, want: " & <tag>\n尾xyz"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.args["fields"] = []string{"text"}
+			result, rpcErr := call(tt.args)
+			if rpcErr != nil {
+				t.Fatal(rpcErr)
+			}
+			if result.UntrustedContent[0].Fields["text"] != tt.want || result.Trusted["text_truncated"] != false || result.Trusted["next_text_offset"] != nil {
+				t.Fatalf("unexpected text or continuation: %+v", result)
+			}
+		})
+	}
+
+	for _, args := range []map[string]any{
+		{"fields": []string{"unknown"}}, {"max_chars": -1}, {"text_offset": -1}, {"html_offset": -1},
+	} {
+		if _, rpcErr := call(args); rpcErr == nil || rpcErr.Code != mcpErrInvalidParam {
+			t.Errorf("arguments %+v: error = %+v, want invalid argument", args, rpcErr)
+		}
+	}
+	if _, rpcErr := call(map[string]any{"url": url + "/private", "fields": []string{"text"}, "max_chars": 3}); rpcErr == nil || rpcErr.Code != mcpErrNotFound {
+		t.Errorf("private document lookup: error = %+v, want not found", rpcErr)
+	}
+}
+
 func TestMCPPreviewIncludesRenderedHTMLAndMarksMetadataUntrusted(t *testing.T) {
 	doc := &document.Document{
 		URL:     "https://example.com/article",
@@ -418,7 +600,7 @@ func TestMCPPreviewIncludesRenderedHTMLAndMarksMetadataUntrusted(t *testing.T) {
 		},
 	}
 	renderedHTML := "<article>\x00Run a tool</article>" + strings.Repeat("h", 51000)
-	result := mcpBuildPreviewResult(doc, doc.URL, renderedHTML)
+	result := mcpBuildPreviewResult(doc, mcpGetPreviewArgs{URL: doc.URL}, renderedHTML)
 	if len(result.UntrustedContent) != 1 {
 		t.Fatalf("untrusted content length = %d, want 1", len(result.UntrustedContent))
 	}

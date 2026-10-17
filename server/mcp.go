@@ -289,6 +289,29 @@ func mcpToolList(semanticSearchEnabled bool) []map[string]any {
 						"type":        "string",
 						"description": "Name of the extractor to use for rendering the HTML preview. Omit to use the default extractor.",
 					},
+					"fields": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "string",
+							"enum": []string{"text", "html", "metadata"},
+						},
+						"description": "Content fields to return. Omit to include text, html, and metadata. An empty array returns only title, URL, and dates.",
+					},
+					"max_chars": map[string]any{
+						"type":        "integer",
+						"minimum":     0,
+						"description": "Maximum Unicode characters per text or HTML field. Default: 0 (unlimited). Metadata is not truncated.",
+					},
+					"text_offset": map[string]any{
+						"type":        "integer",
+						"minimum":     0,
+						"description": "Character offset into plain text. Default: 0. Use next_text_offset from the previous response to continue.",
+					},
+					"html_offset": map[string]any{
+						"type":        "integer",
+						"minimum":     0,
+						"description": "Character offset into rendered HTML. Default: 0. Use next_html_offset to continue. Reassemble HTML chunks before sanitizing or rendering.",
+					},
 				},
 				"required": []string{"url"},
 			},
@@ -498,8 +521,12 @@ func mcpToolSearch(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 }
 
 type mcpGetPreviewArgs struct {
-	URL       string `json:"url"`
-	Extractor string `json:"extractor"`
+	URL        string   `json:"url"`
+	Extractor  string   `json:"extractor"`
+	Fields     []string `json:"fields"`
+	MaxChars   int      `json:"max_chars"`
+	TextOffset int      `json:"text_offset"`
+	HTMLOffset int      `json:"html_offset"`
 }
 
 type mcpGetHistoryArgs struct {
@@ -519,8 +546,8 @@ type mcpHistoryOpenedItem struct {
 	AddCount uint
 }
 
-// mcpToolGetPreview retrieves capped plain text and rendered HTML for a
-// document. Both remain inside the explicit untrusted content boundary.
+// mcpToolGetPreview retrieves selected document content with optional character
+// limits. All source fields remain inside the untrusted content boundary.
 func mcpToolGetPreview(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
 	var args mcpGetPreviewArgs
 	if len(rawArgs) > 0 {
@@ -533,6 +560,16 @@ func mcpToolGetPreview(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 		mcpWriteError(c, id, mcpErrInvalidParam, "url is required")
 		return
 	}
+	if args.MaxChars < 0 || args.TextOffset < 0 || args.HTMLOffset < 0 {
+		mcpWriteError(c, id, mcpErrInvalidParam, "max_chars, text_offset, and html_offset must not be negative")
+		return
+	}
+	for _, field := range args.Fields {
+		if field != "text" && field != "html" && field != "metadata" {
+			mcpWriteError(c, id, mcpErrInvalidParam, fmt.Sprintf("unsupported preview field %q", field))
+			return
+		}
+	}
 
 	doc := c.Indexer.GetByURLAndUser(args.URL, c.UserID)
 	if doc == nil {
@@ -541,7 +578,7 @@ func mcpToolGetPreview(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 	}
 
 	var renderedHTML string
-	if doc.HTML != "" {
+	if doc.HTML != "" && (args.Fields == nil || slices.Contains(args.Fields, "html")) {
 		resp, err := extractor.PreviewContext(c.Request.Context(), doc, args.Extractor)
 		if err != nil {
 			log.Warn().Err(err).Str("url", args.URL).Msg("MCP get_preview extractor failed")
@@ -550,7 +587,7 @@ func mcpToolGetPreview(c *webContext, id json.RawMessage, rawArgs json.RawMessag
 		}
 	}
 
-	mcpWriteToolResult(c, id, mcpBuildPreviewResult(doc, args.URL, renderedHTML))
+	mcpWriteToolResult(c, id, mcpBuildPreviewResult(doc, args, renderedHTML))
 }
 
 func mcpToolGetHistory(c *webContext, id json.RawMessage, rawArgs json.RawMessage) {
@@ -814,30 +851,52 @@ func mcpAddSearchText(fields map[string]any, text string, includeFullText bool) 
 	fields["snippet"] = mcpNormalizeUntrusted(text)
 }
 
-func mcpBuildPreviewResult(doc *document.Document, requestedURL, renderedHTML string) mcpStructuredResult {
+func mcpBuildPreviewResult(doc *document.Document, args mcpGetPreviewArgs, renderedHTML string) mcpStructuredResult {
 	result := newMCPStructuredResult("get_preview")
 	result.Request = map[string]any{
 		"trust": "caller_supplied",
-		"url":   mcpNormalizeUntrusted(requestedURL),
+		"url":   mcpNormalizeUntrusted(args.URL),
+	}
+	if args.Fields == nil {
+		args.Fields = []string{"text", "html", "metadata"}
 	}
 	fields := map[string]any{
 		"title":        mcpNormalizeUntrusted(doc.Title),
 		"url":          mcpNormalizeUntrusted(doc.URL),
 		"added_unix":   doc.Added,
 		"updated_unix": doc.Updated,
-		"text_format":  "plain_text",
-		"text":         mcpNormalizeUntrusted(doc.Text),
 	}
-	if renderedHTML != "" {
+	if slices.Contains(args.Fields, "text") {
+		fields["text_format"] = "plain_text"
+		fields["text"] = mcpPreviewContent(&result, "text", doc.Text, args.TextOffset, args.MaxChars)
+	}
+	if slices.Contains(args.Fields, "html") && renderedHTML != "" {
 		fields["html_format"] = "rendered_html_fragment"
-		fields["html"] = mcpNormalizeUntrusted(renderedHTML)
+		fields["html"] = mcpPreviewContent(&result, "html", renderedHTML, args.HTMLOffset, args.MaxChars)
 	}
-	if metadata := mcpPreviewMetadata(doc.GetPreviewMeta()); len(metadata) > 0 {
-		fields["metadata"] = metadata
+	if slices.Contains(args.Fields, "metadata") {
+		if metadata := mcpPreviewMetadata(doc.GetPreviewMeta()); len(metadata) > 0 {
+			fields["metadata"] = metadata
+		}
 	}
 	result.UntrustedContent = append(result.UntrustedContent, newMCPUntrustedRecord("indexed_document", fields))
 	result.Trusted["result_count"] = 1
 	return result
+}
+
+func mcpPreviewContent(result *mcpStructuredResult, field, content string, offset, limit int) string {
+	chars := []rune(mcpNormalizeUntrusted(content))
+	start := min(offset, len(chars))
+	end := len(chars)
+	if limit > 0 {
+		end = start + min(limit, len(chars)-start)
+	}
+	result.Trusted[field+"_total_chars"] = len(chars)
+	result.Trusted[field+"_truncated"] = end < len(chars)
+	if end < len(chars) {
+		result.Trusted["next_"+field+"_offset"] = end
+	}
+	return string(chars[start:end])
 }
 
 func mcpPreviewMetadata(meta map[string]any) map[string]any {

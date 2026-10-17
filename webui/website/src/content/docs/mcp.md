@@ -146,12 +146,16 @@ Example with a date range:
 
 Retrieve the stored preview for an indexed document by exact URL.
 
-| Argument    | Type   | Required | Default | Description                                    |
-| ----------- | ------ | -------- | ------- | ---------------------------------------------- |
-| `url`       | string | yes      |         | Exact URL of the indexed document to preview   |
-| `extractor` | string | no       |         | Extractor name used to render the HTML preview |
+| Argument      | Type            | Required | Default                        | Description                                                            |
+| ------------- | --------------- | -------- | ------------------------------ | ---------------------------------------------------------------------- |
+| `url`         | string          | yes      |                                | Exact URL of the indexed document to preview.                          |
+| `extractor`   | string          | no       |                                | Extractor name used to render the HTML preview.                        |
+| `fields`      | array of string | no       | `["text", "html", "metadata"]` | Content to include. An empty array returns only title, URL, and dates. |
+| `max_chars`   | integer         | no       | 0                              | Maximum characters per text or HTML field. Zero means unlimited.       |
+| `text_offset` | integer         | no       | 0                              | Position in plain text. Use `next_text_offset` to continue.            |
+| `html_offset` | integer         | no       | 0                              | Position in rendered HTML. Use `next_html_offset` to continue.         |
 
-The response contains the document title, URL, added and updated dates,
+By default, the response contains the document title, URL, added and updated dates,
 available preview metadata, complete stored plain text, and complete rendered
 HTML when available. Metadata can include author, published date, modified date,
 description, site name, type, language, image, JSON LD structured data, and
@@ -163,6 +167,27 @@ Example:
 ```json
 { "url": "https://example.com/article" }
 ```
+
+To read a long article in smaller portions without receiving HTML:
+
+```json
+{
+  "url": "https://example.com/article",
+  "fields": ["text", "metadata"],
+  "max_chars": 4000
+}
+```
+
+When more text is available, the response includes `trusted.next_text_offset`.
+Pass it as `text_offset` in the next call with the same URL and `max_chars`.
+HTML uses `next_html_offset` and `html_offset` independently. The `trusted`
+object also reports `text_total_chars`, `html_total_chars`, and whether each
+returned body has more content through `text_truncated` and `html_truncated`.
+Metadata is returned in full when selected.
+
+Keep the same extractor while reading successive HTML portions. Join all HTML
+portions in order before sanitizing or displaying them. If the document changes
+between calls, restart from offset zero to read a consistent copy.
 
 ### `get_history`
 

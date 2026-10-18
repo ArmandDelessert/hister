@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -147,6 +148,47 @@ func (c *Client) FetchConfigContext(ctx context.Context) (*ServerConfig, error) 
 		return nil, err
 	}
 	return &serverConfig, nil
+}
+
+// GetUser resolves an exact username on the connected server without retrieving credentials.
+func (c *Client) GetUser(ctx context.Context, username string) (*UserInfo, error) {
+	if strings.TrimSpace(username) == "" {
+		return nil, errors.New("username must not be empty")
+	}
+	params := url.Values{"username": {username}, "limit": {"1"}}
+	var result struct {
+		Users []UserInfo `json:"users"`
+	}
+	if err := c.requestJSON(ctx, http.MethodGet, "/api/users?"+params.Encode(), nil, &result); err != nil {
+		return nil, err
+	}
+	if result.Users == nil {
+		return nil, errors.New("invalid user lookup response")
+	}
+	if len(result.Users) == 0 {
+		return nil, fmt.Errorf("user %q not found", username)
+	}
+	if len(result.Users) != 1 || result.Users[0].ID == 0 || result.Users[0].Username != username {
+		return nil, errors.New("invalid user lookup response")
+	}
+	return &result.Users[0], nil
+}
+
+// GetUserToken explicitly retrieves an account's existing token without rotating it.
+func (c *Client) GetUserToken(ctx context.Context, userID uint) (string, error) {
+	if userID == 0 {
+		return "", errors.New("user ID must be positive")
+	}
+	var result struct {
+		Token string `json:"token"`
+	}
+	if err := c.requestJSON(ctx, http.MethodGet, fmt.Sprintf("/api/users/%d/token", userID), nil, &result); err != nil {
+		return "", err
+	}
+	if result.Token == "" {
+		return "", errors.New("invalid user token response")
+	}
+	return result.Token, nil
 }
 
 // DeleteUser deletes an account and optionally its documents on the connected server.

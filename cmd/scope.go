@@ -53,7 +53,7 @@ func configureCommandScopes() {
 
 	setCommandScope(createUserCmd, executionScopeLocal)
 	setCommandScope(deleteUserCmd, executionScopeRemote, "client-timeout")
-	setCommandScope(showUserCmd, executionScopeLocal)
+	setCommandScope(showUserCmd, executionScopeRemote, "client-timeout")
 	setCommandScope(updateUserCmd, executionScopeLocal)
 
 	setCommandScope(crawlCmd, executionScopeLocal)

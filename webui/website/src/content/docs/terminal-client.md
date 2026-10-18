@@ -37,12 +37,12 @@ Root help groups Hister operations by scope, and each operation help page identi
 command operates:
 
 **Local** commands use configured files or local Hister data directly and do not contact the
-configured Hister HTTP server. Examples include `hister crawl list`, `hister list-files`, and most
-user administration commands.
+configured Hister HTTP server. Examples include `hister crawl list`, `hister list-files`,
+`hister create-user`, and `hister update-user`.
 
 **Remote** commands use the configured Hister HTTP server without opening the local Hister
-database or search index. Examples include `hister search`, `hister export`, `hister cleanup`, and
-`hister delete-user`.
+database or search index. Examples include `hister search`, `hister export`, `hister cleanup`,
+`hister show-user`, and `hister delete-user`.
 
 **Hybrid** commands use or can use both local Hister state and the configured server. Examples
 include persistent `hister index` modes, `hister import browser`, and `hister list-urls --offline`.

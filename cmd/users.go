@@ -7,11 +7,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/asciimoo/hister/server/model"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -57,28 +59,38 @@ var deleteUserCmd = &cobra.Command{
 }
 
 var showUserCmd = &cobra.Command{
-	Use:    "show-user USERNAME",
-	Short:  "Show user information",
-	Long:   "Display information about a user account (requires user_handling to be enabled)",
-	Args:   cobra.ExactArgs(1),
-	PreRun: requireUserHandlingAndInitDB(model.ReadOnly),
-	Run: func(cmd *cobra.Command, args []string) {
-		u, err := model.GetUser(args[0])
+	Use:   "show-user USERNAME",
+	Short: "Show user information from the server",
+	Long:  "Display information about a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Use --show-token to also retrieve and display the user's access token.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := newClient()
+		u, err := c.GetUser(cmd.Context(), args[0])
 		if err != nil {
-			exit(1, "Failed to get user: "+err.Error())
+			return fmt.Errorf("failed to get user: %w", err)
 		}
 		admin := "no"
 		if u.IsAdmin {
 			admin = "yes"
 		}
-		cliPrintln(cliInfoStyle.Render("Username:   ") + u.Username)
-		cliPrintln(cliInfoStyle.Render("ID:         ") + fmt.Sprintf("%d", u.ID))
-		cliPrintln(cliInfoStyle.Render("Admin:      ") + admin)
-		if showToken, _ := cmd.Flags().GetBool("token"); showToken {
-			cliPrintln(cliInfoStyle.Render("Token:      ") + u.Token)
+		lines := []string{
+			cliInfoStyle.Render("Username:   ") + u.Username,
+			cliInfoStyle.Render("ID:         ") + fmt.Sprintf("%d", u.ID),
+			cliInfoStyle.Render("Admin:      ") + admin,
 		}
-		cliPrintln(cliInfoStyle.Render("Created at: ") + formatLocalTimestamp(u.CreatedAt))
-		cliPrintln(cliInfoStyle.Render("Updated at: ") + formatLocalTimestamp(u.UpdatedAt))
+		if showToken, _ := cmd.Flags().GetBool("show-token"); showToken {
+			token, err := c.GetUserToken(cmd.Context(), u.ID)
+			if err != nil {
+				return fmt.Errorf("failed to get user token: %w", err)
+			}
+			lines = append(lines, cliInfoStyle.Render("Token:      ")+token)
+		}
+		lines = append(lines,
+			cliInfoStyle.Render("Created at: ")+formatLocalTimestamp(u.CreatedAt),
+			cliInfoStyle.Render("Updated at: ")+formatLocalTimestamp(u.UpdatedAt),
+		)
+		_, err = lipgloss.Fprintln(cmd.OutOrStdout(), strings.Join(lines, "\n"))
+		return err
 	},
 }
 

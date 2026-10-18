@@ -89,7 +89,7 @@ hister -t <your-token> search "query"
 
 ## User Management Commands
 
-`create-user`, `show-user`, and `update-user` require `user_handling: true` in the local configuration and direct access to the server's data. `delete-user` operates entirely through the configured running server and requires an administrator's personal access token.
+`create-user` and `update-user` require `user_handling: true` in the local configuration and direct access to the server's data. `show-user` and `delete-user` operate entirely through the configured running server and require an administrator's personal access token.
 
 ### `create-user`
 
@@ -124,15 +124,29 @@ The server must support remote user deletion. If an older server rejects the req
 
 ### `show-user`
 
-Display information about a user account.
+Display information about a user account on the configured running server. The server must have user handling enabled, and the request requires an administrator's personal access token. Local user handling does not need to be enabled.
 
 ```bash
-hister show-user USERNAME [--token]
+hister show-user USERNAME [--show-token]
+
+# Inspect a user on a remote server
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN show-user alice
+
+# Also retrieve the user's existing access token
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN show-user alice --show-token
 ```
 
-| Flag      | Description                           |
-| --------- | ------------------------------------- |
-| `--token` | Also display the user's access token. |
+| Flag           | Description                                                         |
+| -------------- | ------------------------------------------------------------------- |
+| `--show-token` | Retrieve and display the user's existing token without rotating it. |
+
+The display flag was renamed from `--token` to `--show-token`. The global `--token`
+flag now supplies your administrator token for authentication. Without
+`--show-token`, the user's token is neither retrieved nor displayed.
+
+The username is resolved on the selected server. If the account is missing or an
+older server does not support user lookup, the command reports an error and does
+not read a local account with the same name.
 
 Example output:
 
@@ -248,7 +262,7 @@ Every user account has a personal access token used for API authentication. Toke
 
 - Generate a new token from the web UI (Profile → Generate Token) or via `hister update-user --regen-token`.
 - Generating a new token immediately invalidates the previous one. Update any clients (browser extension, scripts) accordingly.
-- Tokens are not displayed in `show-user` output by default; use `--token` to reveal them.
+- Tokens are not retrieved or displayed in `show-user` output by default; use `--show-token` to reveal them.
 
 ## Security Considerations
 

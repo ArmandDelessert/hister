@@ -369,7 +369,7 @@ func init() {
 
 	deleteUserCmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
 
-	showUserCmd.Flags().Bool("token", false, "display the user's access token")
+	showUserCmd.Flags().Bool("show-token", false, "retrieve and display the user's access token")
 
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "skip sensitive content checks during reindexing, allowing matching documents to be indexed")
 

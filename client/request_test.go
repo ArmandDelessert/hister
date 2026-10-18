@@ -293,6 +293,8 @@ func TestRequestCancellation(t *testing.T) {
 	for name, call := range map[string]func(*Client, context.Context) error{
 		"config":      func(c *Client, ctx context.Context) error { _, err := c.FetchConfigContext(ctx); return err },
 		"delete user": func(c *Client, ctx context.Context) error { _, err := c.DeleteUser(ctx, "alice", true); return err },
+		"get user":    func(c *Client, ctx context.Context) error { _, err := c.GetUser(ctx, "alice"); return err },
+		"user token":  func(c *Client, ctx context.Context) error { _, err := c.GetUserToken(ctx, 7); return err },
 		"diagnostics": func(c *Client, ctx context.Context) error { _, err := c.FetchDiagnostics(ctx); return err },
 		"exists": func(c *Client, ctx context.Context) error {
 			_, err := c.DocumentExistsContext(ctx, "https://example.com")
@@ -313,6 +315,80 @@ func TestRequestCancellation(t *testing.T) {
 			})}))
 			if err := call(c, ctx); !errors.Is(err, context.Canceled) {
 				t.Errorf("error = %v, want context.Canceled", err)
+			}
+		})
+	}
+}
+
+func TestGetUserResponse(t *testing.T) {
+	const username = "alice/a+b &?"
+	for _, tc := range []struct {
+		name, response, wantError string
+		status                    int
+	}{
+		{"found", `{"users":[{"id":7,"username":"alice/a+b &?","is_admin":true}]}`, "", http.StatusOK},
+		{"not found", `{"users":[]}`, "not found", http.StatusOK},
+		{"missing users", `{}`, "invalid user lookup response", http.StatusOK},
+		{"null users", `{"users":null}`, "invalid user lookup response", http.StatusOK},
+		{"wrong user", `{"users":[{"id":7,"username":"bob"}]}`, "invalid user lookup response", http.StatusOK},
+		{"missing id", `{"users":[{"username":"alice/a+b &?"}]}`, "invalid user lookup response", http.StatusOK},
+		{"multiple users", `{"users":[{"id":7,"username":"alice/a+b &?"},{"id":8,"username":"bob"}]}`, "invalid user lookup response", http.StatusOK},
+		{"invalid JSON", `<html>old server</html>`, "invalid character", http.StatusOK},
+		{"denied", `denied`, "access denied", http.StatusForbidden},
+		{"old server", `not found`, "resource not found", http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedResponseBody{Reader: strings.NewReader(tc.response)}
+			c := New("https://hister.test/prefix", WithAccessToken("admin-token"), WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodGet || req.URL.Path != "/prefix/api/users" || req.URL.Query().Get("username") != username || req.URL.Query().Get("limit") != "1" || len(req.URL.Query()) != 2 {
+					t.Errorf("request = %s %s", req.Method, req.URL)
+				}
+				if req.Header.Get("X-Access-Token") != "admin-token" {
+					t.Error("lookup lost authentication")
+				}
+				return &http.Response{StatusCode: tc.status, Body: body}, nil
+			})}))
+			user, err := c.GetUser(t.Context(), username)
+			if tc.wantError == "" {
+				if err != nil || user == nil || user.ID != 7 || user.Username != username || !user.IsAdmin {
+					t.Fatalf("user = %+v, error = %v", user, err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantError) || user != nil {
+				t.Fatalf("user = %+v, error = %v, want %q", user, err, tc.wantError)
+			}
+			if !body.closed {
+				t.Error("lookup response was not closed")
+			}
+		})
+	}
+}
+
+func TestGetUserTokenResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		status         int
+		wantError      bool
+	}{
+		{"found", `{"token":"user-token"}`, http.StatusOK, false},
+		{"missing token", `{}`, http.StatusOK, true},
+		{"empty token", `{"token":""}`, http.StatusOK, true},
+		{"denied", `denied`, http.StatusForbidden, true},
+		{"deleted account", `not found`, http.StatusNotFound, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedResponseBody{Reader: strings.NewReader(tc.response)}
+			c := New("https://hister.test/prefix", WithAccessToken("admin-token"), WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodGet || req.URL.Path != "/prefix/api/users/7/token" || req.URL.RawQuery != "" || req.Header.Get("X-Access-Token") != "admin-token" {
+					t.Errorf("unexpected token request: %s %s", req.Method, req.URL)
+				}
+				return &http.Response{StatusCode: tc.status, Body: body}, nil
+			})}))
+			token, err := c.GetUserToken(t.Context(), 7)
+			if (err != nil) != tc.wantError || (!tc.wantError && token != "user-token") || (tc.wantError && token != "") {
+				t.Fatalf("token present = %t, error = %v", token != "", err)
+			}
+			if !body.closed {
+				t.Error("token response was not closed")
 			}
 		})
 	}

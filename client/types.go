@@ -1,5 +1,15 @@
 package client
 
+import "time"
+
+type UserInfo struct {
+	ID        uint      `json:"id"`
+	Username  string    `json:"username"`
+	IsAdmin   bool      `json:"is_admin"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type DeleteUserResult struct {
 	Username         string `json:"username"`
 	DeletedDocuments int    `json:"deleted_documents"`

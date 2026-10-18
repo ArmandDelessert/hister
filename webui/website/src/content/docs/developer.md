@@ -159,6 +159,26 @@ Authorization: Bearer <access-token>
 X-Access-Token: <access-token>
 ```
 
+### Browser Session Authentication
+
+User sessions store the account's `user_id` and `user_session_version` at login.
+Password and OAuth logins both copy the version from the authenticated user
+record. Each request checks that the stored version matches the account's current
+`SessionVersion`. Sessions contain no password or password hash.
+
+`model.UpdatePassword` saves the password hash and increments `session_version`
+in one database update. A failed update leaves both unchanged. Any code that
+updates account passwords must preserve this atomic invalidation. A session
+refresh saves the original version, so an in progress refresh cannot restore
+access after a password reset. Personal access tokens are independent of the
+session version.
+
+The `session_version` column defaults to zero and is added to existing accounts
+by AutoMigrate. Sessions created by earlier versions lack `user_session_version`
+and are accepted only while the account's version is zero. An upgrade preserves
+those sessions; a subsequent password reset invalidates them. Invalidated session
+records remain until the normal expiration cleanup removes them.
+
 ### User Administration Reads
 
 The user administration endpoints require `app.user_handling: true` on the server

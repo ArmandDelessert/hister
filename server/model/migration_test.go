@@ -76,3 +76,64 @@ func TestMigrationDropsRequiredWebSessionLastSeenColumn(t *testing.T) {
 		t.Fatalf("database version = %d, initialized = %v, want %d and true", dbVersion, initialized, len(migrations))
 	}
 }
+
+func TestMigrationAddsUserSessionVersion(t *testing.T) {
+	cfg := config.CreateDefaultConfig()
+	cfg.App.Directory = t.TempDir()
+	cfg.Server.Database = "legacy-users.sqlite3"
+	_, dsn := cfg.DatabaseConnection()
+	legacyDB, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := legacyDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := legacyDB.Exec(`CREATE TABLE users (
+		id integer PRIMARY KEY AUTOINCREMENT, username text, password text,
+		token text, is_admin numeric, created_at datetime, updated_at datetime,
+		deleted_at datetime, rules_json text DEFAULT '{}', o_auth_id text
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	updatedAt := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
+	if err := legacyDB.Exec(`INSERT INTO users (id, username, password, token, is_admin, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?)`, "alice", "existing-hash", "existing-token", true, updatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Init(cfg); err != nil {
+		t.Fatal(err)
+	}
+	currentDB, err := DB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := currentDB.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	var version uint
+	if err := DB.Model(&User{}).Select("session_version").Where("id = ?", 1).Scan(&version).Error; err != nil {
+		t.Fatalf("existing account has no session version: %v", err)
+	}
+	if version != 0 {
+		t.Fatalf("existing account version = %d, want 0 for session compatibility", version)
+	}
+	user, err := GetUserByID(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.Username != "alice" || user.Password != "existing-hash" || user.Token != "existing-token" || !user.IsAdmin || !user.UpdatedAt.Equal(updatedAt) {
+		t.Fatal("adding session version changed existing account data")
+	}
+}

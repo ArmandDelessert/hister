@@ -206,6 +206,11 @@ hister update-user USERNAME [--username NEW] [--password] [--regen-token] [--tog
 Flags may be combined. When `--username` is used together with other flags, the rename is applied first.
 Passwords must contain 8 to 72 UTF-8 bytes and are entered twice for confirmation.
 
+Changing a password signs that user out of all existing browser sessions,
+including OAuth sessions. They can sign in again with the new password or their
+configured OAuth provider. Other users' sessions are unaffected. Personal access
+tokens remain valid; use `--regen-token` to replace the token as well.
+
 ## Per-User Rules and Aliases
 
 When user handling is enabled, each user has their own set of rules and aliases stored in the database. Changes made through the web UI or API affect only the authenticated user's rules and do not modify the configuration file.

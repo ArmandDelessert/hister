@@ -216,7 +216,7 @@ func TestOAuthPKCEFlow(t *testing.T) {
 			}
 
 			// A second login must reuse the account and replace the existing session.
-			for range 2 {
+			for attempt := range 2 {
 				var query url.Values
 				cookie, query = startOAuthLogin(t, handler, cookie)
 				challenge = query.Get("code_challenge")
@@ -254,6 +254,24 @@ func TestOAuthPKCEFlow(t *testing.T) {
 				}
 				if got := oauthCallback(handler, oldCookie, callback).Code; got != http.StatusBadRequest {
 					t.Fatalf("replayed callback status = %d", got)
+				}
+				profile := func() int {
+					req := httptest.NewRequest(http.MethodGet, "/hister/api/profile", nil)
+					req.AddCookie(cookie)
+					rec := httptest.NewRecorder()
+					handler.ServeHTTP(rec, req)
+					return rec.Code
+				}
+				if got := profile(); got != http.StatusOK {
+					t.Fatalf("fresh OAuth session profile status = %d, want 200", got)
+				}
+				if attempt == 0 {
+					if err := model.UpdatePassword(user.Username, "resetpassword123"); err != nil {
+						t.Fatal(err)
+					}
+					if got := profile(); got != http.StatusForbidden {
+						t.Fatalf("OAuth session after password reset status = %d, want 403", got)
+					}
 				}
 			}
 			if tokenCalls.Load() != 2 {

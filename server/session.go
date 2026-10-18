@@ -28,6 +28,8 @@ const sessionTokenBytes = 32
 
 const tokenAuthKey = "token_auth_proof"
 
+const userSessionVersionKey = "user_session_version"
+
 type databaseSessionStore struct {
 	Options      *sessions.Options
 	maxAge       time.Duration
@@ -177,9 +179,24 @@ func (s *databaseSessionStore) authenticateToken(session *sessions.Session, toke
 	session.Values[tokenAuthKey] = s.tokenProof(token)
 }
 
-func (s *databaseSessionStore) authenticateUser(session *sessions.Session, userID uint) {
+func (s *databaseSessionStore) userAuthenticated(session *sessions.Session, user *model.User) bool {
+	userID, ok := session.Values["user_id"].(uint)
+	if !ok || userID == 0 || userID != user.ID {
+		return false
+	}
+	value, present := session.Values[userSessionVersionKey]
+	if !present {
+		// Legacy sessions remain valid until the account's first password reset.
+		return user.SessionVersion == 0
+	}
+	version, ok := value.(uint)
+	return ok && version == user.SessionVersion
+}
+
+func (s *databaseSessionStore) authenticateUser(session *sessions.Session, user *model.User) {
 	resetSessionValuesAfterAuthentication(session)
-	session.Values["user_id"] = userID
+	session.Values["user_id"] = user.ID
+	session.Values[userSessionVersionKey] = user.SessionVersion
 }
 
 func resetSessionValuesAfterAuthentication(session *sessions.Session) {

@@ -271,7 +271,7 @@ func populateUserContext(c *webContext) {
 		return
 	}
 	if uid, ok := session.Values["user_id"].(uint); ok && uid > 0 {
-		if u, err := model.GetUserByID(uid); err == nil {
+		if u, err := model.GetUserByID(uid); err == nil && sessionStore.userAuthenticated(session, u) {
 			c.UserID = u.ID
 			c.Username = u.Username
 			c.IsAdmin = u.IsAdmin

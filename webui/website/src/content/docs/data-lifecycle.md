@@ -44,7 +44,7 @@ Language detection can create more than one `index_LANG.db` directory. Identical
 
 When `server.database` is a PostgreSQL connection string, SQL data is stored in PostgreSQL instead of `db.sqlite3`. Semantic vectors are also stored in PostgreSQL. The Bleve search indexes and HTML and favicon data remain under `app.directory`.
 
-Browser session records contain session state and a hash of the random identifier sent to the browser. They never contain the configured application access token or the raw session identifier. Sessions expire thirty days after the most recent valid request or immediately after logout. Each valid request refreshes both the database expiry and browser cookie expiry. Expired records are removed during session activity.
+Browser session records contain session state and a hash of the random identifier sent to the browser. They never contain the configured application access token or the raw session identifier. Sessions expire thirty days after the most recent valid request or immediately after logout. Changing a user's password invalidates their existing browser sessions, including OAuth sessions. Those invalidated records remain until their normal expiration and cleanup. Each valid request refreshes both the database expiry and browser cookie expiry. Expired records are removed during session activity.
 
 Configuration files can live outside `app.directory`. Source files in watched directories are not copied into the SQL database, but their extracted content is placed in the search index. Remote file imports extract content in the command line process and send only prepared document fields to the server. The original bytes remain on the client.
 

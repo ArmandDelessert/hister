@@ -31,6 +31,8 @@ type User struct {
 	IsAdmin   bool   `json:"is_admin"`
 	RulesJSON string `gorm:"column:rules_json;default:'{}'" json:"-"`
 	OAuthID   string `gorm:"index" json:"-"`
+	// Zero preserves sessions from before session versioning was introduced.
+	SessionVersion uint `gorm:"not null;default:0" json:"-"`
 }
 
 func (u *User) ParseRules() (*config.Rules, error) {
@@ -225,7 +227,10 @@ func UpdatePassword(username, password string) error {
 	if err != nil {
 		return err
 	}
-	result := DB.Model(&User{}).Where("username = ?", username).Update("password", string(hash))
+	result := DB.Model(&User{}).Where("username = ?", username).Updates(map[string]any{
+		"password":        string(hash),
+		"session_version": gorm.Expr("session_version + 1"),
+	})
 	if result.Error != nil {
 		return result.Error
 	}

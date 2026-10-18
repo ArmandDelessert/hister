@@ -312,7 +312,7 @@ func serveLogin(c *webContext) {
 		serve500(c)
 		return
 	}
-	sessionStore.authenticateUser(session, user.ID)
+	sessionStore.authenticateUser(session, user)
 	if err := session.Save(c.Request, c.Response); err != nil {
 		serve500(c)
 		return

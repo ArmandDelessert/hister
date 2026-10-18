@@ -204,7 +204,7 @@ func TestTokenLoginAcceptsCSRFTokenFromConfigResponse(t *testing.T) {
 	assertSessionAccepted(t, handler, responseSessionCookie(t, loginRec))
 }
 
-func TestUserSessionStoresOnlyUserIDAndRejectsDeletedUser(t *testing.T) {
+func TestUserSessionStoresAccountReferenceAndRejectsDeletedUser(t *testing.T) {
 	cfg := testutil.Config(t)
 	cfg.App.UserHandling = true
 	cfg.Server.Address = "127.0.0.1:4433"
@@ -270,6 +270,135 @@ func TestUserSessionStoresOnlyUserIDAndRejectsDeletedUser(t *testing.T) {
 	handler.ServeHTTP(deletedRec, deletedReq)
 	if deletedRec.Code != http.StatusForbidden {
 		t.Fatalf("deleted user GET /api/profile status = %d, want %d", deletedRec.Code, http.StatusForbidden)
+	}
+}
+
+func TestPasswordResetRevokesUserSessions(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	login := func(username, password string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, err := json.Marshal(map[string]string{"username": username, "password": password})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(string(body)), map[string]string{"Origin": "hister://", "Content-Type": "application/json"})
+	}
+	profile := func(cookie *http.Cookie, want int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+		req.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != want {
+			t.Fatalf("session profile status = %d, want %d: %s", response.Code, want, response.Body)
+		}
+	}
+	first := responseSessionCookie(t, login("alice", "password123"))
+	second := responseSessionCookie(t, login("alice", "password123"))
+	other := responseSessionCookie(t, login("admin", "password123"))
+	profile(first, http.StatusOK)
+	profile(second, http.StatusOK)
+
+	// Simulate a request that loaded the session before the password reset.
+	staleRequest := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	staleRequest.AddCookie(first)
+	staleSession, err := sessionStore.Get(staleRequest, storeName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := model.UpdatePassword("alice", "newpassword123"); err != nil {
+		t.Fatal(err)
+	}
+	if err := staleSession.Save(staleRequest, httptest.NewRecorder()); err != nil {
+		t.Fatal(err)
+	}
+	profile(first, http.StatusForbidden)
+	profile(second, http.StatusForbidden)
+	profile(other, http.StatusOK)
+	if response := login("alice", "password123"); response.Code != http.StatusUnauthorized {
+		t.Fatalf("old password login = %d, want 401", response.Code)
+	}
+	newLogin := login("alice", "newpassword123")
+	if newLogin.Code != http.StatusOK {
+		t.Fatalf("new password login = %d: %s", newLogin.Code, newLogin.Body)
+	}
+	fresh := responseSessionCookie(t, newLogin)
+	profile(fresh, http.StatusOK)
+	// Password resets do not rotate personal access tokens.
+	for _, token := range []string{alice.Token, admin.Token} {
+		response := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/profile", nil, map[string]string{"Authorization": "Bearer " + token})
+		if response.Code != http.StatusOK {
+			t.Fatalf("personal token profile = %d, want 200", response.Code)
+		}
+	}
+	// Resetting to the same password must still revoke current sessions.
+	if err := model.UpdatePassword("alice", "newpassword123"); err != nil {
+		t.Fatal(err)
+	}
+	profile(fresh, http.StatusForbidden)
+}
+
+func TestPasswordResetRevokesLegacyUserSession(t *testing.T) {
+	_, handler, _, _ := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	// Sessions saved by earlier versions contain the account ID without a version.
+	data, err := encodeSessionValues(map[any]any{"user_id": alice.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := newSessionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := model.CreateWebSession(&model.WebSession{TokenHash: sessionTokenHash(token), Data: data, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, reset := range []bool{false, true} {
+		want := http.StatusOK
+		if reset {
+			if err := model.UpdatePassword("alice", "newpassword123"); err != nil {
+				t.Fatal(err)
+			}
+			want = http.StatusForbidden
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+		req.AddCookie(&http.Cookie{Name: storeName, Value: token})
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != want {
+			t.Fatalf("legacy session after reset = %t: status = %d, want %d", reset, response.Code, want)
+		}
+	}
+}
+
+func TestFailedPasswordResetPreservesSession(t *testing.T) {
+	_, handler, _, _ := newUserDeletionTestServer(t)
+	testutil.CreateUser(t, "alice")
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"alice","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	cookie := responseSessionCookie(t, login)
+	for _, password := range []string{"", strings.Repeat("x", 73)} {
+		if err := model.UpdatePassword("alice", password); err == nil {
+			t.Fatal("invalid password reset succeeded")
+		}
+	}
+	// The password and session invalidation must succeed or fail together.
+	if err := model.DB.Exec(`CREATE TRIGGER reject_password_reset BEFORE UPDATE ON users
+		WHEN NEW.password != OLD.password BEGIN SELECT RAISE(ABORT, 'password update rejected'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := model.UpdatePassword("alice", "newpassword123"); err == nil {
+		t.Fatal("database rejected the update but password reset succeeded")
+	}
+	if _, err := model.AuthenticateUser("alice", "password123"); err != nil {
+		t.Fatalf("failed reset changed the password: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	req.AddCookie(cookie)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("failed reset revoked the session: status = %d", response.Code)
 	}
 }
 

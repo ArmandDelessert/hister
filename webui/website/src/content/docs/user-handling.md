@@ -89,7 +89,7 @@ hister -t <your-token> search "query"
 
 ## User Management Commands
 
-All user management commands require `user_handling: true` and direct access to the server host because they update the user database directly. The `delete-user` command also contacts the configured running Hister server to search for owned documents and, with `--purge`, delete them through the API.
+`create-user`, `show-user`, and `update-user` require `user_handling: true` in the local configuration and direct access to the server's data. `delete-user` operates entirely through the configured running server and requires an administrator's personal access token.
 
 ### `create-user`
 
@@ -105,15 +105,22 @@ hister create-user USERNAME [--admin]
 
 ### `delete-user`
 
-Soft delete a user account. If the server finds indexed documents owned by that user, the command refuses to continue unless `--purge` is supplied. Purging removes the documents found by the preflight before soft deleting the account. It is not complete data erasure, as explained in [Data Lifecycle and Retention](data-lifecycle#multi-user-ownership).
+Soft delete a user account on the configured server. That server must have `user_handling: true`. The username and owned documents are both resolved there, so local accounts are unaffected even when they have the same name or numeric ID. Local user handling does not need to be enabled.
+
+If the user owns indexed documents, the command refuses to continue unless `--purge` is supplied. Purging removes that user's current indexed documents before deleting the account and reports the number removed. If checking or purging documents fails, the account remains; a failed purge may already have removed some documents. This is not complete data erasure, as explained in [Data Lifecycle and Retention](data-lifecycle#multi-user-ownership).
 
 ```bash
 hister delete-user USERNAME [--purge]
+
+# Delete an account and its indexed documents on a remote server
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN delete-user alice --purge
 ```
 
-| Flag      | Description                                                       |
-| --------- | ----------------------------------------------------------------- |
-| `--purge` | Delete indexed documents found for the user before deleting them. |
+| Flag      | Description                                                      |
+| --------- | ---------------------------------------------------------------- |
+| `--purge` | Delete the user's indexed documents before deleting the account. |
+
+The server must support remote user deletion. If an older server rejects the request, upgrade it and retry. The command does not fall back to deleting a local account.
 
 ### `show-user`
 
@@ -190,6 +197,7 @@ Admin users have access to privileged operations. Currently, the following endpo
 
 - **`POST /api/reindex`** rebuilds the entire full-text search index.
 - **`POST /api/cleanup`** removes local documents that no longer match configured directories and removes stored HTML and favicon files that no current document references.
+- **`POST /api/delete_user`** deletes a named account and optionally its indexed documents on the server. User handling must be enabled.
 
 Non-admin users receive `403 Forbidden` when attempting to call admin-only endpoints.
 

@@ -41,3 +41,26 @@ func TestUpdatePasswordUserNotFound(t *testing.T) {
 		t.Fatalf("UpdatePassword error = %v, want %v", err, model.ErrUserNotFound)
 	}
 }
+
+func TestDeleteUserByIDAfterRename(t *testing.T) {
+	testutil.InitModel(t)
+	original := testutil.CreateUser(t, "alice")
+	if err := model.UpdateUsername("alice", "renamed"); err != nil {
+		t.Fatal(err)
+	}
+	replacement := testutil.CreateUser(t, "alice")
+	if err := model.DeleteUserByID(original.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := model.GetUserByID(original.ID); !errors.Is(err, model.ErrUserNotFound) {
+		t.Fatalf("original user lookup = %v, want user not found", err)
+	}
+	if _, err := model.GetUserByID(replacement.ID); err != nil {
+		t.Fatalf("deletion affected the replacement account: %v", err)
+	}
+	for _, id := range []uint{0, original.ID, replacement.ID + 1} {
+		if err := model.DeleteUserByID(id); !errors.Is(err, model.ErrUserNotFound) {
+			t.Errorf("DeleteUserByID(%d) = %v, want user not found", id, err)
+		}
+	}
+}

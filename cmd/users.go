@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/server/model"
 
 	"charm.land/bubbles/v2/textinput"
@@ -37,37 +36,23 @@ var createUserCmd = &cobra.Command{
 }
 
 var deleteUserCmd = &cobra.Command{
-	Use:    "delete-user USERNAME",
-	Short:  "Delete a user",
-	Long:   "Delete a user account (requires user_handling to be enabled). Use --purge to also remove all indexed documents belonging to the user.",
-	Args:   cobra.ExactArgs(1),
-	PreRun: requireUserHandlingAndInitDB(model.ReadWrite),
-	Run: func(cmd *cobra.Command, args []string) {
-		username := args[0]
-		u, err := model.GetUser(username)
+	Use:   "delete-user USERNAME",
+	Short: "Delete a user on the server",
+	Long:  "Delete a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Use --purge to also remove all indexed documents belonging to the user.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		purge, _ := cmd.Flags().GetBool("purge")
+		result, err := newClient().DeleteUser(cmd.Context(), args[0], purge)
 		if err != nil {
-			exit(1, "Failed to get user: "+err.Error())
+			return fmt.Errorf("failed to delete user: %w", err)
 		}
-		c := newClient()
-		q := fmt.Sprintf("user_id:%d", u.ID)
-		res, err := c.Search(&client.SearchQuery{Text: q})
-		if err != nil {
-			exit(1, "Failed to check user documents: "+err.Error())
-		}
-		if res.Total > 0 {
-			purge, _ := cmd.Flags().GetBool("purge")
-			if !purge {
-				exit(1, fmt.Sprintf("User %q has %d indexed document(s). Use --purge to delete them along with the user.", username, res.Total))
+		if result.DeletedDocuments > 0 {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s Purged %d document(s) for user %s\n", cliSuccessStyle.Render("✓"), result.DeletedDocuments, cliInfoStyle.Render(result.Username)); err != nil {
+				return err
 			}
-			if err := c.DeleteDocuments(q); err != nil {
-				exit(1, "Failed to purge user documents: "+err.Error())
-			}
-			cliPrintf("%s Purged %d document(s) for user %s\n", cliSuccessStyle.Render("✓"), res.Total, cliInfoStyle.Render(username))
 		}
-		if err := model.DeleteUser(username); err != nil {
-			exit(1, "Failed to delete user: "+err.Error())
-		}
-		cliPrintln(cliSuccessStyle.Render("✓") + " User deleted: " + cliInfoStyle.Render(username))
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), cliSuccessStyle.Render("✓")+" User deleted: "+cliInfoStyle.Render(result.Username))
+		return err
 	},
 }
 

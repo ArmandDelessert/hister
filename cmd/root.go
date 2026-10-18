@@ -205,15 +205,11 @@ func exit(errno int, msg string) {
 	os.Exit(errno)
 }
 
-// cliPrintln and cliPrintf send styled human output through Lip Gloss's
+// cliPrintln sends styled human output through Lip Gloss's
 // profile-aware writer. This strips CSI/SGR sequences from pipes and honors
 // NO_COLOR while retaining color (downsampled as needed) on terminals.
 func cliPrintln(v ...any) {
 	_, _ = lipgloss.Fprintln(os.Stdout, v...)
-}
-
-func cliPrintf(format string, v ...any) {
-	_, _ = lipgloss.Fprintf(os.Stdout, format, v...)
 }
 
 func isConnectionError(err error) bool {

@@ -833,6 +833,28 @@ func init() {
 			},
 		},
 		{
+			Name:         "Delete user",
+			Path:         "/api/delete_user",
+			Method:       POST,
+			CSRFRequired: true,
+			AdminOnly:    true,
+			Handler:      serveDeleteUser,
+			Description:  "Delete a user account on this server. Requires user handling and administrator privileges. Accounts with indexed documents require purge. Returns the username and deleted_documents count.",
+			JSONSchema: []*JSONSchemaField{
+				{
+					Name:        "username",
+					Type:        "string",
+					Required:    true,
+					Description: "Username of the account to delete on this server",
+				},
+				{
+					Name:        "purge",
+					Type:        "bool",
+					Description: "Remove the user's indexed documents before deleting the account",
+				},
+			},
+		},
+		{
 			Name:         "Delete alias",
 			Path:         "/api/delete_alias",
 			Method:       POST,

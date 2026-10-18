@@ -2002,6 +2002,55 @@ func serveDelete(c *webContext) {
 	c.JSON(map[string]any{"deleted": count})
 }
 
+func serveDeleteUser(c *webContext) {
+	if !c.Config.App.UserHandling {
+		http.Error(c.Response, "user handling is not enabled on this server", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Purge    bool   `json:"purge"`
+	}
+	if !decodeRequestJSON(c, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Username) == "" {
+		http.Error(c.Response, "username is required", http.StatusBadRequest)
+		return
+	}
+	user, err := model.GetUser(req.Username)
+	if err != nil {
+		http.Error(c.Response, "user not found", http.StatusNotFound)
+		return
+	}
+	var count int
+	if req.Purge {
+		count, err = c.Indexer.DeleteByQuery("*", &user.ID, func(url string, uid uint) {
+			if err := model.DeleteHistoryURL(uid, url); err != nil {
+				log.Warn().Err(err).Str("url", url).Msg("failed to delete history for deleted document")
+			}
+		})
+	} else {
+		count, err = c.Indexer.CountByQuery("*", &user.ID)
+	}
+	if err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("failed to check or purge user documents")
+		serve500(c)
+		return
+	}
+	if !req.Purge && count > 0 {
+		http.Error(c.Response, fmt.Sprintf("user %q has %d indexed document(s); use --purge to delete them along with the user", req.Username, count), http.StatusConflict)
+		return
+	}
+	// Keep deletion tied to the resolved account even if its username changes during the purge.
+	if err := model.DeleteUserByID(user.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("failed to delete user")
+		serve500(c)
+		return
+	}
+	c.JSON(map[string]any{"username": req.Username, "deleted_documents": count})
+}
+
 type batchOp struct {
 	Op string `json:"op"`
 	document.Document

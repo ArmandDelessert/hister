@@ -149,6 +149,19 @@ func (c *Client) FetchConfigContext(ctx context.Context) (*ServerConfig, error) 
 	return &serverConfig, nil
 }
 
+// DeleteUser deletes an account and optionally its documents on the connected server.
+func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) (*DeleteUserResult, error) {
+	payload := struct {
+		Username string `json:"username"`
+		Purge    bool   `json:"purge"`
+	}{Username: username, Purge: purge}
+	var result DeleteUserResult
+	if err := c.requestJSON(ctx, http.MethodPost, "/api/delete_user", payload, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 const legacyMaxBatchBodyBytes int64 = 5 << 20
 
 // MaxBatchBodyBytes returns the server advertised batch request limit. Servers

@@ -37,6 +37,13 @@ func TestRequestFormatsAndHeaders(t *testing.T) {
 		{"history", "POST", "/api/history", "application/json", `{"url":"` + sourceURL + `","title":"A title","query":"test"}`, func(c *Client) error { return c.PostHistory("test", sourceURL, "A title") }},
 		{"delete history", "POST", "/api/history", "application/json", `{"url":"` + sourceURL + `","query":"test","delete":true}`, func(c *Client) error { return c.DeleteHistoryEntry("test", sourceURL) }},
 		{"delete document", "POST", "/api/delete", "application/json", `{"query":"url:` + sourceURL + `"}`, func(c *Client) error { return c.DeleteDocument(sourceURL) }},
+		{"delete user", "POST", "/api/delete_user", "application/json", `{"username":"alice","purge":true}`, func(c *Client) error {
+			result, err := c.DeleteUser(context.Background(), "alice", true)
+			if err == nil && (result.Username != "alice" || result.DeletedDocuments != 2) {
+				t.Errorf("delete user result = %+v", result)
+			}
+			return err
+		}},
 		{"reindex", "POST", "/api/reindex", "application/json", `{"skipSensitive":true,"detectLanguages":false}`, func(c *Client) error { return c.Reindex(true, false) }},
 		{"add page", "POST", "/api/add", "application/x-www-form-urlencoded", url.Values{"url": {sourceURL}, "title": {"A title"}, "text": {"a+b & c"}}.Encode(), func(c *Client) error { return c.AddPage(sourceURL, "A title", "a+b & c") }},
 		{"add alias", "POST", "/api/add_alias", "application/x-www-form-urlencoded", url.Values{"alias-keyword": {"test"}, "alias-value": {"a+b & c"}}.Encode(), func(c *Client) error { return c.AddAlias("test", "a+b & c") }},
@@ -51,7 +58,7 @@ func TestRequestFormatsAndHeaders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := &trackedResponseBody{Reader: strings.NewReader(`{"htmlRemoved":3}`)}
+			body := &trackedResponseBody{Reader: strings.NewReader(`{"htmlRemoved":3,"username":"alice","deleted_documents":2}`)}
 			calls := 0
 			c := New("http://hister.test/prefix/", WithAccessToken("secret"), WithUserAgent("test-client"), WithTargetUserID(7), WithHTTPClient(&http.Client{
 				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -285,6 +292,7 @@ func TestRequestResponseErrorsAndCleanup(t *testing.T) {
 func TestRequestCancellation(t *testing.T) {
 	for name, call := range map[string]func(*Client, context.Context) error{
 		"config":      func(c *Client, ctx context.Context) error { _, err := c.FetchConfigContext(ctx); return err },
+		"delete user": func(c *Client, ctx context.Context) error { _, err := c.DeleteUser(ctx, "alice", true); return err },
 		"diagnostics": func(c *Client, ctx context.Context) error { _, err := c.FetchDiagnostics(ctx); return err },
 		"exists": func(c *Client, ctx context.Context) error {
 			_, err := c.DocumentExistsContext(ctx, "https://example.com")

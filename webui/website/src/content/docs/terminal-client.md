@@ -41,11 +41,11 @@ configured Hister HTTP server. Examples include `hister crawl list`, `hister lis
 user administration commands.
 
 **Remote** commands use the configured Hister HTTP server without opening the local Hister
-database or search index. Examples include `hister search`, `hister export`, and `hister cleanup`.
+database or search index. Examples include `hister search`, `hister export`, `hister cleanup`, and
+`hister delete-user`.
 
 **Hybrid** commands use or can use both local Hister state and the configured server. Examples
-include persistent `hister index` modes, `hister import browser`, `hister list-urls --offline`, and
-`hister delete-user`.
+include persistent `hister index` modes, `hister import browser`, and `hister list-urls --offline`.
 
 Use the scope label before running a command against a remote deployment. Local commands operate
 on the data directory selected by the local configuration even when `--server-url` is supplied.

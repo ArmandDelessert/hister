@@ -1,5 +1,10 @@
 package client
 
+type DeleteUserResult struct {
+	Username         string `json:"username"`
+	DeletedDocuments int    `json:"deleted_documents"`
+}
+
 type HistoryItem struct {
 	Query     string `json:"query"`
 	Title     string `json:"title"`

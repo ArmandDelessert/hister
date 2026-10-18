@@ -171,7 +171,7 @@ move when the destination owner already has the same URL. Search history remains
 the user who created it. A regular user can update labels, titles, and languages only on their own
 documents, while ownership changes require an administrator.
 
-Deleting a user with `hister delete-user USERNAME --purge` asks the server to remove current indexed documents detected by its preflight, then soft deletes the account. Verify the result because this is not complete data erasure and records or current documents missed by the preflight can remain. See [`delete-user`](user-handling#delete-user) for details.
+Deleting a user with `hister delete-user USERNAME --purge` removes the named user's current indexed documents and then soft deletes the account on the same server. This requires an administrator token. Stop imports and crawls for that user first because deletion does not block work already in progress. Verify the result because this is not complete data erasure; stored versions, crawl records, backups, and other retained data can remain. See [`delete-user`](user-handling#delete-user) for details.
 
 ## Backups and Exports
 

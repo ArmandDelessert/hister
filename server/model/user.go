@@ -108,6 +108,17 @@ func DeleteUser(username string) error {
 	return nil
 }
 
+func DeleteUserByID(id uint) error {
+	result := DB.Where("id = ?", id).Delete(&User{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 func AuthenticateUser(username, password string) (*User, error) {
 	var u User
 	if err := DB.Where("username = ?", username).First(&u).Error; err != nil {

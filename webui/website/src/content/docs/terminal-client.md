@@ -27,6 +27,10 @@ Example: index a slow extractor, such as `yt-dlp`, with a longer timeout:
 hister --client-timeout 20 index https://example.com
 ```
 
+When using an access token, set `--server-url` or `server.base_url` to the final server address.
+Authenticated commands refuse redirects to another host or port, or between HTTP and HTTPS,
+to keep your token on the selected server.
+
 ## Execution Scope
 
 Root help groups Hister operations by scope, and each operation help page identifies where the

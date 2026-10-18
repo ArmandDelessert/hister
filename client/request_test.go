@@ -99,6 +99,143 @@ func TestRequestFormatsAndHeaders(t *testing.T) {
 	}
 }
 
+func TestRequestRedirectOrigins(t *testing.T) {
+	for _, tt := range []struct {
+		name, baseURL string
+		locations     []string
+		anonymous     bool
+		blocked       bool
+	}{
+		{name: "relative", baseURL: "https://hister.test", locations: []string{"/redirected"}},
+		{name: "same origin", baseURL: "https://hister.test", locations: []string{"https://HISTER.test/redirected"}},
+		{name: "default HTTPS port", baseURL: "https://hister.test", locations: []string{"https://hister.test:443/redirected"}},
+		{name: "default HTTP port", baseURL: "http://hister.test:80", locations: []string{"http://hister.test/redirected"}},
+		{name: "different host", baseURL: "https://hister.test", locations: []string{"https://other.test/redirected"}, blocked: true},
+		{name: "subdomain", baseURL: "https://hister.test", locations: []string{"https://other.hister.test/redirected"}, blocked: true},
+		{name: "different port", baseURL: "https://hister.test", locations: []string{"https://hister.test:8443/redirected"}, blocked: true},
+		{name: "HTTPS downgrade", baseURL: "https://hister.test", locations: []string{"http://hister.test/redirected"}, blocked: true},
+		{name: "HTTP upgrade", baseURL: "http://hister.test", locations: []string{"https://hister.test/redirected"}, blocked: true},
+		{name: "later origin change", baseURL: "https://hister.test", locations: []string{"/redirected", "https://other.test/final"}, blocked: true},
+		{name: "anonymous", baseURL: "https://hister.test", locations: []string{"https://other.test/redirected"}, anonymous: true},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(tt.name+"/"+method, func(t *testing.T) {
+				token := "redirect-test-secret"
+				if tt.anonymous {
+					token = ""
+				}
+				var bodies []*trackedResponseBody
+				calls := 0
+				c := New(tt.baseURL, WithAccessToken(token), WithHTTPClient(&http.Client{
+					Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+						if r.Method != method || r.Header.Get("X-Access-Token") != token {
+							t.Errorf("redirect lost method or token: method = %s, token present = %t", r.Method, r.Header.Get("X-Access-Token") != "")
+						}
+						body := &trackedResponseBody{Reader: strings.NewReader(`{}`)}
+						bodies = append(bodies, body)
+						response := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: body, Request: r}
+						if calls < len(tt.locations) {
+							response.StatusCode = http.StatusTemporaryRedirect
+							response.Header.Set("Location", tt.locations[calls])
+						}
+						calls++
+						return response, nil
+					}),
+				}))
+				var err error
+				if method == http.MethodGet {
+					_, err = c.Search(&SearchQuery{Text: "test"})
+				} else {
+					err = c.AddDocumentJSON(&Document{URL: "https://example.com", Text: "private document"})
+				}
+				wantCalls := len(tt.locations) + 1
+				if tt.blocked {
+					wantCalls--
+					if err == nil || !strings.Contains(err.Error(), "different origin") {
+						t.Errorf("error = %v, want an origin rejection", err)
+					}
+				} else if err != nil {
+					t.Errorf("allowed redirect failed: %v", err)
+				}
+				if calls != wantCalls {
+					t.Errorf("sent %d requests, want %d; blocked redirects must not reach their destination", calls, wantCalls)
+				}
+				if err != nil && strings.Contains(err.Error(), "redirect-test-secret") {
+					t.Error("redirect error exposed the access token")
+				}
+				for _, body := range bodies {
+					if !body.closed {
+						t.Error("redirect response body was not closed")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRequestRedirectPolicy(t *testing.T) {
+	policyErr := errors.New("custom redirect rejection")
+	for _, tt := range []struct {
+		name, location string
+		policy         func(*http.Request, []*http.Request) error
+		wantErr        error
+		wantMessage    string
+		wantCalls      int
+	}{
+		{name: "custom policy rejects", location: "/redirected", policy: func(*http.Request, []*http.Request) error { return policyErr }, wantErr: policyErr, wantCalls: 1},
+		{name: "custom policy allows", location: "/redirected", policy: func(*http.Request, []*http.Request) error { return nil }, wantCalls: 2},
+		{name: "custom policy cannot allow another origin", location: "https://other.test/redirected", policy: func(*http.Request, []*http.Request) error { return nil }, wantMessage: "different origin", wantCalls: 1},
+		{name: "default redirect limit", location: "/loop", wantMessage: "stopped after 10 redirects", wantCalls: 10},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			hc := &http.Client{
+				CheckRedirect: tt.policy,
+				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					calls++
+					response := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}
+					if calls == 1 || tt.location == "/loop" {
+						response.StatusCode = http.StatusFound
+						response.Header.Set("Location", tt.location)
+					}
+					return response, nil
+				}),
+			}
+			c := New("https://hister.test", WithAccessToken("secret"), WithHTTPClient(hc))
+			_, err := c.Search(&SearchQuery{})
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("error = %v, want %v", err, tt.wantErr)
+				}
+			} else if tt.wantMessage != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantMessage) {
+					t.Errorf("error = %v, want %q", err, tt.wantMessage)
+				}
+			} else if err != nil {
+				t.Errorf("allowed redirect failed: %v", err)
+			}
+			if calls != tt.wantCalls {
+				t.Errorf("sent %d requests, want %d", calls, tt.wantCalls)
+			}
+			// Sharing an HTTP client must not apply this client's token policy to
+			// unrelated anonymous requests.
+			if tt.location == "https://other.test/redirected" {
+				calls = 0
+				response, err := hc.Get("https://hister.test/search")
+				if err != nil {
+					t.Fatalf("original HTTP client's redirect policy changed: %v", err)
+				}
+				if err := response.Body.Close(); err != nil {
+					t.Errorf("close response body: %v", err)
+				}
+				if calls != 2 {
+					t.Errorf("original HTTP client sent %d requests, want 2", calls)
+				}
+			}
+		})
+	}
+}
+
 func TestRequestResponseErrorsAndCleanup(t *testing.T) {
 	closeErr := errors.New("body close failed")
 	for _, tt := range []struct {

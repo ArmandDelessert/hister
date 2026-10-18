@@ -886,12 +886,12 @@ func init() {
 			},
 		},
 		{
-			Name:         "Delete user by ID",
+			Name:         "Delete user",
 			Path:         "/api/users/{id}",
 			Method:       DELETE,
 			CSRFRequired: true,
 			AdminOnly:    true,
-			Handler:      serveDeleteUserByID,
+			Handler:      serveDeleteUser,
 			Description:  "Delete an account by ID. Requires user handling. Accounts with indexed documents require purge. The last administrator cannot be deleted. Returns id, username, and deleted_documents.",
 			Args: []*EndpointArg{
 				{Name: "purge", Type: "bool", Description: "Remove the account's indexed documents before deletion (default false)."},
@@ -914,28 +914,6 @@ func init() {
 			Description:  "Replace the access token for the positive numeric user ID in the path. Requires user handling and the current account revision. Users can rotate their own token; administrators can also rotate other accounts' tokens. Returns token and revision with Cache-Control: no-store, or 409 for a stale revision. The old token stops working; browser sessions remain valid.",
 			JSONSchema: []*JSONSchemaField{
 				{Name: "revision", Type: "int", Required: true, Description: "Current account revision from a user read or creation response."},
-			},
-		},
-		{
-			Name:         "Delete user",
-			Path:         "/api/delete_user",
-			Method:       POST,
-			CSRFRequired: true,
-			AdminOnly:    true,
-			Handler:      serveDeleteUser,
-			Description:  "Delete a user account on this server. Requires user handling and administrator privileges. Accounts with indexed documents require purge. Returns the username and deleted_documents count.",
-			JSONSchema: []*JSONSchemaField{
-				{
-					Name:        "username",
-					Type:        "string",
-					Required:    true,
-					Description: "Username of the account to delete on this server",
-				},
-				{
-					Name:        "purge",
-					Type:        "bool",
-					Description: "Remove the user's indexed documents before deleting the account",
-				},
 			},
 		},
 		{

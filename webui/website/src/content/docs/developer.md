@@ -321,8 +321,7 @@ revision. Do not retry an update blindly with a new revision.
 Password changes invalidate the account's existing browser sessions, including
 OAuth sessions, while retaining its token unless rotation is also requested.
 Setting a password does not bypass `server.oauth_only`. The last administrator
-cannot be demoted or deleted. This protection also applies to existing account
-commands and the legacy deletion endpoint.
+cannot be demoted or deleted.
 
 Handler errors use the JSON `code` and `error` fields:
 

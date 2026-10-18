@@ -2321,7 +2321,7 @@ func userUpdateFailed(c *webContext, err error) bool {
 	return true
 }
 
-func serveDeleteUserByID(c *webContext) {
+func serveDeleteUser(c *webContext) {
 	user := requestedUser(c)
 	if user == nil {
 		return
@@ -2337,42 +2337,10 @@ func serveDeleteUserByID(c *webContext) {
 			return
 		}
 	}
-	if count, ok := deleteUserAccount(c, user, params.Get("purge") == "true"); ok {
-		c.JSON(map[string]any{"id": user.ID, "username": user.Username, "deleted_documents": count})
-	}
-}
-
-func serveDeleteUser(c *webContext) {
-	if !c.Config.App.UserHandling {
-		http.Error(c.Response, "user handling is not enabled on this server", http.StatusBadRequest)
-		return
-	}
-	var req struct {
-		Username string `json:"username"`
-		Purge    bool   `json:"purge"`
-	}
-	if !decodeRequestJSON(c, &req) {
-		return
-	}
-	if strings.TrimSpace(req.Username) == "" {
-		http.Error(c.Response, "username is required", http.StatusBadRequest)
-		return
-	}
-	user, err := model.GetUser(req.Username)
-	if err != nil {
-		http.Error(c.Response, "user not found", http.StatusNotFound)
-		return
-	}
-	if count, ok := deleteUserAccount(c, user, req.Purge); ok {
-		c.JSON(map[string]any{"username": user.Username, "deleted_documents": count})
-	}
-}
-
-func deleteUserAccount(c *webContext, user *model.User, purge bool) (int, bool) {
 	if userDeletionFailed(c, model.CheckUserDeletion(user.ID)) {
-		return 0, false
+		return
 	}
-	var err error
+	purge := params.Get("purge") == "true"
 	var count int
 	if purge {
 		count, err = c.Indexer.DeleteByQuery("*", &user.ID, func(url string, uid uint) {
@@ -2386,17 +2354,17 @@ func deleteUserAccount(c *webContext, user *model.User, purge bool) (int, bool) 
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("failed to check or purge user documents")
 		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to check or purge user documents")
-		return 0, false
+		return
 	}
 	if !purge && count > 0 {
 		userAPIError(c, http.StatusConflict, "purge_required", fmt.Sprintf("user %q has %d indexed document(s); enable purge to delete them along with the user", user.Username, count))
-		return 0, false
+		return
 	}
 	// Keep deletion tied to the resolved account even if its username changes during the purge.
 	if userDeletionFailed(c, model.DeleteUserByID(user.ID)) {
-		return 0, false
+		return
 	}
-	return count, true
+	c.JSON(map[string]any{"id": user.ID, "username": user.Username, "deleted_documents": count})
 }
 
 func userDeletionFailed(c *webContext, err error) bool {

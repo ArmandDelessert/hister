@@ -25,6 +25,7 @@ type UserUpdateResult struct {
 }
 
 type DeleteUserResult struct {
+	ID               uint   `json:"id"`
 	Username         string `json:"username"`
 	DeletedDocuments int    `json:"deleted_documents"`
 }

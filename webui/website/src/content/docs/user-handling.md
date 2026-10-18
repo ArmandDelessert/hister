@@ -150,7 +150,7 @@ hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN delete-user 
 | --------- | ---------------------------------------------------------------- |
 | `--purge` | Delete the user's indexed documents before deleting the account. |
 
-The server must support remote user deletion. If an older server rejects the request, upgrade it and retry. The command does not fall back to deleting a local account.
+The server must support remote user deletion. If an older server rejects the request, upgrade it and retry. The command does not fall back to deleting a local account or retry failed requests automatically.
 
 ### `show-user`
 

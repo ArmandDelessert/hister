@@ -251,15 +251,22 @@ func (c *Client) GetUserToken(ctx context.Context, userID uint) (string, error) 
 	return result.Token, nil
 }
 
-// DeleteUser deletes an account and optionally its documents on the connected server.
-func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) (*DeleteUserResult, error) {
-	payload := struct {
-		Username string `json:"username"`
-		Purge    bool   `json:"purge"`
-	}{Username: username, Purge: purge}
-	var result DeleteUserResult
-	if err := c.requestJSON(ctx, http.MethodPost, "/api/delete_user", payload, &result); err != nil {
+// DeleteUser deletes an account by ID and optionally its documents on the connected server.
+func (c *Client) DeleteUser(ctx context.Context, userID uint, purge bool) (*DeleteUserResult, error) {
+	if userID == 0 {
+		return nil, errors.New("user ID must be positive")
+	}
+	path := fmt.Sprintf("/api/users/%d", userID)
+	if purge {
+		path += "?purge=true"
+	}
+	// Require an explicit nonnegative count, including for empty accounts.
+	result := DeleteUserResult{DeletedDocuments: -1}
+	if err := c.requestJSON(ctx, http.MethodDelete, path, nil, &result); err != nil {
 		return nil, err
+	}
+	if result.ID != userID || result.Username == "" || result.DeletedDocuments < 0 || (!purge && result.DeletedDocuments != 0) {
+		return nil, errors.New("invalid user deletion response")
 	}
 	return &result, nil
 }

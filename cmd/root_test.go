@@ -34,44 +34,48 @@ func TestDeleteUserUsesRemoteAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	localUser := testutil.CreateUser(t, "alice")
+	localDB := model.DB
 	var paths []string
+	var output bytes.Buffer
 	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		paths = append(paths, req.URL.Path)
+		if req.URL.Host != "remote.example" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" {
+			t.Errorf("unexpected request: %s %s", req.Method, req.URL)
+		}
 		body := `{}`
 		switch req.URL.Path {
-		case "/hister/api/delete_user":
-			if req.Method != http.MethodPost || req.URL.Host != "remote.example" || req.Header.Get("X-Access-Token") != "admin-token" {
-				t.Errorf("unexpected request: %s %s", req.Method, req.URL)
+		case "/hister/api/users":
+			if req.Method != http.MethodGet || req.URL.Query().Get("username") != "alice" || req.URL.Query().Get("limit") != "1" {
+				t.Errorf("unexpected lookup: %s %s", req.Method, req.URL)
 			}
-			var payload map[string]any
-			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
-				t.Fatal(err)
+			body = `{"users":[{"id":77,"username":"alice"}]}`
+		case "/hister/api/users/77":
+			if len(paths) != 2 || req.Method != http.MethodDelete || req.URL.RawQuery != "purge=true" || req.Body != nil {
+				t.Errorf("unexpected deletion: %s %s", req.Method, req.URL)
 			}
-			if len(payload) != 2 || payload["username"] != "alice" || payload["purge"] != true {
-				t.Errorf("payload = %v, want username and purge only", payload)
+			if output.Len() != 0 {
+				t.Errorf("printed success before deletion: %s", &output)
 			}
-			body = `{"username":"alice","deleted_documents":3}`
-		case "/hister/search":
-			// Allow the former workflow to complete so the test reproduces its local deletion.
-			body = `{"total":1}`
+			// A rename after the lookup must not change the selected account ID.
+			body = `{"id":77,"username":"renamed","deleted_documents":3}`
+		default:
+			t.Errorf("unexpected request: %s %s", req.Method, req.URL)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})
-	cmd := &cobra.Command{Use: deleteUserCmd.Use, Args: deleteUserCmd.Args, Run: deleteUserCmd.Run, RunE: deleteUserCmd.RunE}
-	cmd.Flags().Bool("purge", false, "")
+	cmd := newDeleteUserTestCommand()
 	cmd.SetArgs([]string{"alice", "--purge"})
-	var output bytes.Buffer
 	cmd.SetOut(&output)
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := model.GetUserByID(localUser.ID); err != nil {
+	if current, err := model.GetUserByID(localUser.ID); err != nil || *current != *localUser || model.DB != localDB {
 		t.Errorf("remote deletion changed the local account: %v", err)
 	}
-	if len(paths) != 1 || paths[0] != "/hister/api/delete_user" {
-		t.Errorf("requests = %v, want one remote user deletion", paths)
+	if len(paths) != 2 || paths[0] != "/hister/api/users" || paths[1] != "/hister/api/users/77" {
+		t.Errorf("requests = %v, want one lookup and one deletion by ID", paths)
 	}
-	if text := ansi.Strip(output.String()); !strings.Contains(text, "Purged 3 document(s)") || !strings.Contains(text, "User deleted: alice") {
+	if text := ansi.Strip(output.String()); !strings.Contains(text, "Purged 3 document(s)") || !strings.Contains(text, "User deleted: renamed") {
 		t.Errorf("output = %q", output.String())
 	}
 }
@@ -88,51 +92,94 @@ func TestDeleteUserRemoteErrorsDoNotFallBack(t *testing.T) {
 		t.Error("delete-user is not classified as remote")
 	}
 	for _, tc := range []struct {
-		name, body string
-		status     int
-		wantError  bool
+		name, body, wantError string
+		status                int
+		lookup, transport     bool
 	}{
-		{"empty account", `{"username":"alice","deleted_documents":0}`, http.StatusOK, false},
-		{"denied", "permission denied", http.StatusForbidden, true},
-		{"missing endpoint", "not found", http.StatusNotFound, true},
-		{"unsupported method", "method not allowed", http.StatusMethodNotAllowed, true},
-		{"purge required", "use --purge", http.StatusConflict, true},
-		{"failed purge", "internal server error", http.StatusInternalServerError, true},
-		{"invalid response", "<html>old server</html>", http.StatusOK, true},
+		{name: "empty account", body: `{"id":77,"username":"alice","deleted_documents":0}`, status: http.StatusOK},
+		{name: "lookup denied", body: "denied", status: http.StatusForbidden, lookup: true, wantError: "access denied"},
+		{name: "lookup unsupported", body: "not found", status: http.StatusNotFound, lookup: true, wantError: "not found"},
+		{name: "missing account", body: `{"users":[]}`, status: http.StatusOK, lookup: true, wantError: "not found"},
+		{name: "wrong account", body: `{"users":[{"id":77,"username":"bob"}]}`, status: http.StatusOK, lookup: true, wantError: "invalid user lookup response"},
+		{name: "denied", body: "permission denied", status: http.StatusForbidden, wantError: "access denied"},
+		{name: "missing endpoint", body: "not found", status: http.StatusNotFound, wantError: "not found"},
+		{name: "unsupported method", body: "method not allowed", status: http.StatusMethodNotAllowed, wantError: "method not allowed"},
+		{name: "purge required", body: `{"code":"purge_required","error":"enable purge"}`, status: http.StatusConflict, wantError: "purge_required"},
+		{name: "last administrator", body: `{"code":"last_admin","error":"cannot remove the last administrator"}`, status: http.StatusConflict, wantError: "last_admin"},
+		{name: "failed purge", body: "internal server error", status: http.StatusInternalServerError, wantError: "server error"},
+		{name: "empty response", body: `{}`, status: http.StatusOK, wantError: "invalid user deletion response"},
+		{name: "connection lost during lookup", lookup: true, transport: true, wantError: "connection lost"},
+		{name: "connection lost during deletion", transport: true, wantError: "connection lost"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
 			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				calls++
-				if req.URL.Path != "/api/delete_user" {
-					t.Errorf("unexpected request: %s", req.URL)
+				if calls == 1 {
+					if req.Method != http.MethodGet || req.URL.Path != "/api/users" {
+						t.Errorf("unexpected lookup: %s %s", req.Method, req.URL)
+					}
+					if !tc.lookup {
+						return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"users":[{"id":77,"username":"alice"}]}`))}, nil
+					}
+				} else if calls != 2 || req.Method != http.MethodDelete || req.URL.Path != "/api/users/77" || req.URL.RawQuery != "" || req.Body != nil {
+					t.Errorf("unexpected deletion without purge: %s %s", req.Method, req.URL)
 				}
-				var payload map[string]any
-				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
-					t.Fatal(err)
-				}
-				if payload["purge"] != false {
-					t.Errorf("purge was not explicitly requested: %v", payload)
+				if tc.transport {
+					return nil, errors.New("connection lost")
 				}
 				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
 			})
-			cmd := &cobra.Command{Use: deleteUserCmd.Use, Args: deleteUserCmd.Args, PreRun: deleteUserCmd.PreRun, PreRunE: deleteUserCmd.PreRunE, RunE: deleteUserCmd.RunE}
-			cmd.Flags().Bool("purge", false, "")
+			cmd := newDeleteUserTestCommand()
 			cmd.SetArgs([]string{"alice"})
 			var output bytes.Buffer
 			cmd.SetOut(&output)
 			cmd.SetErr(io.Discard)
-			if err := cmd.Execute(); (err != nil) != tc.wantError {
-				t.Fatalf("error = %v, want error = %t", err, tc.wantError)
+			if err := cmd.Execute(); (tc.wantError == "" && err != nil) || (tc.wantError != "" && (err == nil || !strings.Contains(err.Error(), tc.wantError))) {
+				t.Fatalf("error = %v, want %q", err, tc.wantError)
 			}
-			if calls != 1 {
-				t.Errorf("requests = %d, want one", calls)
+			wantCalls := 2
+			if tc.lookup {
+				wantCalls = 1
 			}
-			if tc.wantError && strings.Contains(output.String(), "User deleted:") {
+			if calls != wantCalls {
+				t.Errorf("requests = %d, want %d", calls, wantCalls)
+			}
+			if tc.wantError != "" && output.Len() != 0 {
 				t.Errorf("reported success after failure: %s", &output)
+			}
+			if tc.wantError == "" && !strings.Contains(ansi.Strip(output.String()), "User deleted: alice") {
+				t.Errorf("missing success output: %s", &output)
 			}
 			if _, err := model.GetUserByID(localUser.ID); err != nil {
 				t.Errorf("remote command changed the local account: %v", err)
+			}
+		})
+	}
+}
+
+func newDeleteUserTestCommand() *cobra.Command {
+	command := &cobra.Command{Use: deleteUserCmd.Use, Args: deleteUserCmd.Args, PreRun: deleteUserCmd.PreRun, PreRunE: deleteUserCmd.PreRunE, RunE: deleteUserCmd.RunE, SilenceUsage: true, SilenceErrors: true}
+	command.Flags().Bool("purge", false, "")
+	return command
+}
+
+func TestDeleteUserInvalidNameDoesNotContactServer(t *testing.T) {
+	previousConfig, previousTransport := cfg, http.DefaultTransport
+	t.Cleanup(func() { cfg, http.DefaultTransport = previousConfig, previousTransport })
+	cfg = config.CreateDefaultConfig()
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		t.Error("invalid username contacted the server")
+		return nil, errors.New("unexpected request")
+	})
+	for _, name := range []string{"", " \t ", "ali\nce", "alice\x7f"} {
+		t.Run(name, func(t *testing.T) {
+			command := newDeleteUserTestCommand()
+			command.SetArgs([]string{name, "--purge"})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "username") || output.Len() != 0 {
+				t.Fatalf("invalid name: error = %v, output = %q", err, output.String())
 			}
 		})
 	}

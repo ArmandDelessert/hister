@@ -68,8 +68,17 @@ var deleteUserCmd = &cobra.Command{
 	Long:  "Delete a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Use --purge to also remove all indexed documents belonging to the user.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		username := args[0]
+		if strings.TrimSpace(username) == "" || strings.ContainsFunc(username, unicode.IsControl) {
+			return errors.New("username must not be blank or contain control characters")
+		}
 		purge, _ := cmd.Flags().GetBool("purge")
-		result, err := newClient().DeleteUser(cmd.Context(), args[0], purge)
+		c := newClient()
+		user, err := c.GetUser(cmd.Context(), username)
+		if err != nil {
+			return fmt.Errorf("failed to get user: %w", err)
+		}
+		result, err := c.DeleteUser(cmd.Context(), user.ID, purge)
 		if err != nil {
 			return fmt.Errorf("failed to delete user: %w", err)
 		}

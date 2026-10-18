@@ -37,9 +37,9 @@ func TestRequestFormatsAndHeaders(t *testing.T) {
 		{"history", "POST", "/api/history", "application/json", `{"url":"` + sourceURL + `","title":"A title","query":"test"}`, func(c *Client) error { return c.PostHistory("test", sourceURL, "A title") }},
 		{"delete history", "POST", "/api/history", "application/json", `{"url":"` + sourceURL + `","query":"test","delete":true}`, func(c *Client) error { return c.DeleteHistoryEntry("test", sourceURL) }},
 		{"delete document", "POST", "/api/delete", "application/json", `{"query":"url:` + sourceURL + `"}`, func(c *Client) error { return c.DeleteDocument(sourceURL) }},
-		{"delete user", "POST", "/api/delete_user", "application/json", `{"username":"alice","purge":true}`, func(c *Client) error {
-			result, err := c.DeleteUser(context.Background(), "alice", true)
-			if err == nil && (result.Username != "alice" || result.DeletedDocuments != 2) {
+		{"delete user", "DELETE", "/api/users/7?purge=true", "", "", func(c *Client) error {
+			result, err := c.DeleteUser(context.Background(), 7, true)
+			if err == nil && (result.ID != 7 || result.Username != "alice" || result.DeletedDocuments != 2) {
 				t.Errorf("delete user result = %+v", result)
 			}
 			return err
@@ -58,12 +58,12 @@ func TestRequestFormatsAndHeaders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := &trackedResponseBody{Reader: strings.NewReader(`{"htmlRemoved":3,"username":"alice","deleted_documents":2}`)}
+			body := &trackedResponseBody{Reader: strings.NewReader(`{"htmlRemoved":3,"id":7,"username":"alice","deleted_documents":2}`)}
 			calls := 0
 			c := New("http://hister.test/prefix/", WithAccessToken("secret"), WithUserAgent("test-client"), WithTargetUserID(7), WithHTTPClient(&http.Client{
 				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					calls++
-					if r.Method != tt.method || r.URL.Path != "/prefix"+tt.path {
+					if r.Method != tt.method || r.URL.RequestURI() != "/prefix"+tt.path {
 						t.Errorf("request = %s %s", r.Method, r.URL)
 					}
 					for key, want := range map[string]string{"Content-Type": tt.contentType, "Origin": "hister://", "X-Access-Token": "secret", "User-Agent": "test-client", targetUserIDHeader: "7"} {
@@ -292,7 +292,7 @@ func TestRequestResponseErrorsAndCleanup(t *testing.T) {
 func TestRequestCancellation(t *testing.T) {
 	for name, call := range map[string]func(*Client, context.Context) error{
 		"config":      func(c *Client, ctx context.Context) error { _, err := c.FetchConfigContext(ctx); return err },
-		"delete user": func(c *Client, ctx context.Context) error { _, err := c.DeleteUser(ctx, "alice", true); return err },
+		"delete user": func(c *Client, ctx context.Context) error { _, err := c.DeleteUser(ctx, 7, true); return err },
 		"get user":    func(c *Client, ctx context.Context) error { _, err := c.GetUser(ctx, "alice"); return err },
 		"create user": func(c *Client, ctx context.Context) error {
 			_, err := c.CreateUser(ctx, "alice", "password123", false)
@@ -650,6 +650,80 @@ func TestBatchRequestResponseValidation(t *testing.T) {
 				t.Errorf("requests = %d, body closed = %t", calls, body.closed)
 			}
 		})
+	}
+}
+
+func TestDeleteUserResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		status         int
+		purge          bool
+		wantError      bool
+	}{
+		{"empty account", `{"id":7,"username":"alice","deleted_documents":0}`, http.StatusOK, false, false},
+		{"purged", `{"id":7,"username":"renamed","deleted_documents":2}`, http.StatusOK, true, false},
+		{"empty purge", `{"id":7,"username":"alice","deleted_documents":0}`, http.StatusOK, true, false},
+		{"empty response", `{}`, http.StatusOK, false, true},
+		{"null response", `null`, http.StatusOK, false, true},
+		{"wrong ID", `{"id":8,"username":"alice","deleted_documents":0}`, http.StatusOK, false, true},
+		{"missing ID", `{"username":"alice","deleted_documents":0}`, http.StatusOK, false, true},
+		{"missing name", `{"id":7,"deleted_documents":0}`, http.StatusOK, false, true},
+		{"missing count", `{"id":7,"username":"alice"}`, http.StatusOK, false, true},
+		{"null count", `{"id":7,"username":"alice","deleted_documents":null}`, http.StatusOK, false, true},
+		{"negative count", `{"id":7,"username":"alice","deleted_documents":-1}`, http.StatusOK, true, true},
+		{"unexpected purge", `{"id":7,"username":"alice","deleted_documents":2}`, http.StatusOK, false, true},
+		{"invalid JSON", `<html>old server</html>`, http.StatusOK, false, true},
+		{"denied", "denied", http.StatusForbidden, true, true},
+		{"missing endpoint", "not found", http.StatusNotFound, true, true},
+		{"purge required", `{"code":"purge_required","error":"enable purge"}`, http.StatusConflict, false, true},
+		{"last admin", `{"code":"last_admin","error":"cannot remove the last administrator"}`, http.StatusConflict, true, true},
+		{"failed purge", "failed to purge", http.StatusInternalServerError, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedResponseBody{Reader: strings.NewReader(tc.response)}
+			calls := 0
+			c := New("https://hister.test/prefix", WithAccessToken("admin-token"), WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				query := ""
+				if tc.purge {
+					query = "purge=true"
+				}
+				if req.Method != http.MethodDelete || req.URL.Path != "/prefix/api/users/7" || req.URL.RawQuery != query || req.Body != nil {
+					t.Errorf("unexpected deletion request: %s %s", req.Method, req.URL)
+				}
+				if req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" {
+					t.Error("deletion lost authentication headers")
+				}
+				return &http.Response{StatusCode: tc.status, Body: body}, nil
+			})}))
+			result, err := c.DeleteUser(t.Context(), 7, tc.purge)
+			if tc.wantError {
+				if err == nil || result != nil {
+					t.Fatalf("unexpected deletion success: %+v, error = %v", result, err)
+				}
+				if tc.status >= 400 {
+					var httpErr *HTTPError
+					if !errors.As(err, &httpErr) || httpErr.StatusCode != tc.status || httpErr.Detail != tc.response {
+						t.Fatalf("lost server error details: %v", err)
+					}
+				}
+			} else if err != nil || result == nil || result.ID != 7 || result.Username == "" || result.DeletedDocuments < 0 {
+				t.Fatalf("incorrect deletion result: %+v, error = %v", result, err)
+			}
+			if calls != 1 || !body.closed {
+				t.Errorf("requests = %d, body closed = %t", calls, body.closed)
+			}
+		})
+	}
+}
+
+func TestDeleteUserRequiresID(t *testing.T) {
+	c := New("https://hister.test", WithHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Error("invalid user ID contacted the server")
+		return nil, errors.New("unexpected request")
+	})}))
+	if result, err := c.DeleteUser(t.Context(), 0, true); err == nil || result != nil {
+		t.Fatalf("invalid user ID: result = %+v, error = %v", result, err)
 	}
 }
 

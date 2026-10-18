@@ -195,11 +195,18 @@ Skip rules apply upon the **full** URL (from protocol to the query-string parame
 
 Admin users have access to privileged operations. Currently, the following endpoints require admin privileges:
 
+- **`GET /api/users`** lists user accounts and can find an exact username.
+- **`GET /api/users/{id}`** shows account information without credentials.
+- **`GET /api/users/{id}/token`** explicitly retrieves an account's existing access token without changing it.
 - **`POST /api/reindex`** rebuilds the entire full-text search index.
 - **`POST /api/cleanup`** removes local documents that no longer match configured directories and removes stored HTML and favicon files that no current document references.
 - **`POST /api/delete_user`** deletes a named account and optionally its indexed documents on the server. User handling must be enabled.
 
 Non-admin users receive `403 Forbidden` when attempting to call admin-only endpoints.
+
+Account lookup and token retrieval require user handling to be enabled. See
+[User Administration Reads](/docs/developer#user-administration-reads) for pagination,
+response fields, and API examples.
 
 Grant or revoke admin status using `create-user --admin` (at creation time) or `update-user --toggle-admin` (at any time).
 

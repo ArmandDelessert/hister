@@ -64,3 +64,18 @@ func TestDeleteUserByIDAfterRename(t *testing.T) {
 		}
 	}
 }
+
+func TestGetUserByIDDatabaseError(t *testing.T) {
+	testutil.InitModel(t)
+	user := testutil.CreateUser(t, "alice")
+	db, err := model.DB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := model.GetUserByID(user.ID); err == nil || errors.Is(err, model.ErrUserNotFound) {
+		t.Fatalf("database failure reported as missing user: %v", err)
+	}
+}

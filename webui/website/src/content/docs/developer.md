@@ -159,6 +159,60 @@ Authorization: Bearer <access-token>
 X-Access-Token: <access-token>
 ```
 
+### User Administration Reads
+
+The user administration endpoints require `app.user_handling: true` on the server
+and an administrator's personal token or authenticated session. Public mode does
+not grant access to these endpoints.
+
+| Endpoint                    | Response                                                |
+| --------------------------- | ------------------------------------------------------- |
+| `GET /api/users`            | A `users` array and an optional `next_after_id` cursor  |
+| `GET /api/users/{id}`       | Metadata for one account                                |
+| `GET /api/users/{id}/token` | The account's current access token as `{"token":"..."}` |
+
+Account metadata contains only `id`, `username`, `is_admin`, `created_at`, and
+`updated_at`. Passwords, password hashes, tokens, rules, and OAuth identities are
+excluded. Timestamps use RFC 3339 format. The token endpoint reads the existing
+token without rotating it. Successful responses from all three endpoints use
+`Cache-Control: no-store`.
+
+Listing accepts these optional query parameters:
+
+| Parameter  | Meaning                                                                 |
+| ---------- | ----------------------------------------------------------------------- |
+| `username` | Exact, case sensitive username. Wildcards are treated literally.        |
+| `limit`    | Page size from 1 to 100, with a default of 50                           |
+| `after_id` | Return users whose IDs are greater than this value, with a default of 0 |
+
+Results are ordered by ascending user ID. Pass `next_after_id` as the next request's
+`after_id`, keeping the same filter. The final page omits `next_after_id`, and an
+empty result uses `"users": []`. Pagination does not freeze the user database;
+accounts created or changed between requests can affect subsequent pages.
+
+```http
+GET /api/users?username=alice&limit=1
+Authorization: Bearer <administrator-token>
+```
+
+User IDs in paths must be positive integers. Unknown, repeated, or malformed list
+parameters are rejected. Handler errors use a JSON `code` and readable `error`:
+
+```json
+{ "code": "user_not_found", "error": "user not found" }
+```
+
+| Status | Code                     | Meaning                                  |
+| ------ | ------------------------ | ---------------------------------------- |
+| `400`  | `invalid_request`        | Invalid ID or query parameters           |
+| `400`  | `user_handling_disabled` | User handling is disabled on this server |
+| `404`  | `user_not_found`         | No account exists for the requested ID   |
+| `500`  | `internal_error`         | The account lookup failed                |
+
+Authentication failures use the existing `403` response from the authorization
+middleware. A username filter with no match returns an empty list, not `404`.
+Database error details are logged on the server and are not included in responses.
+
 ### Request Limits
 
 API request bodies have a default limit of 1 MiB, including MCP requests and

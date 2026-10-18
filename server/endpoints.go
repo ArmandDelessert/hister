@@ -2002,6 +2002,125 @@ func serveDelete(c *webContext) {
 	c.JSON(map[string]any{"deleted": count})
 }
 
+type userResponse struct {
+	ID        uint      `json:"id"`
+	Username  string    `json:"username"`
+	IsAdmin   bool      `json:"is_admin"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func userMetadata(user *model.User) userResponse {
+	return userResponse{
+		ID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin,
+		CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt,
+	}
+}
+
+func userAPIError(c *webContext, status int, code, message string) {
+	c.JSONStatus(status, map[string]string{"code": code, "error": message})
+}
+
+func userAPIEnabled(c *webContext) bool {
+	c.Response.Header().Set("Cache-Control", "no-store")
+	if !c.Config.App.UserHandling {
+		userAPIError(c, http.StatusBadRequest, "user_handling_disabled", "user handling is not enabled on this server")
+		return false
+	}
+	return true
+}
+
+func serveUsers(c *webContext) {
+	if !userAPIEnabled(c) {
+		return
+	}
+	params, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil {
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "invalid query parameters")
+		return
+	}
+	for name, values := range params {
+		if len(values) != 1 || (name != "username" && name != "limit" && name != "after_id") {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "unknown or repeated query parameter")
+			return
+		}
+	}
+	limit := 50
+	if params.Has("limit") {
+		limit, err = strconv.Atoi(params.Get("limit"))
+		if err != nil || limit < 1 || limit > 100 {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "limit must be between 1 and 100")
+			return
+		}
+	}
+	var afterID uint64
+	if params.Has("after_id") {
+		afterID, err = strconv.ParseUint(params.Get("after_id"), 10, strconv.IntSize-1)
+		if err != nil {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "after_id must be a nonnegative integer within the supported ID range")
+			return
+		}
+	}
+	username := params.Get("username")
+	if params.Has("username") && strings.TrimSpace(username) == "" {
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "username must not be empty")
+		return
+	}
+	users, err := model.ListUsers(username, uint(afterID), limit+1)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to list users")
+		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to list users")
+		return
+	}
+	var nextAfterID uint
+	if len(users) > limit {
+		users = users[:limit]
+		nextAfterID = users[len(users)-1].ID
+	}
+	result := make([]userResponse, 0, len(users))
+	for i := range users {
+		result = append(result, userMetadata(&users[i]))
+	}
+	c.JSON(struct {
+		Users       []userResponse `json:"users"`
+		NextAfterID uint           `json:"next_after_id,omitempty"`
+	}{Users: result, NextAfterID: nextAfterID})
+}
+
+func requestedUser(c *webContext) *model.User {
+	if !userAPIEnabled(c) {
+		return nil
+	}
+	id, err := strconv.ParseUint(c.Request.PathValue("id"), 10, strconv.IntSize-1)
+	if err != nil || id == 0 {
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "id must be a positive integer within the supported ID range")
+		return nil
+	}
+	user, err := model.GetUserByID(uint(id))
+	if errors.Is(err, model.ErrUserNotFound) {
+		userAPIError(c, http.StatusNotFound, "user_not_found", "user not found")
+		return nil
+	}
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get user")
+		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to get user")
+		return nil
+	}
+	return user
+}
+
+func serveUser(c *webContext) {
+	if user := requestedUser(c); user != nil {
+		c.JSON(userMetadata(user))
+	}
+}
+
+func serveUserToken(c *webContext) {
+	if user := requestedUser(c); user != nil {
+		c.JSON(map[string]string{"token": user.Token})
+	}
+}
+
 func serveDeleteUser(c *webContext) {
 	if !c.Config.App.UserHandling {
 		http.Error(c.Response, "user handling is not enabled on this server", http.StatusBadRequest)

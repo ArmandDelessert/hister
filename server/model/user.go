@@ -12,6 +12,7 @@ import (
 	"github.com/asciimoo/hister/config"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 var (
@@ -160,9 +161,24 @@ func GetUser(username string) (*User, error) {
 func GetUserByID(id uint) (*User, error) {
 	var u User
 	if err := DB.First(&u, id).Error; err != nil {
-		return nil, ErrUserNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
 	}
 	return &u, nil
+}
+
+// ListUsers returns account metadata ordered by ID. Credentials and rules are not loaded.
+func ListUsers(username string, afterID uint, limit int) ([]User, error) {
+	users := make([]User, 0)
+	query := DB.Select("id", "username", "is_admin", "created_at", "updated_at").
+		Where("id > ?", afterID).Order("id ASC").Limit(limit)
+	if username != "" {
+		query = query.Where("username = ?", username)
+	}
+	err := query.Find(&users).Error
+	return users, err
 }
 
 func RegenerateTokenByUsername(username string) (string, error) {

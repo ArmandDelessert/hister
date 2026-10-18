@@ -7,8 +7,11 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -458,6 +461,248 @@ func TestDeleteUserRetainsAccountOnIndexFailure(t *testing.T) {
 		}
 		if _, err := model.GetUser("alice"); err != nil {
 			t.Fatalf("index failure deleted the account: %v", err)
+		}
+	}
+}
+
+func TestUserReadAPI(t *testing.T) {
+	cfg, _, idx, admin := newUserDeletionTestServer(t)
+	if err := cfg.UpdateBaseURL("http://127.0.0.1:4433/hister"); err != nil {
+		t.Fatal(err)
+	}
+	handler := registerEndpoints(cfg, idx)
+	alice := testutil.CreateUser(t, "alice")
+	bob := testutil.CreateUser(t, "bob")
+	literal := testutil.CreateUser(t, "a%_' OR 1=1 --")
+	deleted := testutil.CreateUser(t, "deleted")
+	if err := model.DeleteUserByID(deleted.ID); err != nil {
+		t.Fatal(err)
+	}
+	request := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		response := testutil.ServeHTTP(t, handler, http.MethodGet, "/hister"+path, nil, map[string]string{"Authorization": "Bearer " + admin.Token})
+		if response.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, response.Code, response.Body)
+		}
+		return response
+	}
+	checkUser := func(data map[string]json.RawMessage, user *model.User) {
+		t.Helper()
+		if len(data) != 5 {
+			t.Fatalf("user fields = %v, want only id, username, is_admin, created_at, updated_at", data)
+		}
+		var got struct {
+			ID        uint      `json:"id"`
+			Username  string    `json:"username"`
+			IsAdmin   bool      `json:"is_admin"`
+			CreatedAt time.Time `json:"created_at"`
+			UpdatedAt time.Time `json:"updated_at"`
+		}
+		encoded, err := json.Marshal(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(encoded, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.ID != user.ID || got.Username != user.Username || got.IsAdmin != user.IsAdmin || !got.CreatedAt.Equal(user.CreatedAt) || !got.UpdatedAt.Equal(user.UpdatedAt) {
+			t.Fatalf("user = %s, want metadata for %q", encoded, user.Username)
+		}
+	}
+	var ids []uint
+	path := "/api/users?limit=2"
+	for page := 0; ; page++ {
+		if page > 2 {
+			t.Fatal("pagination did not terminate")
+		}
+		response := request(path)
+		var result struct {
+			Users       []map[string]json.RawMessage `json:"users"`
+			NextAfterID uint                         `json:"next_after_id"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Users) != 2 {
+			t.Fatalf("page %d has %d users, want 2", page, len(result.Users))
+		}
+		for _, user := range result.Users {
+			var id uint
+			if err := json.Unmarshal(user["id"], &id); err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, id)
+		}
+		if result.NextAfterID == 0 {
+			break
+		}
+		if result.NextAfterID != ids[len(ids)-1] {
+			t.Fatalf("cursor %d does not point at last returned user", result.NextAfterID)
+		}
+		path = fmt.Sprintf("/api/users?limit=2&after_id=%d", result.NextAfterID)
+	}
+	if !slices.Equal(ids, []uint{admin.ID, alice.ID, bob.ID, literal.ID}) {
+		t.Fatalf("listed IDs = %v", ids)
+	}
+	for _, user := range []*model.User{admin, alice, literal} {
+		response := request("/api/users?username=" + url.QueryEscape(user.Username))
+		var result struct {
+			Users []map[string]json.RawMessage `json:"users"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || len(result.Users) != 1 {
+			t.Fatalf("exact username lookup: %s, error = %v", response.Body, err)
+		}
+		checkUser(result.Users[0], user)
+		response = request(fmt.Sprintf("/api/users/%d", user.ID))
+		var details map[string]json.RawMessage
+		if err := json.Unmarshal(response.Body.Bytes(), &details); err != nil {
+			t.Fatal(err)
+		}
+		checkUser(details, user)
+	}
+	for _, query := range []string{"username=ali", "username=Alice", "username=missing", "username=deleted", "after_id=999999"} {
+		response := request("/api/users?" + query)
+		var result map[string]json.RawMessage
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if string(result["users"]) != "[]" || result["next_after_id"] != nil {
+			t.Fatalf("empty page = %s", response.Body)
+		}
+	}
+	response := request(fmt.Sprintf("/api/users/%d/token", alice.ID))
+	var token map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &token); err != nil || len(token) != 1 || token["token"] != alice.Token {
+		t.Fatalf("token response invalid, error = %v", err)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("token response may be cached")
+	}
+	unchanged, err := model.GetUserByID(alice.ID)
+	if err != nil || unchanged.Token != alice.Token {
+		t.Fatal("reading the token changed it")
+	}
+}
+
+func TestUserReadAPIAuthorization(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	user := testutil.CreateUser(t, "alice")
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"admin","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	if login.Code != http.StatusOK {
+		t.Fatalf("admin login: %d %s", login.Code, login.Body)
+	}
+	cookie := responseSessionCookie(t, login)
+	for _, path := range []string{"/api/users", fmt.Sprintf("/api/users/%d", user.ID), fmt.Sprintf("/api/users/%d/token", user.ID)} {
+		for _, token := range []string{"", "invalid", user.Token, admin.Token} {
+			response := testutil.ServeHTTP(t, handler, http.MethodGet, path, nil, map[string]string{"X-Access-Token": token})
+			want := http.StatusForbidden
+			if token == admin.Token {
+				want = http.StatusOK
+			}
+			if response.Code != want {
+				t.Errorf("GET %s: status = %d, want %d", path, response.Code, want)
+			}
+		}
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusOK {
+			t.Errorf("admin session GET %s: %d", path, response.Code)
+		}
+	}
+}
+
+func TestUserReadAPIValidation(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	for _, path := range []string{
+		"/api/users?limit=0", "/api/users?limit=-1", "/api/users?limit=101", "/api/users?limit=x", "/api/users?limit=",
+		"/api/users?after_id=-1", "/api/users?after_id=18446744073709551615", "/api/users?after_id=x",
+		"/api/users?username=", "/api/users?username=%20", "/api/users?limit=1&limit=2", "/api/users?name=alice", "/api/users?username=%zz",
+		"/api/users/0", "/api/users/-1", "/api/users/nope", "/api/users/18446744073709551615", "/api/users/nope/token",
+		"/api/users/999999", "/api/users/999999/token",
+	} {
+		t.Run(path, func(t *testing.T) {
+			response := testutil.ServeHTTP(t, handler, http.MethodGet, path, nil, map[string]string{"X-Access-Token": admin.Token})
+			wantStatus, wantCode := http.StatusBadRequest, "invalid_request"
+			if strings.Contains(path, "999999") {
+				wantStatus, wantCode = http.StatusNotFound, "user_not_found"
+			}
+			var result struct {
+				Code  string `json:"code"`
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != wantStatus || result.Code != wantCode || result.Error == "" {
+				t.Fatalf("status = %d, body = %s, decode error = %v", response.Code, response.Body, err)
+			}
+		})
+	}
+}
+
+func TestUserReadAPIRequiresUserHandling(t *testing.T) {
+	_, handler := newTokenTestServer(t, true)
+	user := testutil.CreateUser(t, "alice")
+	for _, path := range []string{"/api/users", fmt.Sprintf("/api/users/%d", user.ID), fmt.Sprintf("/api/users/%d/token", user.ID)} {
+		response := testutil.ServeHTTP(t, handler, http.MethodGet, path, nil, map[string]string{"X-Access-Token": "secret"})
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"user_handling_disabled"`) {
+			t.Errorf("single user GET %s: %d %s", path, response.Code, response.Body)
+		}
+	}
+}
+
+func TestUserReadAPIPaginationLimits(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	for i := range 100 {
+		name := fmt.Sprintf("user-%03d", i)
+		if _, err := model.CreateOAuthUser(name, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		query string
+		count int
+	}{
+		{"", 50},
+		{"?limit=1", 1},
+		{"?limit=100", 100},
+	} {
+		response := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/users"+tc.query, nil, map[string]string{"X-Access-Token": admin.Token})
+		var result struct {
+			Users []struct {
+				ID uint `json:"id"`
+			} `json:"users"`
+			NextAfterID uint `json:"next_after_id"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusOK || len(result.Users) != tc.count {
+			t.Fatalf("page %s: status = %d, count = %d, error = %v", tc.query, response.Code, len(result.Users), err)
+		}
+		if result.NextAfterID != result.Users[len(result.Users)-1].ID {
+			t.Fatalf("page %s: wrong cursor %d", tc.query, result.NextAfterID)
+		}
+	}
+}
+
+func TestUserReadAPIDatabaseErrors(t *testing.T) {
+	cfg, _, _, _ := newUserDeletionTestServer(t)
+	db, err := model.DB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Call the handlers after authentication to isolate failures during the account lookup.
+	for _, handler := range []endpointHandler{serveUsers, serveUser, serveUserToken} {
+		req := httptest.NewRequest(http.MethodGet, "/api/users/1", nil)
+		req.SetPathValue("id", "1")
+		response := httptest.NewRecorder()
+		handler(&webContext{Request: req, Response: response, Config: cfg})
+		var result map[string]string
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusInternalServerError || result["code"] != "internal_error" {
+			t.Fatalf("database error: status = %d, body = %s, decode error = %v", response.Code, response.Body, err)
+		}
+		if strings.Contains(result["error"], "sql:") {
+			t.Fatal("response disclosed the database error")
 		}
 	}
 }

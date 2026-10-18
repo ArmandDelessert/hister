@@ -305,6 +305,12 @@ For example, `hister export backup` writes `backup.json`. Explicit extensions ar
 preserved, including `.JSON`. Other extensions produce a warning because the file
 importer expects `.json`. The success message shows the actual output filename.
 
+An existing export stays unchanged until the new export is complete. If fetching or
+saving fails, the command reports an error and keeps the previous file. Allow enough
+free space for both exports during replacement. Saved exports are readable and writable
+only by their owner on Unix systems. The destination must be a regular file or a new
+filename; symbolic links, directories, and special files are rejected.
+
 You can limit the export to documents matching a search query by passing it after the
 output file (see the [query language](query-language) reference):
 
@@ -319,6 +325,10 @@ output file to write to standard output instead, which can be piped into other t
 ```bash
 hister export - | gzip > backup.json.gz
 ```
+
+Standard output can contain partial data if an export fails. Shell redirection also
+replaces its destination before Hister runs. To preserve an existing export until its
+replacement succeeds, pass the filename directly to `hister export`.
 
 Use `--start-date` / `--end-date` (`YYYY-MM-DD`) to only export documents whose `updated`
 timestamp falls within the given date range. The resulting file can be re-imported with

@@ -37,12 +37,15 @@ structural markers ('[', ']', ',') and can be safely skipped by parsers.
 If OUTPUT_FILE has no extension, .json is appended automatically. Explicit
 extensions are preserved; use .json so the file importer recognizes the export.
 
+An existing export is replaced only after the new export has been written
+successfully. Symbolic links and other nonregular destinations are rejected.
+
 Use --start-date and --end-date (format: YYYY-MM-DD) to only export
 documents updated within the given date range.
 
 Use '-' as OUTPUT_FILE to write to stdout.`,
 	Args: cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFile := exportOutputPath(args[0])
 		queryStr := strings.Join(args[1:], " ")
 		if queryStr == "" {
@@ -51,90 +54,121 @@ Use '-' as OUTPUT_FILE to write to stdout.`,
 
 		dateRange, err := parseDateRangeFlags(cmd)
 		if err != nil {
-			exit(1, err.Error())
+			return err
 		}
-
-		var out *os.File
-		if outputFile == "-" {
-			out = os.Stdout
-		} else {
-			if !strings.EqualFold(filepath.Ext(outputFile), ".json") {
-				log.Warn().Str("file", outputFile).Msg("Export format is JSON. Use a .json extension so hister import file recognizes this export")
-			}
-			f, err := os.Create(outputFile)
-			if err != nil {
-				exit(1, "Failed to create output file: "+err.Error())
-			}
-			defer func() {
-				if err := f.Close(); err != nil {
-					log.Error().Err(err).Msg("Failed to close output file")
-				}
-			}()
-			out = f
-		}
-
-		bw := bufio.NewWriter(out)
-		defer func() {
-			if err := bw.Flush(); err != nil {
-				log.Error().Err(err).Msg("Failed to flush output")
-			}
-		}()
-
-		if _, err := fmt.Fprintln(bw, "["); err != nil {
-			exit(1, "Write error: "+err.Error())
-		}
+		cmd.SilenceUsage = true
 
 		c := newClient(client.WithTimeout(0))
-		first := true
-		count := 0
-		pageKey := ""
-		for {
-			res, err := c.Search(&client.SearchQuery{
-				Text:        queryStr,
-				PageKey:     pageKey,
-				IncludeHTML: true,
-				IncludeText: true,
-				DateFrom:    dateRange.From,
-				DateTo:      dateRange.To,
-			})
-			if err != nil {
-				exit(1, "Search failed: "+err.Error())
-			}
-			for _, d := range res.Documents {
-				b, merr := json.Marshal(d)
-				if merr != nil {
-					log.Warn().Err(merr).Str("url", d.URL).Msg("Failed to serialize document, skipping")
-					continue
-				}
-				if !first {
-					if _, werr := fmt.Fprintln(bw, ","); werr != nil {
-						exit(1, "Write error: "+werr.Error())
-					}
-				}
-				first = false
-				if _, werr := bw.Write(b); werr != nil {
-					exit(1, "Write error: "+werr.Error())
-				}
-				if _, werr := fmt.Fprintln(bw); werr != nil {
-					exit(1, "Write error: "+werr.Error())
-				}
-				count++
-			}
-			if res.PageKey == "" || len(res.Documents) == 0 {
-				break
-			}
-			pageKey = res.PageKey
+		query := client.SearchQuery{
+			Text: queryStr, IncludeHTML: true, IncludeText: true,
+			DateFrom: dateRange.From, DateTo: dateRange.To,
 		}
-
-		if _, err := fmt.Fprintln(bw, "]"); err != nil {
-			exit(1, "Write error: "+err.Error())
+		if outputFile == "-" {
+			_, err := writeExport(cmd.OutOrStdout(), c, query)
+			return err
 		}
-
-		if outputFile != "-" {
-			cliPrintf("%s Exported %d document(s) to %s\n",
-				cliSuccessStyle.Render("✓"), count, cliInfoStyle.Render(outputFile))
+		if !strings.EqualFold(filepath.Ext(outputFile), ".json") {
+			log.Warn().Str("file", outputFile).Msg("Export format is JSON. Use a .json extension so hister import file recognizes this export")
 		}
+		count, err := writeExportFile(outputFile, c, query)
+		if err != nil {
+			return err
+		}
+		_, err = lipgloss.Fprintf(cmd.OutOrStdout(), "%s Exported %d document(s) to %s\n",
+			cliSuccessStyle.Render("✓"), count, cliInfoStyle.Render(outputFile))
+		return err
 	},
+}
+
+func writeExportFile(path string, c *client.Client, query client.SearchQuery) (count int, resultErr error) {
+	info, err := os.Lstat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("inspect export destination: %w", err)
+	}
+	if info != nil && !info.Mode().IsRegular() {
+		return 0, errors.New("export destination must be a regular file; use '-' to stream to stdout")
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".hister-export-*")
+	if err != nil {
+		return 0, fmt.Errorf("create temporary export: %w", err)
+	}
+	temporary := f.Name()
+	defer func() {
+		if f != nil {
+			if err := f.Close(); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("close temporary export: %w", err))
+			}
+		}
+		if temporary != "" {
+			if err := os.Remove(temporary); err != nil && !errors.Is(err, os.ErrNotExist) {
+				resultErr = errors.Join(resultErr, fmt.Errorf("remove temporary export: %w", err))
+			}
+		}
+	}()
+
+	count, err = writeExport(f, c, query)
+	if err != nil {
+		return count, err
+	}
+	if err := f.Sync(); err != nil {
+		return count, fmt.Errorf("sync export: %w", err)
+	}
+	err = f.Close()
+	f = nil
+	if err != nil {
+		return count, fmt.Errorf("close export: %w", err)
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		return count, fmt.Errorf("replace export: %w", err)
+	}
+	temporary = ""
+	return count, nil
+}
+
+func writeExport(out io.Writer, c *client.Client, query client.SearchQuery) (int, error) {
+	bw := bufio.NewWriter(out)
+	if _, err := fmt.Fprintln(bw, "["); err != nil {
+		return 0, fmt.Errorf("write export: %w", err)
+	}
+	encoder := json.NewEncoder(bw)
+	count := 0
+	for {
+		res, err := c.Search(&query)
+		if err != nil {
+			return count, fmt.Errorf("search failed: %w", err)
+		}
+		if res == nil {
+			return count, errors.New("search returned an empty response")
+		}
+		if res.Error != "" {
+			return count, fmt.Errorf("search failed: %s", res.Error)
+		}
+		for _, d := range res.Documents {
+			if d == nil {
+				return count, errors.New("search returned an empty document")
+			}
+			if count > 0 {
+				if _, err := fmt.Fprintln(bw, ","); err != nil {
+					return count, fmt.Errorf("write export: %w", err)
+				}
+			}
+			if err := encoder.Encode(d); err != nil {
+				return count, fmt.Errorf("write export document: %w", err)
+			}
+			count++
+		}
+		if res.PageKey == "" || len(res.Documents) == 0 {
+			break
+		}
+		query.PageKey = res.PageKey
+	}
+	if _, err := fmt.Fprintln(bw, "]"); err != nil {
+		return count, fmt.Errorf("write export: %w", err)
+	}
+	if err := bw.Flush(); err != nil {
+		return count, fmt.Errorf("flush export: %w", err)
+	}
+	return count, nil
 }
 
 func exportOutputPath(path string) string {

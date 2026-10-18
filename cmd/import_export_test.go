@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -26,6 +28,252 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func newExportTestCommand(t *testing.T, transport roundTripFunc) *cobra.Command {
+	t.Helper()
+	previousConfig, previousTransport := cfg, http.DefaultTransport
+	t.Cleanup(func() { cfg, http.DefaultTransport = previousConfig, previousTransport })
+	cfg = config.CreateDefaultConfig()
+	if err := cfg.UpdateBaseURL("https://hister.test"); err != nil {
+		t.Fatal(err)
+	}
+	http.DefaultTransport = transport
+	command := &cobra.Command{Use: exportCmd.Use, Args: exportCmd.Args, Run: exportCmd.Run, RunE: exportCmd.RunE}
+	command.Flags().String("start-date", "", "")
+	command.Flags().String("end-date", "", "")
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	return command
+}
+
+func TestExportPublishesOnlyAfterSuccess(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "backup.json")
+			const original = "previous backup\n"
+			if existing {
+				if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			documents := []*client.Document{
+				{URL: "https://example.com/first", Text: strings.Repeat("stored text ", 600), HTML: "<p>Stored HTML</p>", Processed: true},
+				{URL: "https://example.com/last", Title: "Last document", Label: "reading", Metadata: map[string]any{"source": "test"}},
+			}
+			calls := 0
+			command := newExportTestCommand(t, func(r *http.Request) (*http.Response, error) {
+				data, err := os.ReadFile(path)
+				if existing {
+					if err != nil || string(data) != original {
+						t.Errorf("destination changed before export completed: length = %d, error = %v", len(data), err)
+					}
+				} else if !os.IsNotExist(err) {
+					t.Errorf("destination published before export completed: error = %v", err)
+				}
+				var query client.SearchQuery
+				if err := json.Unmarshal([]byte(r.URL.Query().Get("query")), &query); err != nil {
+					t.Fatal(err)
+				}
+				pageKey := ""
+				if calls > 0 {
+					pageKey = "next"
+				}
+				if query.Text != "label:reading" || !query.IncludeText || !query.IncludeHTML || query.PageKey != pageKey {
+					t.Errorf("unexpected export query: %+v", query)
+				}
+				if calls >= len(documents) {
+					t.Fatal("requested an unexpected export page")
+				}
+				result := client.SearchResults{Documents: documents[calls : calls+1]}
+				calls++
+				if calls < len(documents) {
+					result.PageKey = "next"
+				}
+				return jsonHTTPResponse(r, http.StatusOK, string(contractJSON(t, result))), nil
+			})
+			command.SetArgs([]string{path, "label:reading"})
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertContractJSON(t, data, contractJSON(t, documents))
+			reader := newJSONExportReader(bytes.NewReader(data), maxJSONExportLineSize)
+			for range documents {
+				if _, err := reader.nextLine(); err != nil {
+					t.Fatalf("export cannot be imported: %v", err)
+				}
+			}
+			if _, err := reader.nextLine(); err != io.EOF {
+				t.Errorf("export ending = %v, want EOF", err)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 || entries[0].Name() != "backup.json" {
+				t.Errorf("unexpected files after export: %v, error = %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestExportReportsFinalFlushFailure(t *testing.T) {
+	out, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
+	if err != nil {
+		t.Skipf("requires a device that rejects writes: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := out.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	command := newExportTestCommand(t, func(r *http.Request) (*http.Response, error) {
+		return jsonHTTPResponse(r, http.StatusOK, `{"documents":[]}`), nil
+	})
+	command.SetOut(out)
+	command.SetArgs([]string{"-"})
+	if err := command.Execute(); !errors.Is(err, syscall.ENOSPC) || ExitCode(err) != 1 {
+		t.Errorf("export returned %v after the final write failed", err)
+	}
+}
+
+func TestExportFailuresPreserveDestination(t *testing.T) {
+	for _, failure := range []string{"first request", "later request", "invalid response", "server error", "empty document"} {
+		for _, existing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/existing=%t", failure, existing), func(t *testing.T) {
+				dir := t.TempDir()
+				path := filepath.Join(dir, "backup.json")
+				const original = "previous backup\n"
+				if existing {
+					if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				calls := 0
+				command := newExportTestCommand(t, func(r *http.Request) (*http.Response, error) {
+					calls++
+					if failure == "invalid response" {
+						return jsonHTTPResponse(r, http.StatusOK, `null`), nil
+					}
+					if failure == "server error" {
+						return jsonHTTPResponse(r, http.StatusOK, `{"error":"search failed"}`), nil
+					}
+					if failure == "empty document" {
+						return jsonHTTPResponse(r, http.StatusOK, `{"documents":[null]}`), nil
+					}
+					if failure == "later request" && calls == 1 {
+						result := client.SearchResults{Documents: []*client.Document{{URL: "https://example.com", Text: strings.Repeat("content ", 1000)}}, PageKey: "next"}
+						return jsonHTTPResponse(r, http.StatusOK, string(contractJSON(t, result))), nil
+					}
+					return jsonHTTPResponse(r, http.StatusServiceUnavailable, "server unavailable"), nil
+				})
+				var summary bytes.Buffer
+				command.SetOut(&summary)
+				command.SetArgs([]string{path})
+				if err := command.Execute(); err == nil || ExitCode(err) != 1 {
+					t.Errorf("failed export returned %v", err)
+				}
+				if summary.Len() != 0 {
+					t.Errorf("failed export printed success output: %q", summary.String())
+				}
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if existing {
+					data, err := os.ReadFile(path)
+					if err != nil || string(data) != original || len(entries) != 1 {
+						t.Errorf("failed export did not preserve the destination: content = %q, files = %v, error = %v", data, entries, err)
+					}
+				} else if len(entries) != 0 {
+					t.Errorf("failed export left files behind: %v", entries)
+				}
+			})
+		}
+	}
+}
+
+func TestExportStdout(t *testing.T) {
+	for _, documents := range [][]*client.Document{{}, {{URL: "https://example.com", Text: "stored content"}}} {
+		t.Run(fmt.Sprintf("documents=%d", len(documents)), func(t *testing.T) {
+			command := newExportTestCommand(t, func(r *http.Request) (*http.Response, error) {
+				return jsonHTTPResponse(r, http.StatusOK, string(contractJSON(t, client.SearchResults{Documents: documents}))), nil
+			})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			command.SetArgs([]string{"-"})
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			assertContractJSON(t, output.Bytes(), contractJSON(t, documents))
+		})
+	}
+}
+
+func TestExportRenameFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "backup.json")
+	command := newExportTestCommand(t, func(r *http.Request) (*http.Response, error) {
+		// Simulate another process creating a directory at the destination after
+		// the export has started writing its temporary file.
+		if err := os.Mkdir(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return jsonHTTPResponse(r, http.StatusOK, `{"documents":[]}`), nil
+	})
+	var summary bytes.Buffer
+	command.SetOut(&summary)
+	command.SetArgs([]string{path})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "replace export") {
+		t.Errorf("rename failure returned %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "backup.json" || !entries[0].IsDir() {
+		t.Errorf("rename failure left unexpected files: %v, error = %v", entries, err)
+	}
+	if summary.Len() != 0 {
+		t.Errorf("rename failure printed success output: %q", summary.String())
+	}
+}
+
+func TestExportRejectsNonRegularDestinations(t *testing.T) {
+	for _, kind := range []string{"directory", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "backup.json")
+			if kind == "directory" {
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				target := filepath.Join(dir, "target.json")
+				if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, path); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
+				}
+			}
+			command := newExportTestCommand(t, func(*http.Request) (*http.Response, error) {
+				t.Error("contacted server for an unsupported destination")
+				return nil, errors.New("unexpected request")
+			})
+			command.SetArgs([]string{path})
+			if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "regular file") {
+				t.Errorf("unsupported destination returned %v", err)
+			}
+			if kind == "symlink" {
+				if _, err := os.Readlink(path); err != nil {
+					t.Errorf("destination symlink replaced: %v", err)
+				}
+				if data, err := os.ReadFile(path); err != nil || string(data) != "original" {
+					t.Errorf("symlink target changed: content = %q, error = %v", data, err)
+				}
+			}
+		})
+	}
 }
 
 func TestExpandImportInputsExpandsDirectory(t *testing.T) {

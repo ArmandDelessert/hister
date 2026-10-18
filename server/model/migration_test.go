@@ -77,7 +77,7 @@ func TestMigrationDropsRequiredWebSessionLastSeenColumn(t *testing.T) {
 	}
 }
 
-func TestMigrationAddsUserSessionVersion(t *testing.T) {
+func TestMigrationAddsUserVersions(t *testing.T) {
 	cfg := config.CreateDefaultConfig()
 	cfg.App.Directory = t.TempDir()
 	cfg.Server.Database = "legacy-users.sqlite3"
@@ -128,6 +128,10 @@ func TestMigrationAddsUserSessionVersion(t *testing.T) {
 	}
 	if version != 0 {
 		t.Fatalf("existing account version = %d, want 0 for session compatibility", version)
+	}
+	var revision uint64
+	if err := DB.Model(&User{}).Select("revision").Where("id = ?", 1).Scan(&revision).Error; err != nil || revision != 1 {
+		t.Fatalf("existing account revision = %d, want 1, error = %v", revision, err)
 	}
 	user, err := GetUserByID(1)
 	if err != nil {

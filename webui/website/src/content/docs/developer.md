@@ -191,8 +191,8 @@ not grant access to these endpoints.
 | `GET /api/users/{id}`       | Metadata for one account                                |
 | `GET /api/users/{id}/token` | The account's current access token as `{"token":"..."}` |
 
-Account metadata contains only `id`, `username`, `is_admin`, `created_at`, and
-`updated_at`. Passwords, password hashes, tokens, rules, and OAuth identities are
+Account metadata contains only `id`, `username`, `is_admin`, `created_at`,
+`updated_at`, and `revision`. Passwords, password hashes, tokens, rules, and OAuth identities are
 excluded. Timestamps use RFC 3339 format. The token endpoint reads the existing
 token without rotating it. Successful responses from all three endpoints use
 `Cache-Control: no-store`.
@@ -281,6 +281,65 @@ Errors use the same JSON `code` and `error` fields as the account read endpoints
 
 Authentication and CSRF failures use the existing `403` responses. A conflicting
 creation request leaves the existing account's credentials and privileges
+unchanged.
+
+### User Updates
+
+`PATCH /api/users/{id}` applies account changes in one transaction. It requires
+user handling, an authenticated administrator, and the same CSRF protection as
+account creation.
+
+Read the account first, then send its current `revision` with at least one change:
+
+```http
+PATCH /api/users/2
+Authorization: Bearer <administrator-token>
+Origin: hister://
+Content-Type: application/json
+
+{"revision":1,"username":"alice-renamed","password":"replacement-password","is_admin":false,"regenerate_token":true}
+```
+
+`username`, `password`, and `is_admin` are optional. Omitted fields keep their
+values. An explicit `false` removes administrator privileges. Username and
+password validation matches account creation. `regenerate_token: true` replaces
+the access token; `false` alone does not count as a change. Null values, unknown
+or repeated fields, and trailing JSON are rejected. The body limit is 1 MiB.
+
+Success returns `200 OK` with the updated account metadata and
+`Cache-Control: no-store`. Only when `regenerate_token` is `true` does the response
+also contain `token`, holding the new access token. A client rotating its own
+token must retain that replacement. Ordinary updates never return credentials.
+
+Account revisions start at `1` and increase when a username, password,
+administrator status, or token is updated, including through existing account
+commands and profile token rotation. Rule changes do not change this revision.
+A stale revision returns `409` without applying any part of the request. Fetch
+the latest account, review the changes, and submit a new request with its current
+revision. Do not retry an update blindly with a new revision.
+
+Password changes invalidate the account's existing browser sessions, including
+OAuth sessions, while retaining its token unless rotation is also requested.
+Setting a password does not bypass `server.oauth_only`. The last administrator
+cannot be demoted or deleted. This protection also applies to existing account
+commands and the legacy deletion endpoint.
+
+Handler errors use the JSON `code` and `error` fields:
+
+| Status | Code                     | Meaning                                                    |
+| ------ | ------------------------ | ---------------------------------------------------------- |
+| `400`  | `invalid_request`        | Invalid ID, revision, body, or field value                 |
+| `400`  | `user_handling_disabled` | User handling is disabled                                  |
+| `403`  | `admin_required`         | The caller lost administrator privileges before the update |
+| `404`  | `user_not_found`         | The target account does not exist                          |
+| `409`  | `stale_revision`         | The account changed since it was read                      |
+| `409`  | `username_exists`        | Another account already uses the requested username        |
+| `409`  | `last_admin`             | The change would remove the last administrator             |
+| `413`  | `request_too_large`      | The request exceeds the body limit                         |
+| `500`  | `internal_error`         | The update could not be saved                              |
+
+Authorization failures before the handler use the existing middleware's `403`
+response. Validation failures and transaction failures leave all account fields
 unchanged.
 
 ### Request Limits

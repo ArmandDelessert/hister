@@ -2009,12 +2009,13 @@ type userResponse struct {
 	IsAdmin   bool      `json:"is_admin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	Revision  uint64    `json:"revision"`
 }
 
 func userMetadata(user *model.User) userResponse {
 	return userResponse{
 		ID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin,
-		CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt,
+		CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Revision: user.Revision,
 	}
 }
 
@@ -2172,6 +2173,101 @@ func serveUserToken(c *webContext) {
 	}
 }
 
+func decodeUserUpdate(body io.Reader) (uint64, model.UserChanges, error) {
+	var revision uint64
+	var changes model.UserChanges
+	fields := map[string]any{
+		"revision": &revision, "username": &changes.Username,
+		"password": &changes.Password, "is_admin": &changes.IsAdmin,
+		"regenerate_token": &changes.RegenerateToken,
+	}
+	decoder := json.NewDecoder(body)
+	token, err := decoder.Token()
+	if err != nil {
+		return 0, changes, err
+	}
+	if token != json.Delim('{') {
+		return 0, changes, model.ErrInvalidUserUpdate
+	}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return 0, changes, err
+		}
+		name, ok := token.(string)
+		if !ok {
+			return 0, changes, model.ErrInvalidUserUpdate
+		}
+		target, ok := fields[name]
+		if !ok {
+			return 0, changes, model.ErrInvalidUserUpdate
+		}
+		delete(fields, name) // Reject repeated fields as well as unknown ones.
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return 0, changes, err
+		}
+		if bytes.Equal(raw, []byte("null")) {
+			return 0, changes, model.ErrInvalidUserUpdate
+		}
+		if err := json.Unmarshal(raw, target); err != nil {
+			return 0, changes, err
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return 0, changes, err
+	}
+	// Read to EOF before changing anything, including whitespace past the body limit.
+	if err := decoder.Decode(new(json.RawMessage)); err != io.EOF {
+		if err == nil {
+			err = model.ErrInvalidUserUpdate
+		}
+		return 0, changes, err
+	}
+	return revision, changes, nil
+}
+
+func serveUpdateUser(c *webContext) {
+	user := requestedUser(c)
+	if user == nil {
+		return
+	}
+	revision, changes, err := decodeUserUpdate(c.Request.Body)
+	if err != nil {
+		if !requestBodyTooLarge(c, err) {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "invalid user update request")
+		}
+		return
+	}
+	updated, err := model.UpdateUser(c.UserID, user.ID, revision, changes)
+	switch {
+	case errors.Is(err, model.ErrInvalidUserUpdate):
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "provide a positive revision and at least one change; usernames must not be blank or contain control characters, and passwords must contain 8 to 72 UTF-8 bytes")
+	case errors.Is(err, model.ErrStaleUserRevision):
+		userAPIError(c, http.StatusConflict, "stale_revision", "user has changed; fetch its current revision before updating")
+	case errors.Is(err, model.ErrUserAlreadyExists):
+		userAPIError(c, http.StatusConflict, "username_exists", "username already exists")
+	case errors.Is(err, model.ErrLastAdmin):
+		userAPIError(c, http.StatusConflict, "last_admin", "cannot remove the last administrator")
+	case errors.Is(err, model.ErrAdminRequired):
+		userAPIError(c, http.StatusForbidden, "admin_required", "administrator privileges required")
+	case errors.Is(err, model.ErrUserNotFound):
+		userAPIError(c, http.StatusNotFound, "user_not_found", "user not found")
+	case err != nil:
+		log.Error().Err(err).Msg("failed to update user")
+		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to update user")
+	default:
+		var token string
+		if changes.RegenerateToken {
+			token = updated.Token
+		}
+		c.JSON(struct {
+			userResponse
+			Token string `json:"token,omitempty"`
+		}{userMetadata(updated), token})
+	}
+}
+
 func serveDeleteUser(c *webContext) {
 	if !c.Config.App.UserHandling {
 		http.Error(c.Response, "user handling is not enabled on this server", http.StatusBadRequest)
@@ -2191,6 +2287,15 @@ func serveDeleteUser(c *webContext) {
 	user, err := model.GetUser(req.Username)
 	if err != nil {
 		http.Error(c.Response, "user not found", http.StatusNotFound)
+		return
+	}
+	if err := model.CheckUserDeletion(user.ID); err != nil {
+		if errors.Is(err, model.ErrLastAdmin) {
+			userAPIError(c, http.StatusConflict, "last_admin", "cannot remove the last administrator")
+		} else {
+			log.Error().Err(err).Msg("failed to check user deletion")
+			serve500(c)
+		}
 		return
 	}
 	var count int
@@ -2214,6 +2319,10 @@ func serveDeleteUser(c *webContext) {
 	}
 	// Keep deletion tied to the resolved account even if its username changes during the purge.
 	if err := model.DeleteUserByID(user.ID); err != nil {
+		if errors.Is(err, model.ErrLastAdmin) {
+			userAPIError(c, http.StatusConflict, "last_admin", "cannot remove the last administrator")
+			return
+		}
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("failed to delete user")
 		serve500(c)
 		return

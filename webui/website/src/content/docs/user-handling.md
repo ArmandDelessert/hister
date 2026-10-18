@@ -137,7 +137,7 @@ reports an error without creating a local account.
 
 Soft delete a user account on the configured server. That server must have `user_handling: true`. The username and owned documents are both resolved there, so local accounts are unaffected even when they have the same name or numeric ID. Local user handling does not need to be enabled.
 
-If the user owns indexed documents, the command refuses to continue unless `--purge` is supplied. Purging removes that user's current indexed documents before deleting the account and reports the number removed. If checking or purging documents fails, the account remains; a failed purge may already have removed some documents. This is not complete data erasure, as explained in [Data Lifecycle and Retention](data-lifecycle#multi-user-ownership).
+If the user owns indexed documents, the command refuses to continue unless `--purge` is supplied. Purging removes that user's current indexed documents before deleting the account and reports the number removed. If checking or purging documents fails, the account remains; a failed purge may already have removed some documents. If account deletion is rejected after a purge, documents already removed are not restored. This is not complete data erasure, as explained in [Data Lifecycle and Retention](data-lifecycle#multi-user-ownership).
 
 ```bash
 hister delete-user USERNAME [--purge]
@@ -247,6 +247,7 @@ Admin users have access to privileged operations. Currently, the following endpo
 - **`GET /api/users`** lists user accounts and can find an exact username.
 - **`POST /api/users`** creates an account, optionally with administrator privileges.
 - **`GET /api/users/{id}`** shows account information without credentials.
+- **`PATCH /api/users/{id}`** changes a username, password, administrator status, or access token together.
 - **`GET /api/users/{id}/token`** explicitly retrieves an account's existing access token without changing it.
 - **`POST /api/reindex`** rebuilds the entire full-text search index.
 - **`POST /api/cleanup`** removes local documents that no longer match configured directories and removes stored HTML and favicon files that no current document references.
@@ -257,9 +258,10 @@ Non-admin users receive `403 Forbidden` when attempting to call admin-only endpo
 Account creation, lookup, and token retrieval require user handling to be enabled. See
 [User Administration Reads](/docs/developer#user-administration-reads) for pagination,
 response fields, and API examples, and [User Creation](/docs/developer#user-creation)
-for creating accounts through the server.
+for creating accounts through the server. [User Updates](/docs/developer#user-updates)
+explains how to apply changes together and detect conflicting edits.
 
-Grant or revoke admin status using `create-user --admin` (at creation time) or `update-user --toggle-admin` (at any time).
+Grant or revoke admin status using `create-user --admin` (at creation time) or `update-user --toggle-admin` (at any time). The last administrator cannot be demoted or deleted. Create or promote another administrator first.
 
 ## Single User Compatibility
 

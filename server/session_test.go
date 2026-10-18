@@ -617,8 +617,8 @@ func TestUserReadAPI(t *testing.T) {
 	}
 	checkUser := func(data map[string]json.RawMessage, user *model.User) {
 		t.Helper()
-		if len(data) != 5 {
-			t.Fatalf("user fields = %v, want only id, username, is_admin, created_at, updated_at", data)
+		if len(data) != 6 || string(data["revision"]) != "1" {
+			t.Fatalf("user fields = %v, want only id, username, is_admin, created_at, updated_at, revision", data)
 		}
 		var got struct {
 			ID        uint      `json:"id"`
@@ -876,7 +876,7 @@ func TestCreateUserAPI(t *testing.T) {
 			if err := json.Unmarshal(response.Body.Bytes(), &metadata); err != nil {
 				t.Fatal(err)
 			}
-			if len(fields) != 5 || metadata.ID != user.ID || metadata.Username != tc.username || metadata.IsAdmin != tc.isAdmin || !metadata.CreatedAt.Equal(user.CreatedAt) || !metadata.UpdatedAt.Equal(user.UpdatedAt) {
+			if len(fields) != 6 || string(fields["revision"]) != "1" || metadata.ID != user.ID || metadata.Username != tc.username || metadata.IsAdmin != tc.isAdmin || !metadata.CreatedAt.Equal(user.CreatedAt) || !metadata.UpdatedAt.Equal(user.UpdatedAt) {
 				t.Fatalf("response must contain only the account's metadata: %s", response.Body)
 			}
 			if response.Header().Get("Cache-Control") != "no-store" {
@@ -1112,5 +1112,261 @@ func assertSessionRejected(t *testing.T, handler http.Handler, cookie *http.Cook
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("session status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestUpdateUserAPI(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"alice","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	cookie := responseSessionCookie(t, login)
+	path := fmt.Sprintf("/api/users/%d", alice.ID)
+	response := testutil.ServeHTTP(t, handler, http.MethodPatch, path, strings.NewReader(`{"revision":1,"username":"renamed","password":"replacement123","is_admin":true,"regenerate_token":true}`), map[string]string{"Authorization": "Bearer " + admin.Token, "Origin": "hister://"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", response.Code, response.Body)
+	}
+	var result struct {
+		ID       uint
+		Username string
+		IsAdmin  bool `json:"is_admin"`
+		Revision uint64
+		Token    string
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ID != alice.ID || result.Username != "renamed" || !result.IsAdmin || result.Revision != 2 || result.Token == "" || result.Token == alice.Token {
+		t.Fatalf("incorrect updated metadata or rotated token: %s", response.Body)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" || strings.Contains(response.Body.String(), "replacement123") || strings.Contains(response.Body.String(), "password") {
+		t.Fatalf("unsafe update response: %s", response.Body)
+	}
+	updated, err := model.AuthenticateUser("renamed", "replacement123")
+	if err != nil || updated.Token != result.Token || !updated.IsAdmin || updated.RulesJSON != alice.RulesJSON {
+		t.Fatalf("combined changes not persisted: %v", err)
+	}
+	if _, err := model.AuthenticateUser("renamed", "password123"); !errors.Is(err, model.ErrInvalidPassword) {
+		t.Fatalf("old password still accepted: %v", err)
+	}
+	for _, token := range []string{alice.Token, result.Token} {
+		profile := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/profile", nil, map[string]string{"Authorization": "Bearer " + token})
+		want := http.StatusForbidden
+		if token == result.Token {
+			want = http.StatusOK
+		}
+		if profile.Code != want {
+			t.Fatalf("token authentication = %d, want %d", profile.Code, want)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("password update preserved old session: %d", rec.Code)
+	}
+
+	// An explicit false value demotes, and omitted fields keep their values.
+	response = testutil.ServeHTTP(t, handler, http.MethodPatch, path, strings.NewReader(`{"revision":2,"is_admin":false}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil || response.Code != http.StatusOK || len(fields) != 6 || string(fields["revision"]) != "3" {
+		t.Fatalf("partial update: %d %s, error %v", response.Code, response.Body, err)
+	}
+	unchanged, err := model.AuthenticateUser("renamed", "replacement123")
+	if err != nil || unchanged.IsAdmin || unchanged.Token != result.Token {
+		t.Fatalf("omitted fields changed: %v", err)
+	}
+}
+
+func TestUpdateUserAPIRejectedChanges(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	for _, tc := range []struct {
+		body, code string
+		status     int
+	}{
+		{`null`, "invalid_request", 400},
+		{`[]`, "invalid_request", 400},
+		{`{}`, "invalid_request", 400},
+		{`{"username":"renamed"}`, "invalid_request", 400},
+		{`{"revision":0,"username":"renamed"}`, "invalid_request", 400},
+		{`{"revision":-1,"username":"renamed"}`, "invalid_request", 400},
+		{`{"revision":9223372036854775808,"username":"renamed"}`, "invalid_request", 400},
+		{`{"revision":1}`, "invalid_request", 400},
+		{`{"revision":1,"regenerate_token":false}`, "invalid_request", 400},
+		{`{"revision":1,"username":null}`, "invalid_request", 400},
+		{`{"revision":1,"password":null}`, "invalid_request", 400},
+		{`{"revision":1,"is_admin":null}`, "invalid_request", 400},
+		{`{"revision":1,"regenerate_token":null}`, "invalid_request", 400},
+		{`{"revision":1,"username":" \t "}`, "invalid_request", 400},
+		{`{"revision":1,"username":"a\nb"}`, "invalid_request", 400},
+		{`{"revision":1,"password":"short","is_admin":true}`, "invalid_request", 400},
+		{`{"revision":1,"password":"` + strings.Repeat("é", 37) + `"}`, "invalid_request", 400},
+		{`{"revision":1,"token":"chosen-token"}`, "invalid_request", 400},
+		{`{"revision":1,"is_admin":"true"}`, "invalid_request", 400},
+		{`{"revision":1,"is_admin":true,"is_admin":false}`, "invalid_request", 400},
+		{`{"revision":1,"username":"renamed"} {}`, "invalid_request", 400},
+		{`{"revision":2,"username":"renamed","password":"replacement123","is_admin":true,"regenerate_token":true}`, "stale_revision", 409},
+		{`{"revision":1,"username":"admin","password":"replacement123","is_admin":true,"regenerate_token":true}`, "username_exists", 409},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			response := testutil.ServeHTTP(t, handler, http.MethodPatch, fmt.Sprintf("/api/users/%d", alice.ID), strings.NewReader(tc.body), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+			var result map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != tc.status || result["code"] != tc.code {
+				t.Fatalf("rejected update: %d %s, error %v", response.Code, response.Body, err)
+			}
+			if strings.Contains(response.Body.String(), "replacement123") || strings.Contains(response.Body.String(), "chosen-token") {
+				t.Fatal("response disclosed credentials")
+			}
+		})
+	}
+	unchanged, err := model.AuthenticateUser("alice", "password123")
+	if err != nil || unchanged.Token != alice.Token || unchanged.IsAdmin || unchanged.SessionVersion != alice.SessionVersion || !unchanged.UpdatedAt.Equal(alice.UpdatedAt) {
+		t.Fatalf("rejected updates changed account: %v", err)
+	}
+}
+
+func TestUpdateUserAPILastAdmin(t *testing.T) {
+	_, handler, idx, admin := newUserDeletionTestServer(t)
+	if err := idx.Add(&document.Document{URL: "https://example.com/admin", UserID: admin.ID, Text: "Admin document", Processed: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{fmt.Sprintf("/api/users/%d", admin.ID), "/api/delete_user"} {
+		method, body := http.MethodPatch, `{"revision":1,"is_admin":false,"password":"replacement123","regenerate_token":true}`
+		if path == "/api/delete_user" {
+			method, body = http.MethodPost, `{"username":"admin","purge":true}`
+		}
+		response := testutil.ServeHTTP(t, handler, method, path, strings.NewReader(body), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+		var result map[string]string
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusConflict || result["code"] != "last_admin" {
+			t.Fatalf("last admin removal: %d %s, error %v", response.Code, response.Body, err)
+		}
+	}
+	unchanged, err := model.AuthenticateUser("admin", "password123")
+	if err != nil || !unchanged.IsAdmin || unchanged.Token != admin.Token {
+		t.Fatalf("last admin changed: %v", err)
+	}
+	if count, err := idx.CountByQuery("*", &admin.ID); err != nil || count != 1 {
+		t.Fatalf("last admin deletion purged documents: count = %d, error = %v", count, err)
+	}
+}
+
+func TestUpdateUserAPIAuthorization(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	path := fmt.Sprintf("/api/users/%d", alice.ID)
+	body := `{"revision":1,"is_admin":true}`
+	for _, token := range []string{"", "invalid", alice.Token} {
+		response := testutil.ServeHTTP(t, handler, http.MethodPatch, path, strings.NewReader(body), map[string]string{"Authorization": "Bearer " + token, "Origin": "hister://"})
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("unauthorized update: %d %s", response.Code, response.Body)
+		}
+	}
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"admin","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	cookie := responseSessionCookie(t, login)
+	for _, csrf := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(body))
+		req.Header.Set("Origin", "https://proxy.example")
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		if csrf {
+			configReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+			configReq.Header.Set("Origin", "https://proxy.example")
+			configReq.AddCookie(cookie)
+			configRec := httptest.NewRecorder()
+			handler.ServeHTTP(configRec, configReq)
+			req.Header.Set("X-CSRF-Token", configRec.Header().Get("X-CSRF-Token"))
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		want := http.StatusForbidden
+		if csrf {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("update with CSRF token %t: %d %s", csrf, response.Code, response.Body)
+		}
+		user, err := model.GetUserByID(alice.ID)
+		if err != nil || user.IsAdmin != csrf {
+			t.Fatalf("authorization affected account incorrectly: %v", err)
+		}
+	}
+	// Self rotation must return a usable replacement for the token being revoked.
+	response := testutil.ServeHTTP(t, handler, http.MethodPatch, fmt.Sprintf("/api/users/%d", admin.ID), strings.NewReader(`{"revision":1,"regenerate_token":true}`), map[string]string{"Authorization": "Bearer " + admin.Token, "Origin": "hister://"})
+	var rotated struct{ Token string }
+	if err := json.Unmarshal(response.Body.Bytes(), &rotated); err != nil || response.Code != http.StatusOK || rotated.Token == "" || rotated.Token == admin.Token {
+		t.Fatalf("self rotation: %d %s, error %v", response.Code, response.Body, err)
+	}
+	for _, token := range []string{admin.Token, rotated.Token} {
+		response := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/users", nil, map[string]string{"Authorization": "Bearer " + token})
+		want := http.StatusForbidden
+		if token == rotated.Token {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("self rotation access: %d, want %d", response.Code, want)
+		}
+	}
+}
+
+func TestUpdateUserAPIRequestLimits(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	path := fmt.Sprintf("/api/users/%d", admin.ID)
+	for _, id := range []string{"0", "-1", "abc", "999999", "18446744073709551616"} {
+		response := testutil.ServeHTTP(t, handler, http.MethodPatch, "/api/users/"+id, strings.NewReader(`{"revision":1,"username":"renamed"}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+		var result struct{ Code string }
+		want, code := http.StatusBadRequest, "invalid_request"
+		if id == "999999" {
+			want, code = http.StatusNotFound, "user_not_found"
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != want || result.Code != code {
+			t.Fatalf("invalid ID: %d %s, error %v", response.Code, response.Body, err)
+		}
+	}
+	for _, knownLength := range []bool{true, false} {
+		req := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(`{"revision":1,"username":"renamed"}`+strings.Repeat(" ", int(maxRequestBodyBytes))))
+		req.Header.Set("X-Access-Token", admin.Token)
+		req.Header.Set("Origin", "hister://")
+		if !knownLength {
+			req.ContentLength = -1
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("oversized update: %d %s", response.Code, response.Body)
+		}
+	}
+	user, err := model.GetUserByID(admin.ID)
+	if err != nil || user.Username != admin.Username || user.Revision != admin.Revision {
+		t.Fatalf("invalid request changed user: %v", err)
+	}
+}
+
+func TestUpdateUserAPIRequiresUserHandling(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	response := testutil.ServeHTTP(t, handler, http.MethodPatch, "/api/users/1", strings.NewReader(`{"revision":1,"username":"renamed"}`), map[string]string{"X-Access-Token": "secret", "Origin": "hister://"})
+	var result struct{ Code string }
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusBadRequest || result.Code != "user_handling_disabled" {
+		t.Fatalf("single user update: %d %s, error %v", response.Code, response.Body, err)
+	}
+}
+
+func TestUpdateUserAPIDatabaseFailure(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	if err := model.DB.Exec(`CREATE TRIGGER reject_user_update BEFORE UPDATE OF password ON users BEGIN SELECT RAISE(ABORT, 'private database error'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := testutil.ServeHTTP(t, handler, http.MethodPatch, fmt.Sprintf("/api/users/%d", alice.ID), strings.NewReader(`{"revision":1,"username":"renamed","password":"replacement123","is_admin":true,"regenerate_token":true}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+	var result struct{ Code string }
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusInternalServerError || result.Code != "internal_error" {
+		t.Fatalf("failed update: %d %s, error %v", response.Code, response.Body, err)
+	}
+	if strings.Contains(response.Body.String(), "private database error") || strings.Contains(response.Body.String(), "replacement123") {
+		t.Fatal("failed update exposed private data")
+	}
+	user, err := model.GetUserByID(alice.ID)
+	if err != nil || *user != *alice {
+		t.Fatalf("database failure left partial changes: %v", err)
 	}
 }

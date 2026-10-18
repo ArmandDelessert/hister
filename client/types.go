@@ -8,6 +8,7 @@ type UserInfo struct {
 	IsAdmin   bool      `json:"is_admin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	Revision  uint64    `json:"revision"`
 }
 
 type DeleteUserResult struct {

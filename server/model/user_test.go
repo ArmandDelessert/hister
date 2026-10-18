@@ -79,3 +79,39 @@ func TestGetUserByIDDatabaseError(t *testing.T) {
 		t.Fatalf("database failure reported as missing user: %v", err)
 	}
 }
+
+func TestCreateUserConcurrentDuplicate(t *testing.T) {
+	testutil.InitModel(t)
+	db, err := model.DB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the in-memory SQLite database on a single connection.
+	db.SetMaxOpenConns(1)
+	const attempts = 4
+	start := make(chan struct{})
+	results := make(chan error, attempts)
+	for range attempts {
+		go func() {
+			<-start
+			_, err := model.CreateUser("alice", "password123", false)
+			results <- err
+		}()
+	}
+	close(start)
+	created := 0
+	for range attempts {
+		err := <-results
+		if err == nil {
+			created++
+		} else if !errors.Is(err, model.ErrUserAlreadyExists) {
+			t.Errorf("duplicate creation error = %v, want %v", err, model.ErrUserAlreadyExists)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created %d accounts, want 1", created)
+	}
+	if _, err := model.AuthenticateUser("alice", "password123"); err != nil {
+		t.Fatalf("created account cannot authenticate: %v", err)
+	}
+}

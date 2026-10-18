@@ -707,6 +707,232 @@ func TestUserReadAPIDatabaseErrors(t *testing.T) {
 	}
 }
 
+func TestCreateUserAPI(t *testing.T) {
+	cfg, _, idx, admin := newUserDeletionTestServer(t)
+	if err := cfg.UpdateBaseURL("http://127.0.0.1:4433/hister"); err != nil {
+		t.Fatal(err)
+	}
+	handler := registerEndpoints(cfg, idx)
+	for _, tc := range []struct {
+		username string
+		password string
+		isAdmin  bool
+	}{
+		{"ál ice@example.org", "12345678", false},
+		{"another-admin", strings.Repeat("é", 36), true},
+	} {
+		t.Run(tc.username, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"username": tc.username, "password": tc.password, "is_admin": tc.isAdmin})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := testutil.ServeHTTP(t, handler, http.MethodPost, "/hister/api/users", strings.NewReader(string(body)), map[string]string{
+				"Authorization": "Bearer " + admin.Token, "Origin": "hister://", "Content-Type": "application/json",
+			})
+			if response.Code != http.StatusCreated {
+				t.Fatalf("create status = %d, want 201: %s", response.Code, response.Body)
+			}
+			user, err := model.AuthenticateUser(tc.username, tc.password)
+			if err != nil {
+				t.Fatalf("created account cannot authenticate: %v", err)
+			}
+			if user.IsAdmin != tc.isAdmin || user.Token == "" || user.Token == admin.Token || user.Password == tc.password {
+				t.Fatal("created account has incorrect privileges or credentials")
+			}
+			var fields map[string]json.RawMessage
+			var metadata userResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &metadata); err != nil {
+				t.Fatal(err)
+			}
+			if len(fields) != 5 || metadata.ID != user.ID || metadata.Username != tc.username || metadata.IsAdmin != tc.isAdmin || !metadata.CreatedAt.Equal(user.CreatedAt) || !metadata.UpdatedAt.Equal(user.UpdatedAt) {
+				t.Fatalf("response must contain only the account's metadata: %s", response.Body)
+			}
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("creation response may be cached")
+			}
+			location, err := url.Parse(response.Header().Get("Location"))
+			if err != nil || location.Path != fmt.Sprintf("/hister/api/users/%d", user.ID) {
+				t.Fatalf("incorrect resource location: %q", response.Header().Get("Location"))
+			}
+			lookup := testutil.ServeHTTP(t, handler, http.MethodGet, location.RequestURI(), nil, map[string]string{"Authorization": "Bearer " + admin.Token})
+			if lookup.Code != http.StatusOK || lookup.Body.String() != response.Body.String() {
+				t.Fatalf("resource location does not return the created account: %d %s", lookup.Code, lookup.Body)
+			}
+		})
+	}
+}
+
+func TestCreateUserAPIValidation(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{"missing body", ""},
+		{"null body", `null`},
+		{"array", `[]`},
+		{"missing username", `{"password":"password123"}`},
+		{"blank username", `{"username":" \t ","password":"password123"}`},
+		{"control in username", `{"username":"ali\nce","password":"password123"}`},
+		{"null username", `{"username":null,"password":"password123"}`},
+		{"missing password", `{"username":"alice"}`},
+		{"null password", `{"username":"alice","password":null}`},
+		{"short password", `{"username":"alice","password":"1234567"}`},
+		{"long password", `{"username":"alice","password":"` + strings.Repeat("x", 73) + `"}`},
+		{"long UTF8 password", `{"username":"alice","password":"` + strings.Repeat("é", 37) + `"}`},
+		{"invalid admin", `{"username":"alice","password":"password123","is_admin":"true"}`},
+		{"null admin", `{"username":"alice","password":"password123","is_admin":null}`},
+		{"unknown field", `{"username":"alice","password":"password123","token":"chosen-token"}`},
+		{"trailing object", `{"username":"alice","password":"password123"} {}`},
+		{"trailing null", `{"username":"alice","password":"password123"} null`},
+		{"trailing garbage", `{"username":"alice","password":"password123"} secret`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/users", strings.NewReader(tc.body), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+			var result map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusBadRequest || result["code"] != "invalid_request" || result["error"] == "" {
+				t.Fatalf("invalid request: status = %d, body = %s, decode error = %v", response.Code, response.Body, err)
+			}
+			if strings.Contains(response.Body.String(), "password123") || strings.Contains(response.Body.String(), "chosen-token") {
+				t.Fatal("validation response disclosed submitted credentials")
+			}
+		})
+	}
+	users, err := model.ListUsers("", 0, 100)
+	if err != nil || len(users) != 1 || users[0].ID != admin.ID {
+		t.Fatalf("invalid requests changed accounts: %v, error = %v", users, err)
+	}
+}
+
+func TestCreateUserAPIDuplicate(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	response := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/users", strings.NewReader(`{"username":"admin","password":"replacement","is_admin":false}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusConflict || result["code"] != "username_exists" {
+		t.Fatalf("duplicate request: status = %d, body = %s, decode error = %v", response.Code, response.Body, err)
+	}
+	unchanged, err := model.AuthenticateUser("admin", "password123")
+	if err != nil || !unchanged.IsAdmin || unchanged.Token != admin.Token {
+		t.Fatalf("duplicate creation changed the existing account: %v", err)
+	}
+}
+
+func TestCreateUserAPIAuthorization(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	user := testutil.CreateUser(t, "alice")
+	for _, token := range []string{"", "invalid", user.Token} {
+		response := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/users", strings.NewReader(`{"username":"unauthorized","password":"password123","is_admin":true}`), map[string]string{"Authorization": "Bearer " + token, "Origin": "hister://"})
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("unauthorized creation: status = %d, want 403: %s", response.Code, response.Body)
+		}
+	}
+	if _, err := model.GetUser("unauthorized"); !errors.Is(err, model.ErrUserNotFound) {
+		t.Fatalf("unauthorized creation changed accounts: %v", err)
+	}
+	// A session must pass CSRF validation before it can create even an ordinary account.
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"admin","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	if login.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", login.Code, login.Body)
+	}
+	cookie := responseSessionCookie(t, login)
+	for _, withToken := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"bob","password":"password123"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://proxy.example")
+		req.AddCookie(cookie)
+		if withToken {
+			configReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+			configReq.Header.Set("Origin", "https://proxy.example")
+			configReq.AddCookie(cookie)
+			configRec := httptest.NewRecorder()
+			handler.ServeHTTP(configRec, configReq)
+			req.Header.Set("X-CSRF-Token", configRec.Header().Get("X-CSRF-Token"))
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		want := http.StatusForbidden
+		if withToken {
+			want = http.StatusCreated
+		}
+		if response.Code != want {
+			t.Fatalf("session creation with CSRF token = %t: status = %d, want %d: %s", withToken, response.Code, want, response.Body)
+		}
+		bob, err := model.GetUser("bob")
+		if !withToken && !errors.Is(err, model.ErrUserNotFound) {
+			t.Fatalf("failed CSRF check changed accounts: %v", err)
+		}
+		if withToken && (err != nil || bob.IsAdmin || bob.Token == admin.Token) {
+			t.Fatalf("creation without is_admin did not create an ordinary account: %v", err)
+		}
+	}
+}
+
+func TestCreateUserAPIRequiresUserHandling(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	response := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/users", strings.NewReader(`{"username":"alice","password":"password123","is_admin":true}`), map[string]string{"X-Access-Token": "secret", "Origin": "hister://"})
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusBadRequest || result["code"] != "user_handling_disabled" {
+		t.Fatalf("single user creation: status = %d, body = %s, decode error = %v", response.Code, response.Body, err)
+	}
+	if _, err := model.GetUser("alice"); !errors.Is(err, model.ErrUserNotFound) {
+		t.Fatalf("single user creation changed accounts: %v", err)
+	}
+}
+
+func TestCreateUserAPIBodyLimit(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	for _, knownLength := range []bool{true, false} {
+		// Trailing whitespace must still count toward the limit before an account is created.
+		req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"alice","password":"password123"}`+strings.Repeat(" ", int(maxRequestBodyBytes))))
+		req.Header.Set("X-Access-Token", admin.Token)
+		req.Header.Set("Origin", "hister://")
+		if !knownLength {
+			req.ContentLength = -1
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		var result struct{ Code string }
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusRequestEntityTooLarge || result.Code != "request_too_large" {
+			t.Fatalf("oversized request: status = %d, body = %s, decode error = %v", response.Code, response.Body, err)
+		}
+	}
+	if _, err := model.GetUser("alice"); !errors.Is(err, model.ErrUserNotFound) {
+		t.Fatalf("oversized request created an account: %v", err)
+	}
+}
+
+func TestCreateUserAPIDatabaseError(t *testing.T) {
+	cfg, _, _, _ := newUserDeletionTestServer(t)
+	db, err := model.DB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Isolate a database failure after administrator authentication has succeeded.
+	for _, endpoint := range Endpoints {
+		if endpoint.Path != "/api/users" || endpoint.Method != POST {
+			continue
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"alice","password":"password123"}`))
+		response := httptest.NewRecorder()
+		endpoint.Handler(&webContext{Request: req, Response: response, Config: cfg})
+		var result map[string]string
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusInternalServerError || result["code"] != "internal_error" {
+			t.Fatalf("database failure: status = %d, body = %s, decode error = %v", response.Code, response.Body, err)
+		}
+		if strings.Contains(response.Body.String(), "sql:") || strings.Contains(response.Body.String(), "password123") {
+			t.Fatal("creation response disclosed private details")
+		}
+		return
+	}
+	t.Fatal("user creation endpoint is missing")
+}
+
 func tokenLoginCookie(t *testing.T, handler http.Handler, current *http.Cookie) *http.Cookie {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/token-login", strings.NewReader(`{"token":"secret"}`))

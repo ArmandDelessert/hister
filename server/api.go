@@ -846,6 +846,20 @@ func init() {
 			},
 		},
 		{
+			Name:         "Create user",
+			Path:         "/api/users",
+			Method:       POST,
+			CSRFRequired: true,
+			AdminOnly:    true,
+			Handler:      serveCreateUser,
+			Description:  "Create an account on this server. Requires user handling. Returns 201 with account metadata and a Location header, or 409 if the username already exists. Credentials are never included in the response.",
+			JSONSchema: []*JSONSchemaField{
+				{Name: "username", Type: "string", Required: true, Description: "Case sensitive username. Must not be blank or contain control characters."},
+				{Name: "password", Type: "string", Required: true, Description: "Password containing 8 to 72 UTF-8 bytes."},
+				{Name: "is_admin", Type: "bool", Description: "Grant administrator privileges (default false)."},
+			},
+		},
+		{
 			Name:        "Get user",
 			Path:        "/api/users/{id}",
 			Method:      GET,

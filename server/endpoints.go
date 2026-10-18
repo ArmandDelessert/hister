@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	iofs "io/fs"
 	"mime"
 	"net"
@@ -2085,6 +2086,56 @@ func serveUsers(c *webContext) {
 		Users       []userResponse `json:"users"`
 		NextAfterID uint           `json:"next_after_id,omitempty"`
 	}{Users: result, NextAfterID: nextAfterID})
+}
+
+func serveCreateUser(c *webContext) {
+	if !userAPIEnabled(c) {
+		return
+	}
+	req := struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		IsAdmin  *bool  `json:"is_admin"`
+	}{IsAdmin: new(bool)}
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		if !requestBodyTooLarge(c, err) {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "invalid user creation request")
+		}
+		return
+	}
+	// Consume the complete body before making changes, including its size limit.
+	if err := decoder.Decode(new(json.RawMessage)); err != io.EOF {
+		if !requestBodyTooLarge(c, err) {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "request must contain a single JSON object")
+		}
+		return
+	}
+	if strings.TrimSpace(req.Username) == "" || strings.ContainsFunc(req.Username, unicode.IsControl) {
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "username must not be blank or contain control characters")
+		return
+	}
+	if len(req.Password) < 8 || len(req.Password) > 72 {
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "password must contain between 8 and 72 UTF-8 bytes")
+		return
+	}
+	if req.IsAdmin == nil {
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "is_admin must be a boolean")
+		return
+	}
+	user, err := model.CreateUser(req.Username, req.Password, *req.IsAdmin)
+	if errors.Is(err, model.ErrUserAlreadyExists) {
+		userAPIError(c, http.StatusConflict, "username_exists", "username already exists")
+		return
+	}
+	if err != nil {
+		log.Error().Err(err).Msg("failed to create user")
+		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to create user")
+		return
+	}
+	c.Response.Header().Set("Location", c.Config.BaseURL(fmt.Sprintf("/api/users/%d", user.ID)))
+	c.JSONStatus(http.StatusCreated, userMetadata(user))
 }
 
 func requestedUser(c *webContext) *model.User {

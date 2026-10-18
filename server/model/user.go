@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -86,6 +87,8 @@ func CreateUser(username, password string, isAdmin bool) (*User, error) {
 	var existing User
 	if err := DB.Where("username = ?", username).First(&existing).Error; err == nil {
 		return nil, ErrUserAlreadyExists
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
 	if password == "" {
 		return nil, ErrEmptyPassword
@@ -95,7 +98,17 @@ func CreateUser(username, password string, isAdmin bool) (*User, error) {
 		return nil, err
 	}
 	u := &User{Username: username, Password: string(hash), Token: rand.Text(), IsAdmin: isAdmin}
-	return u, DB.Create(u).Error
+	// A competing request can create the username after the initial lookup.
+	result := DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "username"}}, DoNothing: true,
+	}).Create(u)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrUserAlreadyExists
+	}
+	return u, nil
 }
 
 func DeleteUser(username string) error {

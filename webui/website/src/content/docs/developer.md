@@ -213,6 +213,56 @@ Authentication failures use the existing `403` response from the authorization
 middleware. A username filter with no match returns an empty list, not `404`.
 Database error details are logged on the server and are not included in responses.
 
+### User Creation
+
+`POST /api/users` creates an account on the running server. It requires
+`app.user_handling: true` and an existing administrator's token or session, even
+in public mode. It cannot create the first administrator without authentication.
+
+```http
+POST /api/users
+Authorization: Bearer <administrator-token>
+Origin: hister://
+Content-Type: application/json
+
+{"username":"alice","password":"example-password","is_admin":false}
+```
+
+The body must be a single JSON object. `username` and `password` are required
+strings. `is_admin` is an optional boolean that defaults to `false`. Unknown
+fields, null values, and trailing JSON are rejected.
+
+Usernames are case sensitive and stored unchanged. They may include Unicode and
+spaces, but must not be blank or contain control characters. Passwords must
+contain 8 to 72 UTF-8 bytes; a Unicode character may occupy multiple bytes.
+Passwords are hashed before storage. Creating an account does not enable password
+login when `server.oauth_only` is set.
+
+Success returns `201 Created` with the same account metadata as
+`GET /api/users/{id}` and `Cache-Control: no-store`. The `Location` header points
+to that account's URL, including any configured base path. The response does not
+include the password or access token. An administrator can explicitly retrieve
+the generated token with `GET /api/users/{id}/token`.
+
+Command line clients use `Origin: hister://` with their administrator token, as
+shown above. Browser session requests follow the existing CSRF checks. Requests
+from a different origin must supply the session's `X-CSRF-Token`, available from
+`GET /api/config`.
+
+Errors use the same JSON `code` and `error` fields as the account read endpoints:
+
+| Status | Code                     | Meaning                                                       |
+| ------ | ------------------------ | ------------------------------------------------------------- |
+| `400`  | `invalid_request`        | Invalid body, username, password, or admin flag               |
+| `400`  | `user_handling_disabled` | User handling is disabled on this server                      |
+| `409`  | `username_exists`        | The username is taken, including concurrent creation attempts |
+| `413`  | `request_too_large`      | The request exceeds the 1 MiB body limit                      |
+| `500`  | `internal_error`         | The account could not be saved                                |
+
+Authentication and CSRF failures use the existing `403` responses. A conflicting
+creation request leaves the existing account's credentials and privileges
+unchanged.
+
 ### Request Limits
 
 API request bodies have a default limit of 1 MiB, including MCP requests and

@@ -11,6 +11,19 @@ type UserInfo struct {
 	Revision  uint64    `json:"revision"`
 }
 
+type UserUpdate struct {
+	Revision        uint64  `json:"revision"`
+	Username        *string `json:"username,omitempty"`
+	Password        *string `json:"password,omitempty"`
+	IsAdmin         *bool   `json:"is_admin,omitempty"`
+	RegenerateToken bool    `json:"regenerate_token,omitempty"`
+}
+
+type UserUpdateResult struct {
+	UserInfo
+	Token string `json:"token,omitempty"`
+}
+
 type DeleteUserResult struct {
 	Username         string `json:"username"`
 	DeletedDocuments int    `json:"deleted_documents"`

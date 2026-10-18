@@ -298,6 +298,10 @@ func TestRequestCancellation(t *testing.T) {
 			_, err := c.CreateUser(ctx, "alice", "password123", false)
 			return err
 		},
+		"update user": func(c *Client, ctx context.Context) error {
+			_, err := c.UpdateUser(ctx, 7, UserUpdate{Revision: 1, RegenerateToken: true})
+			return err
+		},
 		"user token":  func(c *Client, ctx context.Context) error { _, err := c.GetUserToken(ctx, 7); return err },
 		"diagnostics": func(c *Client, ctx context.Context) error { _, err := c.FetchDiagnostics(ctx); return err },
 		"exists": func(c *Client, ctx context.Context) error {
@@ -646,5 +650,116 @@ func TestBatchRequestResponseValidation(t *testing.T) {
 				t.Errorf("requests = %d, body closed = %t", calls, body.closed)
 			}
 		})
+	}
+}
+
+func TestUpdateUserResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		status         int
+		wantError      bool
+	}{
+		{"updated", `{"id":7,"username":"renamed","is_admin":false,"revision":5,"token":"new-token"}`, http.StatusOK, false},
+		{"empty", `{}`, http.StatusOK, true},
+		{"null", `null`, http.StatusOK, true},
+		{"wrong ID", `{"id":8,"username":"renamed","is_admin":false,"revision":5,"token":"new-token"}`, http.StatusOK, true},
+		{"wrong name", `{"id":7,"username":"alice","is_admin":false,"revision":5,"token":"new-token"}`, http.StatusOK, true},
+		{"wrong privileges", `{"id":7,"username":"renamed","is_admin":true,"revision":5,"token":"new-token"}`, http.StatusOK, true},
+		{"unchanged revision", `{"id":7,"username":"renamed","is_admin":false,"revision":4,"token":"new-token"}`, http.StatusOK, true},
+		{"missing token", `{"id":7,"username":"renamed","is_admin":false,"revision":5}`, http.StatusOK, true},
+		{"invalid JSON", `<html>old server</html>`, http.StatusOK, true},
+		{"stale revision", `{"code":"stale_revision","error":"user has changed"}`, http.StatusConflict, true},
+		{"last admin", `{"code":"last_admin","error":"cannot remove the last administrator"}`, http.StatusConflict, true},
+		{"denied", "denied", http.StatusForbidden, true},
+		{"missing endpoint", "not found", http.StatusNotFound, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedResponseBody{Reader: strings.NewReader(tc.response)}
+			calls := 0
+			c := New("https://hister.test/prefix", WithAccessToken("admin-token"), WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if req.Method != http.MethodPatch || req.URL.Path != "/prefix/api/users/7" || req.URL.RawQuery != "" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" || req.Header.Get("Content-Type") != "application/json" {
+					t.Errorf("unexpected update: %s %s", req.Method, req.URL)
+				}
+				var payload map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if len(payload) != 5 || payload["revision"] != float64(4) || payload["username"] != "renamed" || payload["password"] != "replacement123" || payload["is_admin"] != false || payload["regenerate_token"] != true {
+					t.Error("update did not send the combined changes")
+				}
+				return &http.Response{StatusCode: tc.status, Body: body}, nil
+			})}))
+			user, err := c.UpdateUser(t.Context(), 7, UserUpdate{Revision: 4, Username: new("renamed"), Password: new("replacement123"), IsAdmin: new(false), RegenerateToken: true})
+			if tc.wantError {
+				if err == nil || user != nil {
+					t.Fatalf("unexpected update success: %+v, error %v", user, err)
+				}
+				if tc.status >= 400 {
+					var httpErr *HTTPError
+					if !errors.As(err, &httpErr) || httpErr.StatusCode != tc.status || httpErr.Detail != tc.response {
+						t.Fatalf("lost server error details: %v", err)
+					}
+				}
+			} else if err != nil || user.ID != 7 || user.Revision != 5 || user.Username != "renamed" || user.IsAdmin || user.Token != "new-token" {
+				t.Fatalf("incorrect update result: %+v, error %v", user, err)
+			}
+			if calls != 1 || !body.closed {
+				t.Errorf("requests = %d, body closed = %t", calls, body.closed)
+			}
+		})
+	}
+}
+
+func TestUpdateUserPartialRequest(t *testing.T) {
+	for _, response := range []string{
+		`{"id":7,"username":"renamed","is_admin":false,"revision":5}`,
+		`{"id":7,"username":"renamed","is_admin":false,"revision":5,"token":"unexpected-secret"}`,
+	} {
+		c := New("https://hister.test", WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			var payload map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload) != 2 || payload["revision"] != float64(4) || payload["username"] != "renamed" {
+				t.Errorf("partial request changed omitted fields: %v", payload)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response))}, nil
+		})}))
+		_, err := c.UpdateUser(t.Context(), 7, UserUpdate{Revision: 4, Username: new("renamed")})
+		if (err != nil) != strings.Contains(response, "token") {
+			t.Fatalf("partial update error = %v", err)
+		}
+	}
+}
+
+func TestUpdateUserDoesNotRedirectPassword(t *testing.T) {
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			calls := 0
+			c := New("https://hister.test", WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: status, Header: http.Header{"Location": {"https://other.test/api/users/7"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+			})}))
+			_, err := c.UpdateUser(t.Context(), 7, UserUpdate{Revision: 1, Password: new("replacement123")})
+			if err == nil || !strings.Contains(err.Error(), "different origin") || calls != 1 {
+				t.Fatalf("password redirect: requests = %d, error = %v", calls, err)
+			}
+		})
+	}
+}
+
+func TestUpdateUserRequiresIDAndRevision(t *testing.T) {
+	for _, tc := range []struct {
+		id       uint
+		revision uint64
+	}{{0, 1}, {7, 0}, {7, 9223372036854775807}, {7, 18446744073709551615}} {
+		c := New("https://hister.test", WithHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			t.Error("invalid update identifiers contacted the server")
+			return nil, errors.New("unexpected request")
+		})}))
+		if user, err := c.UpdateUser(t.Context(), tc.id, UserUpdate{Revision: tc.revision, RegenerateToken: true}); err == nil || user != nil {
+			t.Fatalf("invalid update identifiers: user = %+v, error = %v", user, err)
+		}
 	}
 }

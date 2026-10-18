@@ -633,3 +633,256 @@ func TestEmbeddingConfigWarning(t *testing.T) {
 		})
 	}
 }
+
+func newUpdateUserTestCommand() *cobra.Command {
+	command := &cobra.Command{Use: updateUserCmd.Use, Args: updateUserCmd.Args, Run: updateUserCmd.Run, RunE: updateUserCmd.RunE, SilenceUsage: true, SilenceErrors: true}
+	command.Flags().String("username", "", "")
+	command.Flags().Bool("password", false, "")
+	command.Flags().Bool("regen-token", false, "")
+	command.Flags().Bool("toggle-admin", false, "")
+	return command
+}
+
+func TestUpdateUserUsesRemoteAccount(t *testing.T) {
+	previousConfig, previousDB, previousTransport, previousPrompt := cfg, model.DB, http.DefaultTransport, promptPassword
+	t.Cleanup(func() {
+		cfg, model.DB, http.DefaultTransport, promptPassword = previousConfig, previousDB, previousTransport, previousPrompt
+	})
+	cfg = testutil.InitModel(t)
+	cfg.App.UserHandling = false
+	cfg.App.AccessToken = "admin-token"
+	if err := cfg.UpdateBaseURL("https://remote.example/hister"); err != nil {
+		t.Fatal(err)
+	}
+	local := testutil.CreateUser(t, "alice")
+	localDB := model.DB
+	prompts, calls := 0, 0
+	promptPassword = func(string) (string, error) {
+		prompts++
+		if calls != 1 {
+			t.Errorf("password prompt must follow the remote lookup, requests = %d", calls)
+		}
+		return "replacement123", nil
+	}
+	var output bytes.Buffer
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		if req.URL.Host != "remote.example" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" {
+			t.Errorf("unexpected request: %s %s", req.Method, req.URL)
+		}
+		body := `{"users":[{"id":77,"username":"alice","is_admin":true,"revision":4}]}`
+		if calls == 1 {
+			if req.Method != http.MethodGet || req.URL.Path != "/hister/api/users" || req.URL.Query().Get("username") != "alice" {
+				t.Errorf("unexpected lookup: %s %s", req.Method, req.URL)
+			}
+		} else {
+			if calls != 2 || req.Method != http.MethodPatch || req.URL.Path != "/hister/api/users/77" {
+				t.Errorf("unexpected update: %s %s", req.Method, req.URL)
+			}
+			var fields map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&fields); err != nil {
+				t.Fatal(err)
+			}
+			if len(fields) != 5 || fields["revision"] != float64(4) || fields["username"] != "renamed" || fields["password"] != "replacement123" || fields["is_admin"] != false || fields["regenerate_token"] != true {
+				t.Errorf("incorrect combined update fields: %v", fields)
+			}
+			if output.Len() != 0 || prompts != 2 {
+				t.Errorf("output before success = %q, password prompts = %d", output.String(), prompts)
+			}
+			body = `{"id":77,"username":"renamed","is_admin":false,"revision":5,"token":"new-user-token"}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	command := newUpdateUserTestCommand()
+	command.SetOut(&output)
+	command.SetArgs([]string{"alice", "--username", "renamed", "--password", "--regen-token", "--toggle-admin"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || prompts != 2 {
+		t.Errorf("requests = %d, password prompts = %d", calls, prompts)
+	}
+	current, err := model.GetUserByID(local.ID)
+	if err != nil || *current != *local || model.DB != localDB {
+		t.Fatalf("remote update changed local data: %v", err)
+	}
+	text := ansi.Strip(output.String())
+	for _, want := range []string{"Username changed: alice", "renamed", "Password changed for renamed", "Admin disabled for renamed", "new-user-token"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output = %q, missing %q", text, want)
+		}
+	}
+	if strings.Contains(text, "replacement123") || strings.Contains(text, "admin-token") || strings.Contains(text, local.Token) {
+		t.Fatal("output disclosed unrelated credentials")
+	}
+}
+
+func TestUpdateUserConnectionFlags(t *testing.T) {
+	if updateUserCmd.Annotations[executionScopeAnnotation] != string(executionScopeRemote) {
+		t.Error("update-user is not classified as remote")
+	}
+	flags, _ := applicableGlobalFlags(updateUserCmd)
+	for _, name := range []string{"server-url", "token", "client-timeout"} {
+		if !flags[name] {
+			t.Errorf("connection flag %q is not applicable", name)
+		}
+	}
+	if updateUserCmd.PreRun != nil || updateUserCmd.PreRunE != nil {
+		t.Error("update-user still initializes local user handling")
+	}
+}
+
+func TestUpdateUserRemoteErrorsDoNotFallBack(t *testing.T) {
+	for _, tc := range []struct {
+		name, response, wantError string
+		status                    int
+		lookup                    bool
+		transportError            bool
+	}{
+		{name: "lookup denied", response: "denied", status: 403, lookup: true, wantError: "access denied"},
+		{name: "lookup unsupported", response: "not found", status: 404, lookup: true, wantError: "not found"},
+		{name: "missing account", response: `{"users":[]}`, status: 200, lookup: true, wantError: "not found"},
+		{name: "missing revision", response: `{"users":[{"id":77,"username":"alice","is_admin":true}]}`, status: 200, lookup: true, wantError: "upgrade"},
+		{name: "stale revision", response: `{"code":"stale_revision","error":"user has changed"}`, status: 409, wantError: "stale_revision"},
+		{name: "last administrator", response: `{"code":"last_admin","error":"cannot remove the last administrator"}`, status: 409, wantError: "last_admin"},
+		{name: "duplicate username", response: `{"code":"username_exists","error":"username already exists"}`, status: 409, wantError: "username_exists"},
+		{name: "update denied", response: "denied", status: 403, wantError: "access denied"},
+		{name: "update unsupported", response: "not found", status: 404, wantError: "not found"},
+		{name: "server error", response: "unavailable", status: 500, wantError: "server error"},
+		{name: "invalid update response", response: `{}`, status: 200, wantError: "invalid user update response"},
+		{name: "connection lost", transportError: true, wantError: "connection lost"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previousConfig, previousDB, previousTransport, previousPrompt := cfg, model.DB, http.DefaultTransport, promptPassword
+			t.Cleanup(func() {
+				cfg, model.DB, http.DefaultTransport, promptPassword = previousConfig, previousDB, previousTransport, previousPrompt
+			})
+			cfg = config.CreateDefaultConfig()
+			cfg.App.UserHandling = false
+			cfg.Server.Database = "/does/not/exist/hister.db"
+			model.DB = nil
+			calls, prompts := 0, 0
+			promptPassword = func(string) (string, error) { prompts++; return "replacement123", nil }
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if !tc.lookup && calls == 1 {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"users":[{"id":77,"username":"alice","is_admin":true,"revision":4}]}`))}, nil
+				}
+				if tc.transportError {
+					return nil, errors.New("connection lost")
+				}
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.response))}, nil
+			})
+			command := newUpdateUserTestCommand()
+			command.SetArgs([]string{"alice", "--username", "renamed", "--password", "--regen-token", "--toggle-admin"})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			if err := command.Execute(); err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("error = %v, want %q", err, tc.wantError)
+			}
+			wantCalls, wantPrompts := 2, 2
+			if tc.lookup {
+				wantCalls, wantPrompts = 1, 0
+			}
+			if calls != wantCalls || prompts != wantPrompts || output.Len() != 0 || model.DB != nil {
+				t.Fatalf("requests = %d, prompts = %d, output = %q, opened database = %t", calls, prompts, output.String(), model.DB != nil)
+			}
+		})
+	}
+}
+
+func TestUpdateUserInvalidInputDoesNotApplyChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name                              string
+		args                              []string
+		password, confirmation, wantError string
+		lookup                            bool
+		promptError                       error
+	}{
+		{name: "no changes", args: []string{"alice"}, wantError: "no changes"},
+		{name: "disabled changes", args: []string{"alice", "--password=false", "--toggle-admin=false", "--regen-token=false"}, wantError: "no changes"},
+		{name: "blank account", args: []string{" ", "--password"}, wantError: "username"},
+		{name: "empty new name", args: []string{"alice", "--username="}, wantError: "new username"},
+		{name: "blank new name", args: []string{"alice", "--username", " \t "}, wantError: "new username"},
+		{name: "control in name", args: []string{"alice", "--username", "ali\nce"}, wantError: "new username"},
+		{name: "short password", password: "1234567", lookup: true, wantError: "password"},
+		{name: "long password", password: strings.Repeat("é", 37), lookup: true, wantError: "password"},
+		{name: "mismatched password", password: "replacement123", confirmation: "different123", lookup: true, wantError: "match"},
+		{name: "cancelled password", promptError: errors.New("cancelled"), lookup: true, wantError: "cancelled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previousConfig, previousDB, previousTransport, previousPrompt := cfg, model.DB, http.DefaultTransport, promptPassword
+			t.Cleanup(func() {
+				cfg, model.DB, http.DefaultTransport, promptPassword = previousConfig, previousDB, previousTransport, previousPrompt
+			})
+			cfg = config.CreateDefaultConfig()
+			model.DB = nil
+			calls, prompts := 0, 0
+			promptPassword = func(string) (string, error) {
+				prompts++
+				if prompts == 1 {
+					return tc.password, tc.promptError
+				}
+				return tc.confirmation, nil
+			}
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if req.Method != http.MethodGet {
+					t.Error("invalid input sent an update")
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"users":[{"id":77,"username":"alice","is_admin":true,"revision":4}]}`))}, nil
+			})
+			command := newUpdateUserTestCommand()
+			args := tc.args
+			if tc.lookup {
+				args = []string{"alice", "--username", "renamed", "--password", "--toggle-admin", "--regen-token"}
+			}
+			command.SetArgs(args)
+			var output bytes.Buffer
+			command.SetOut(&output)
+			if err := command.Execute(); err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("error = %v, want %q", err, tc.wantError)
+			}
+			wantCalls := 0
+			if tc.lookup {
+				wantCalls = 1
+			}
+			if calls != wantCalls || (!tc.lookup && prompts != 0) || output.Len() != 0 || model.DB != nil {
+				t.Fatalf("requests = %d, prompts = %d, output = %q, opened database = %t", calls, prompts, output.String(), model.DB != nil)
+			}
+		})
+	}
+}
+
+func TestUpdateUserToggleUsesRemotePrivileges(t *testing.T) {
+	previousConfig, previousDB, previousTransport := cfg, model.DB, http.DefaultTransport
+	t.Cleanup(func() { cfg, model.DB, http.DefaultTransport = previousConfig, previousDB, previousTransport })
+	cfg = config.CreateDefaultConfig()
+	model.DB = nil
+	calls := 0
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		body := `{"users":[{"id":77,"username":"alice","is_admin":false,"revision":4}]}`
+		if req.Method == http.MethodPatch {
+			var fields map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&fields); err != nil {
+				t.Fatal(err)
+			}
+			if len(fields) != 2 || fields["revision"] != float64(4) || fields["is_admin"] != true {
+				t.Errorf("toggle changed omitted fields: %v", fields)
+			}
+			body = `{"id":77,"username":"alice","is_admin":true,"revision":5}`
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	command := newUpdateUserTestCommand()
+	command.SetArgs([]string{"alice", "--toggle-admin"})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || model.DB != nil || !strings.Contains(ansi.Strip(output.String()), "Admin enabled for alice") || strings.Contains(strings.ToLower(output.String()), "token") {
+		t.Fatalf("requests = %d, output = %q, opened database = %t", calls, output.String(), model.DB != nil)
+	}
+}

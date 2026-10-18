@@ -241,15 +241,6 @@ func parseDateRangeFlags(cmd *cobra.Command) (dateRangeFlags, error) {
 	return r, nil
 }
 
-func requireUserHandlingAndInitDB(accessMode model.AccessMode) func(*cobra.Command, []string) {
-	return func(_ *cobra.Command, _ []string) {
-		if !cfg.App.UserHandling {
-			exit(1, "user_handling is not enabled in configuration")
-		}
-		initDB(accessMode)
-	}
-}
-
 func init() {
 	dcfg := config.CreateDefaultConfig()
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.yml", "config file (default paths: ./config.yml or $HOME/.histerrc or $HOME/.config/hister/config.yml)")

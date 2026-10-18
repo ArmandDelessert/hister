@@ -93,10 +93,10 @@ hister -t <your-token> search "query"
 
 ## User Management Commands
 
-`create-user`, `show-user`, and `delete-user` use the configured running server and
-require an administrator's personal access token. `create-user --offline` and
-`update-user` require `user_handling: true` in the local configuration and direct
-access to the server's data.
+`create-user`, `show-user`, `update-user`, and `delete-user` use the configured
+running server and require an administrator's personal access token.
+`create-user --offline` requires `user_handling: true` in the local configuration
+and direct access to the server's data.
 
 ### `create-user`
 
@@ -190,10 +190,16 @@ Updated at: 2026-03-26 09:00:00
 
 ### `update-user`
 
-Modify an existing user account. At least one flag must be provided.
+Modify an existing account on the configured running server. User handling must
+be enabled on that server, and the command requires an administrator's personal
+access token. Local user handling does not need to be enabled. At least one
+change must be requested.
 
 ```bash
 hister update-user USERNAME [--username NEW] [--password] [--regen-token] [--toggle-admin]
+
+# Rename an account and change its password together on a remote server
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN update-user alice --username alice-new --password
 ```
 
 | Flag             | Description                                                        |
@@ -203,8 +209,25 @@ hister update-user USERNAME [--username NEW] [--password] [--regen-token] [--tog
 | `--regen-token`  | Generate a new access token and print it. Invalidates the old one. |
 | `--toggle-admin` | Toggle admin status on or off.                                     |
 
-Flags may be combined. When `--username` is used together with other flags, the rename is applied first.
-Passwords must contain 8 to 72 UTF-8 bytes and are entered twice for confirmation.
+Flags may be combined. All requested changes are applied together. Cancelling
+password entry, entering mismatched passwords, or submitting an invalid change
+leaves the account unchanged. Passwords must contain 8 to 72 UTF-8 bytes and are
+entered twice for confirmation. Confirmations and any new token are displayed
+only after the server accepts the update.
+
+If the account changes while you are entering a password or submitting the
+update, the server rejects the request. Inspect the account with `show-user`
+and review your intended changes before trying again. The command does not
+retry conflicting updates automatically. The last administrator cannot be
+demoted; create or promote another administrator first.
+
+The server must support remote user updates. If an older server rejects the
+request, upgrade it and retry. The command does not fall back to modifying local
+accounts. If the connection fails after submission, inspect the account before
+trying again, because the server may already have applied the update.
+
+When rotating your own token, save the new token and use it with `--token` or
+update `access_token` in your configuration for subsequent commands.
 
 Changing a password signs that user out of all existing browser sessions,
 including OAuth sessions. They can sign in again with the new password or their

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/server/model"
 
 	"charm.land/bubbles/v2/textinput"
@@ -119,61 +120,71 @@ var showUserCmd = &cobra.Command{
 }
 
 var updateUserCmd = &cobra.Command{
-	Use:    "update-user USERNAME",
-	Short:  "Update a user",
-	Long:   "Update a user account (requires user_handling to be enabled). Use flags to change username or password, regenerate token, or toggle admin status.",
-	Args:   cobra.ExactArgs(1),
-	PreRun: requireUserHandlingAndInitDB(model.ReadWrite),
-	Run: func(cmd *cobra.Command, args []string) {
+	Use:   "update-user USERNAME",
+	Short: "Update a user on the server",
+	Long:  "Update a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Combine flags to change the username or password, regenerate the token, or toggle administrator status in one update. Concurrent account changes are rejected; review the account before retrying.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		username := args[0]
-		changed := false
-
-		if newUsername, _ := cmd.Flags().GetString("username"); newUsername != "" {
-			if err := model.UpdateUsername(username, newUsername); err != nil {
-				exit(1, "Failed to update username: "+err.Error())
-			}
-			cliPrintln(cliSuccessStyle.Render("✓") + " Username changed: " + cliInfoStyle.Render(username) + " → " + cliInfoStyle.Render(newUsername))
-			username = newUsername
-			changed = true
+		if strings.TrimSpace(username) == "" || strings.ContainsFunc(username, unicode.IsControl) {
+			return errors.New("username must not be blank or contain control characters")
 		}
-
-		if changePassword, _ := cmd.Flags().GetBool("password"); changePassword {
+		var changes client.UserUpdate
+		if cmd.Flags().Changed("username") {
+			newUsername, _ := cmd.Flags().GetString("username")
+			if strings.TrimSpace(newUsername) == "" || strings.ContainsFunc(newUsername, unicode.IsControl) {
+				return errors.New("new username must not be blank or contain control characters")
+			}
+			changes.Username = &newUsername
+		}
+		changePassword, _ := cmd.Flags().GetBool("password")
+		changes.RegenerateToken, _ = cmd.Flags().GetBool("regen-token")
+		toggleAdmin, _ := cmd.Flags().GetBool("toggle-admin")
+		if changes.Username == nil && !changePassword && !changes.RegenerateToken && !toggleAdmin {
+			return errors.New("no changes specified; use --username, --password, --regen-token, or --toggle-admin")
+		}
+		c := newClient()
+		user, err := c.GetUser(cmd.Context(), username)
+		if err != nil {
+			return fmt.Errorf("failed to get user: %w", err)
+		}
+		if user.Revision == 0 {
+			return errors.New("server did not provide an account revision; upgrade the server to support user updates")
+		}
+		changes.Revision = user.Revision
+		if toggleAdmin {
+			changes.IsAdmin = new(!user.IsAdmin)
+		}
+		if changePassword {
 			password, err := promptConfirmedPassword("New password: ", "Confirm new password: ")
 			if err != nil {
-				exit(1, err.Error())
+				return err
 			}
-			if err := model.UpdatePassword(username, password); err != nil {
-				exit(1, "Failed to update password: "+err.Error())
-			}
-			cliPrintln(cliSuccessStyle.Render("✓") + " Password changed for " + cliInfoStyle.Render(username))
-			changed = true
+			changes.Password = &password
 		}
-
-		if regen, _ := cmd.Flags().GetBool("regen-token"); regen {
-			token, err := model.RegenerateTokenByUsername(username)
-			if err != nil {
-				exit(1, "Failed to regenerate token: "+err.Error())
-			}
-			cliPrintln(cliSuccessStyle.Render("✓") + " New token for " + cliInfoStyle.Render(username) + ": " + cliInfoStyle.Render(token))
-			changed = true
+		updated, err := c.UpdateUser(cmd.Context(), user.ID, changes)
+		if err != nil {
+			return fmt.Errorf("failed to update user: %w", err)
 		}
-
-		if toggle, _ := cmd.Flags().GetBool("toggle-admin"); toggle {
-			isAdmin, err := model.ToggleAdmin(username)
-			if err != nil {
-				exit(1, "Failed to toggle admin: "+err.Error())
-			}
+		var lines []string
+		if changes.Username != nil {
+			lines = append(lines, cliSuccessStyle.Render("✓")+" Username changed: "+cliInfoStyle.Render(username)+" → "+cliInfoStyle.Render(updated.Username))
+		}
+		if changePassword {
+			lines = append(lines, cliSuccessStyle.Render("✓")+" Password changed for "+cliInfoStyle.Render(updated.Username))
+		}
+		if changes.RegenerateToken {
+			lines = append(lines, cliSuccessStyle.Render("✓")+" New token for "+cliInfoStyle.Render(updated.Username)+": "+cliInfoStyle.Render(updated.Token))
+		}
+		if toggleAdmin {
 			status := "disabled"
-			if isAdmin {
+			if updated.IsAdmin {
 				status = "enabled"
 			}
-			cliPrintln(cliSuccessStyle.Render("✓") + " Admin " + status + " for " + cliInfoStyle.Render(username))
-			changed = true
+			lines = append(lines, cliSuccessStyle.Render("✓")+" Admin "+status+" for "+cliInfoStyle.Render(updated.Username))
 		}
-
-		if !changed {
-			exit(1, "no changes specified - use --username, --password, --regen-token, or --toggle-admin")
-		}
+		_, err = lipgloss.Fprintln(cmd.OutOrStdout(), strings.Join(lines, "\n"))
+		return err
 	},
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -199,6 +200,36 @@ func (c *Client) CreateUser(ctx context.Context, username, password string, isAd
 	}
 	if result.ID == 0 || result.Username != username || result.IsAdmin != isAdmin {
 		return nil, errors.New("invalid user creation response")
+	}
+	return &result, nil
+}
+
+// UpdateUser applies account changes together using the revision from a prior read.
+// Conflicts are returned to the caller without retrying the update.
+func (c *Client) UpdateUser(ctx context.Context, userID uint, changes UserUpdate) (*UserUpdateResult, error) {
+	if userID == 0 {
+		return nil, errors.New("user ID must be positive")
+	}
+	if changes.Revision == 0 || changes.Revision >= math.MaxInt64 {
+		return nil, errors.New("a valid current user revision is required")
+	}
+	data, err := json.Marshal(changes)
+	if err != nil {
+		return nil, err
+	}
+	var result UserUpdateResult
+	// Protect passwords even when the caller did not supply an access token.
+	err = c.requestWithClient(ctx, sameOriginHTTPClient(c.httpClient), http.MethodPatch, fmt.Sprintf("/api/users/%d", userID), bytes.NewReader(data), "application/json", func(resp *http.Response) error {
+		return decodeResponse(resp, &result)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.ID != userID || result.Username == "" || result.Revision != changes.Revision+1 ||
+		(changes.Username != nil && result.Username != *changes.Username) ||
+		(changes.IsAdmin != nil && result.IsAdmin != *changes.IsAdmin) ||
+		(changes.RegenerateToken != (result.Token != "")) {
+		return nil, errors.New("invalid user update response")
 	}
 	return &result, nil
 }

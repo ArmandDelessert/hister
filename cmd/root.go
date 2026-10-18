@@ -350,6 +350,7 @@ func init() {
 	exportCmd.Flags().String("end-date", "", "only export documents updated on or before this date (YYYY-MM-DD)")
 
 	createUserCmd.Flags().Bool("admin", false, "create user with admin privileges")
+	createUserCmd.Flags().Bool("offline", false, "create user directly in the configured database (server must be stopped); prints the new token with --admin")
 
 	updateUserCmd.Flags().String("username", "", "new username")
 	updateUserCmd.Flags().Bool("password", false, "change password")

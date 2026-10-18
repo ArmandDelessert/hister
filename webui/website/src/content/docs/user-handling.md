@@ -18,7 +18,11 @@ app:
 
 > **Note**: When `user_handling` is active, `access_token` is used only to authenticate users by comparing it to the user's access token. This can be useful when the Hister admin sets `app.access_token` in the configuration file to their personal access token in order to execute command-line Hister commands as the admin user.
 
-After enabling user handling, restart the server. For password login, create at least one user account before attempting to log in. OAuth and proxy authentication can create accounts automatically. Setting `server.proxy_auth_header` also enables user handling automatically.
+After enabling user handling, create your first administrator with
+[`create-user --offline --admin`](#create-user) while the server is stopped, then
+start the server. OAuth and proxy authentication can create ordinary accounts
+automatically. Setting `server.proxy_auth_header` also enables user handling
+automatically.
 
 ## Authentication
 
@@ -89,19 +93,45 @@ hister -t <your-token> search "query"
 
 ## User Management Commands
 
-`create-user` and `update-user` require `user_handling: true` in the local configuration and direct access to the server's data. `show-user` and `delete-user` operate entirely through the configured running server and require an administrator's personal access token.
+`create-user`, `show-user`, and `delete-user` use the configured running server and
+require an administrator's personal access token. `create-user --offline` and
+`update-user` require `user_handling: true` in the local configuration and direct
+access to the server's data.
 
 ### `create-user`
 
-Create a new user account. Prompts interactively for a password (minimum 8 characters).
+Create a new account on the configured running server. User handling must be
+enabled on that server; it does not need to be enabled locally. The command
+prompts for a password twice. Passwords must contain 8 to 72 UTF-8 bytes; a
+Unicode character may occupy multiple bytes.
 
 ```bash
-hister create-user USERNAME [--admin]
+hister create-user USERNAME [--admin] [--offline]
+
+# Create an account on a remote server
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN create-user alice
 ```
 
-| Flag      | Description                      |
-| --------- | -------------------------------- |
-| `--admin` | Grant the user admin privileges. |
+| Flag        | Description                                                                         |
+| ----------- | ----------------------------------------------------------------------------------- |
+| `--admin`   | Grant the user admin privileges.                                                    |
+| `--offline` | Create the account directly in the configured database. The server must be stopped. |
+
+To create the first administrator or recover access, stop the server and use its
+configuration and data directory:
+
+```bash
+hister --config /path/to/config.yml create-user admin --offline --admin
+```
+
+Choose an unused username. Offline creation with `--admin` prints the new account's
+access token. After starting the server, use this token with `--token` to manage
+other accounts. Offline creation of an ordinary account does not print its token.
+
+Creation through the server displays a confirmation without retrieving the new
+token. Use `show-user USERNAME --show-token` if you need it. The server must support
+remote user creation. If it rejects the request or cannot be reached, the command
+reports an error without creating a local account.
 
 ### `delete-user`
 
@@ -174,7 +204,7 @@ hister update-user USERNAME [--username NEW] [--password] [--regen-token] [--tog
 | `--toggle-admin` | Toggle admin status on or off.                                     |
 
 Flags may be combined. When `--username` is used together with other flags, the rename is applied first.
-Passwords must contain at least eight characters and are entered twice for confirmation.
+Passwords must contain 8 to 72 UTF-8 bytes and are entered twice for confirmation.
 
 ## Per-User Rules and Aliases
 

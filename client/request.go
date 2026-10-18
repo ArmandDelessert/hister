@@ -12,9 +12,13 @@ import (
 	"strings"
 )
 
-// request owns the response body. The handler runs before it is closed so a
+func (c *Client) request(ctx context.Context, method, path string, body io.Reader, contentType string, handle func(*http.Response) error) error {
+	return c.requestWithClient(ctx, c.httpClient, method, path, body, contentType, handle)
+}
+
+// requestWithClient owns the response body. The handler runs before it is closed so a
 // response validation error takes precedence over a body close error.
-func (c *Client) request(ctx context.Context, method, path string, body io.Reader, contentType string, handle func(*http.Response) error) (err error) {
+func (c *Client) requestWithClient(ctx context.Context, httpClient *http.Client, method, path string, body io.Reader, contentType string, handle func(*http.Response) error) (err error) {
 	req, err := c.newRequest(method, path, body)
 	if err != nil {
 		return err
@@ -22,7 +26,7 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}

@@ -294,6 +294,10 @@ func TestRequestCancellation(t *testing.T) {
 		"config":      func(c *Client, ctx context.Context) error { _, err := c.FetchConfigContext(ctx); return err },
 		"delete user": func(c *Client, ctx context.Context) error { _, err := c.DeleteUser(ctx, "alice", true); return err },
 		"get user":    func(c *Client, ctx context.Context) error { _, err := c.GetUser(ctx, "alice"); return err },
+		"create user": func(c *Client, ctx context.Context) error {
+			_, err := c.CreateUser(ctx, "alice", "password123", false)
+			return err
+		},
 		"user token":  func(c *Client, ctx context.Context) error { _, err := c.GetUserToken(ctx, 7); return err },
 		"diagnostics": func(c *Client, ctx context.Context) error { _, err := c.FetchDiagnostics(ctx); return err },
 		"exists": func(c *Client, ctx context.Context) error {
@@ -358,6 +362,74 @@ func TestGetUserResponse(t *testing.T) {
 			}
 			if !body.closed {
 				t.Error("lookup response was not closed")
+			}
+		})
+	}
+}
+
+func TestCreateUserResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		status         int
+		wantError      bool
+	}{
+		{"created", `{"id":7,"username":"alice","is_admin":true}`, http.StatusCreated, false},
+		{"empty response", `{}`, http.StatusCreated, true},
+		{"null response", `null`, http.StatusCreated, true},
+		{"wrong account", `{"id":7,"username":"bob","is_admin":true}`, http.StatusCreated, true},
+		{"wrong privileges", `{"id":7,"username":"alice","is_admin":false}`, http.StatusCreated, true},
+		{"invalid JSON", `<html>old server</html>`, http.StatusOK, true},
+		{"duplicate", `{"code":"username_exists","error":"username already exists"}`, http.StatusConflict, true},
+		{"denied", `denied`, http.StatusForbidden, true},
+		{"old server", `not found`, http.StatusNotFound, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedResponseBody{Reader: strings.NewReader(tc.response)}
+			calls := 0
+			c := New("https://hister.test/prefix", WithAccessToken("admin-token"), WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if req.Method != http.MethodPost || req.URL.Path != "/prefix/api/users" || req.URL.RawQuery != "" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" || req.Header.Get("Content-Type") != "application/json" {
+					t.Errorf("unexpected creation request: %s %s", req.Method, req.URL)
+				}
+				var payload map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if len(payload) != 3 || payload["username"] != "alice" || payload["password"] != "password123" || payload["is_admin"] != true {
+					t.Error("creation request has incorrect account fields")
+				}
+				return &http.Response{StatusCode: tc.status, Body: body}, nil
+			})}))
+			user, err := c.CreateUser(t.Context(), "alice", "password123", true)
+			if tc.wantError {
+				if err == nil || user != nil {
+					t.Fatalf("user = %+v, error = %v, want creation failure", user, err)
+				}
+			} else if err != nil || user == nil || user.ID != 7 || user.Username != "alice" || !user.IsAdmin {
+				t.Fatalf("user = %+v, error = %v", user, err)
+			}
+			if calls != 1 || !body.closed {
+				t.Errorf("requests = %d, response closed = %t", calls, body.closed)
+			}
+		})
+	}
+}
+
+func TestCreateUserDoesNotRedirectPassword(t *testing.T) {
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			calls := 0
+			// Passwords need protection even when no administrator token was supplied.
+			c := New("https://hister.test", WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if calls == 1 {
+					return &http.Response{StatusCode: status, Header: http.Header{"Location": {"https://other.test/api/users"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+				}
+				return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader(`{"id":7,"username":"alice","is_admin":false}`))}, nil
+			})}))
+			_, err := c.CreateUser(t.Context(), "alice", "password123", false)
+			if err == nil || !strings.Contains(err.Error(), "different origin") || calls != 1 {
+				t.Fatalf("password redirect: requests = %d, error = %v", calls, err)
 			}
 		})
 	}

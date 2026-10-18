@@ -38,7 +38,7 @@ command operates:
 
 **Local** commands use configured files or local Hister data directly and do not contact the
 configured Hister HTTP server. Examples include `hister crawl list`, `hister list-files`,
-`hister create-user`, and `hister update-user`.
+and `hister update-user`.
 
 **Remote** commands use the configured Hister HTTP server without opening the local Hister
 database or search index. Examples include `hister search`, `hister export`, `hister cleanup`,
@@ -46,6 +46,8 @@ database or search index. Examples include `hister search`, `hister export`, `hi
 
 **Hybrid** commands use or can use both local Hister state and the configured server. Examples
 include persistent `hister index` modes, `hister import browser`, and `hister list-urls --offline`.
+`hister create-user` also belongs to this group: it uses the server by default and
+creates an account directly in the configured database only with `--offline`.
 
 Use the scope label before running a command against a remote deployment. Local commands operate
 on the data directory selected by the local configuration even when `--server-url` is supplied.

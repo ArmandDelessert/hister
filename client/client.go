@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -98,26 +99,29 @@ func New(baseURL string, opts ...Option) *Client {
 		o(c)
 	}
 	if c.accessToken != "" {
-		// Keep caller supplied HTTP clients and their redirect policies intact.
-		// Go forwards custom authentication headers across origins by default.
-		hc := *c.httpClient
-		checkRedirect := hc.CheckRedirect
-		hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			if checkRedirect != nil {
-				if err := checkRedirect(req, via); err != nil {
-					return err
-				}
-			} else if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			if !sameOrigin(via[0].URL, req.URL) {
-				return errors.New("refusing to send the Hister access token to a different origin")
-			}
-			return nil
-		}
-		c.httpClient = &hc
+		c.httpClient = sameOriginHTTPClient(c.httpClient)
 	}
 	return c
+}
+
+// Preserve caller supplied clients and redirect policies while protecting credentials.
+func sameOriginHTTPClient(httpClient *http.Client) *http.Client {
+	hc := *httpClient
+	checkRedirect := hc.CheckRedirect
+	hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if checkRedirect != nil {
+			if err := checkRedirect(req, via); err != nil {
+				return err
+			}
+		} else if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if !sameOrigin(via[0].URL, req.URL) {
+			return errors.New("refusing to send credentials to a different origin")
+		}
+		return nil
+	}
+	return &hc
 }
 
 func sameOrigin(a, b *url.URL) bool {
@@ -172,6 +176,31 @@ func (c *Client) GetUser(ctx context.Context, username string) (*UserInfo, error
 		return nil, errors.New("invalid user lookup response")
 	}
 	return &result.Users[0], nil
+}
+
+// CreateUser creates an account on the connected server without retrieving credentials.
+func (c *Client) CreateUser(ctx context.Context, username, password string, isAdmin bool) (*UserInfo, error) {
+	payload := struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		IsAdmin  bool   `json:"is_admin"`
+	}{Username: username, Password: password, IsAdmin: isAdmin}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	var result UserInfo
+	// Protect the password even when the caller did not supply an access token.
+	err = c.requestWithClient(ctx, sameOriginHTTPClient(c.httpClient), http.MethodPost, "/api/users", bytes.NewReader(data), "application/json", func(resp *http.Response) error {
+		return decodeResponse(resp, &result)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.ID == 0 || result.Username != username || result.IsAdmin != isAdmin {
+		return nil, errors.New("invalid user creation response")
+	}
+	return &result, nil
 }
 
 // GetUserToken explicitly retrieves an account's existing token without rotating it.

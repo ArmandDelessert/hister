@@ -7,9 +7,11 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +143,246 @@ func newShowUserTestCommand() *cobra.Command {
 	cmd.Flags().Bool("show-token", false, "")
 	cmd.SetErr(io.Discard)
 	return cmd
+}
+
+func newCreateUserTestCommand() *cobra.Command {
+	command := &cobra.Command{Use: createUserCmd.Use, Args: createUserCmd.Args, Run: createUserCmd.Run, RunE: createUserCmd.RunE, PreRunE: createUserCmd.PreRunE, SilenceUsage: true}
+	command.Flags().Bool("admin", false, "")
+	command.Flags().Bool("offline", false, "")
+	command.SetErr(io.Discard)
+	return command
+}
+
+func TestCreateUserUsesServer(t *testing.T) {
+	previousConfig, previousDB, previousTransport, previousPrompt := cfg, model.DB, http.DefaultTransport, promptPassword
+	t.Cleanup(func() {
+		cfg, model.DB, http.DefaultTransport, promptPassword = previousConfig, previousDB, previousTransport, previousPrompt
+	})
+	cfg = testutil.InitModel(t)
+	cfg.App.UserHandling = false
+	cfg.App.AccessToken = "admin-token"
+	if err := cfg.UpdateBaseURL("https://remote.example/hister"); err != nil {
+		t.Fatal(err)
+	}
+	localDB := model.DB
+	prompts := 0
+	promptPassword = func(string) (string, error) {
+		prompts++
+		return "password123", nil
+	}
+	calls := 0
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		if req.Method != http.MethodPost || req.URL.String() != "https://remote.example/hister/api/users" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" {
+			t.Errorf("unexpected creation request: %s %s", req.Method, req.URL)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload) != 3 || payload["username"] != "alice" || payload["password"] != "password123" || payload["is_admin"] != true {
+			t.Error("creation request has incorrect account fields")
+		}
+		return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader(`{"id":77,"username":"alice","is_admin":true}`))}, nil
+	})
+	command := newCreateUserTestCommand()
+	command.SetArgs([]string{"alice", "--admin"})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || prompts != 2 {
+		t.Errorf("requests = %d, password prompts = %d, want 1 and 2", calls, prompts)
+	}
+	if model.DB != localDB {
+		t.Fatal("remote creation opened a local database")
+	}
+	if _, err := model.GetUser("alice"); err == nil {
+		t.Error("remote creation added a local account")
+	}
+	if !strings.Contains(output.String(), "User created: alice") || strings.Contains(output.String(), "password123") || strings.Contains(output.String(), "admin-token") {
+		t.Errorf("unexpected command output: %q", output.String())
+	}
+}
+
+func TestCreateUserConnectionFlags(t *testing.T) {
+	if createUserCmd.Annotations[executionScopeAnnotation] != string(executionScopeHybrid) {
+		t.Error("create-user is not classified as hybrid")
+	}
+	flags, _ := applicableGlobalFlags(createUserCmd)
+	for _, name := range []string{"server-url", "token", "client-timeout"} {
+		if !flags[name] {
+			t.Errorf("connection flag %s is not applicable", name)
+		}
+	}
+	if createUserCmd.PreRun != nil {
+		t.Error("create-user still unconditionally initializes the local database")
+	}
+	if flag := createUserCmd.Flags().Lookup("offline"); flag == nil || flag.Value.Type() != "bool" || flag.DefValue != "false" {
+		t.Error("create-user does not have an explicit --offline flag")
+	}
+}
+
+func TestCreateUserWithoutLocalDatabase(t *testing.T) {
+	previousConfig, previousDB, previousTransport, previousPrompt := cfg, model.DB, http.DefaultTransport, promptPassword
+	t.Cleanup(func() {
+		cfg, model.DB, http.DefaultTransport, promptPassword = previousConfig, previousDB, previousTransport, previousPrompt
+	})
+	cfg = config.CreateDefaultConfig()
+	cfg.App.UserHandling = false
+	cfg.Server.Database = "/does/not/exist/hister.db"
+	model.DB = nil
+	promptPassword = func(string) (string, error) { return "password123", nil }
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		wantError  bool
+	}{
+		{"ordinary user", `{"id":77,"username":"alice","is_admin":false}`, http.StatusCreated, false},
+		{"denied", "permission denied", http.StatusForbidden, true},
+		{"old server", "not found", http.StatusNotFound, true},
+		{"duplicate", `{"code":"username_exists","error":"username already exists"}`, http.StatusConflict, true},
+		{"invalid response", `<html>old server</html>`, http.StatusOK, true},
+		{"connection failure", "", 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				var payload map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if payload["is_admin"] != false {
+					t.Error("creation requested administrator privileges by default")
+				}
+				if tc.status == 0 {
+					return nil, io.ErrUnexpectedEOF
+				}
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+			})
+			command := newCreateUserTestCommand()
+			command.SetArgs([]string{"alice"})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			if err := command.Execute(); (err != nil) != tc.wantError {
+				t.Fatalf("error = %v, want error = %t", err, tc.wantError)
+			}
+			if calls != 1 || model.DB != nil {
+				t.Fatalf("requests = %d, opened local database = %t", calls, model.DB != nil)
+			}
+			if tc.wantError && output.Len() != 0 {
+				t.Fatalf("reported success on failure: %s", &output)
+			}
+		})
+	}
+}
+
+func TestCreateUserOffline(t *testing.T) {
+	for _, isAdmin := range []bool{false, true} {
+		t.Run(fmt.Sprintf("admin=%t", isAdmin), func(t *testing.T) {
+			previousConfig, previousDB, previousTransport, previousPrompt := cfg, model.DB, http.DefaultTransport, promptPassword
+			t.Cleanup(func() {
+				cfg, model.DB, http.DefaultTransport, promptPassword = previousConfig, previousDB, previousTransport, previousPrompt
+			})
+			cfg = testutil.Config(t)
+			cfg.App.UserHandling = true
+			cfg.App.AccessToken = "remote-admin-token"
+			model.DB = nil
+			t.Cleanup(func() {
+				if model.DB != nil {
+					db, err := model.DB.DB()
+					if err != nil {
+						t.Error(err)
+					} else if err := db.Close(); err != nil {
+						t.Error(err)
+					}
+				}
+			})
+			promptPassword = func(string) (string, error) { return "password123", nil }
+			http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+				t.Error("offline creation contacted the server")
+				return nil, errors.New("unexpected request")
+			})
+			command := newCreateUserTestCommand()
+			command.SetArgs([]string{"alice", "--offline", fmt.Sprintf("--admin=%t", isAdmin)})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if model.DB == nil {
+				t.Fatal("offline creation did not open the database")
+			}
+			user, err := model.AuthenticateUser("alice", "password123")
+			if err != nil || user.IsAdmin != isAdmin || user.Token == "" {
+				t.Fatalf("offline account has incorrect credentials or privileges: %v", err)
+			}
+			if !strings.Contains(output.String(), "User created: alice") || strings.Contains(output.String(), user.Token) != isAdmin {
+				t.Fatal("offline creation must print the token only for an administrator")
+			}
+			if strings.Contains(output.String(), "password123") || strings.Contains(output.String(), "remote-admin-token") {
+				t.Fatal("offline output disclosed other credentials")
+			}
+		})
+	}
+}
+
+func TestCreateUserInvalidInput(t *testing.T) {
+	for _, tc := range []struct {
+		name, username, password, confirmation, wantError string
+		offline, disabled, invalidDB                      bool
+		promptError                                       error
+	}{
+		{name: "blank username", username: " ", wantError: "username"},
+		{name: "control character", username: "ali\nce", wantError: "username"},
+		{name: "short password", username: "alice", password: "1234567", wantError: "password"},
+		{name: "long password", username: "alice", password: strings.Repeat("é", 37), wantError: "password"},
+		{name: "mismatch", username: "alice", password: "password123", confirmation: "different", wantError: "match"},
+		{name: "cancelled", username: "alice", promptError: errors.New("cancelled"), wantError: "cancelled"},
+		{name: "offline disabled", username: "alice", offline: true, disabled: true, wantError: "user_handling"},
+		{name: "offline cancelled", username: "alice", offline: true, promptError: errors.New("cancelled"), wantError: "cancelled"},
+		{name: "offline database unavailable", username: "alice", offline: true, invalidDB: true, password: "password123", confirmation: "password123", wantError: "database"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previousConfig, previousDB, previousTransport, previousPrompt := cfg, model.DB, http.DefaultTransport, promptPassword
+			t.Cleanup(func() {
+				cfg, model.DB, http.DefaultTransport, promptPassword = previousConfig, previousDB, previousTransport, previousPrompt
+			})
+			cfg = testutil.Config(t)
+			cfg.App.UserHandling = !tc.disabled
+			if tc.invalidDB {
+				cfg.App.Directory = filepath.Join(cfg.App.Directory, "missing")
+			}
+			model.DB = nil
+			prompts := 0
+			promptPassword = func(string) (string, error) {
+				prompts++
+				if prompts == 1 {
+					return tc.password, tc.promptError
+				}
+				return tc.confirmation, nil
+			}
+			http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+				t.Error("invalid input contacted the server")
+				return nil, errors.New("unexpected request")
+			})
+			command := newCreateUserTestCommand()
+			command.SetArgs([]string{tc.username, fmt.Sprintf("--offline=%t", tc.offline)})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			if err := command.Execute(); err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("error = %v, want %q", err, tc.wantError)
+			}
+			if !tc.invalidDB && model.DB != nil {
+				t.Fatal("invalid input opened a local database")
+			}
+			if output.Len() != 0 {
+				t.Fatalf("reported success on failure: %s", &output)
+			}
+		})
+	}
 }
 
 func TestShowUserUsesRemoteAccount(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/asciimoo/hister/server/model"
 
@@ -18,22 +19,45 @@ import (
 )
 
 var createUserCmd = &cobra.Command{
-	Use:    "create-user USERNAME",
-	Short:  "Create a new user",
-	Long:   "Create a new user account (requires user_handling to be enabled)",
-	Args:   cobra.ExactArgs(1),
-	PreRun: requireUserHandlingAndInitDB(model.ReadWrite),
-	Run: func(cmd *cobra.Command, args []string) {
+	Use:   "create-user USERNAME",
+	Short: "Create a user on the server",
+	Long:  "Create a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Use --offline to create an account directly in the configured database with the server stopped. Offline administrator creation prints the new access token for bootstrap or recovery.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		username := args[0]
+		if strings.TrimSpace(username) == "" || strings.ContainsFunc(username, unicode.IsControl) {
+			return errors.New("username must not be blank or contain control characters")
+		}
+		offline, _ := cmd.Flags().GetBool("offline")
+		if offline && !cfg.App.UserHandling {
+			return errors.New("user_handling is not enabled in configuration")
+		}
 		password, err := promptConfirmedPassword("Password: ", "Confirm password: ")
 		if err != nil {
-			exit(1, err.Error())
+			return err
 		}
 		isAdmin, _ := cmd.Flags().GetBool("admin")
-		if _, err := model.CreateUser(username, password, isAdmin); err != nil {
-			exit(1, "Failed to create user: "+err.Error())
+		var bootstrapToken string
+		if offline {
+			if err := model.Init(cfg); err != nil {
+				return fmt.Errorf("failed to initialize database: %w", err)
+			}
+			user, err := model.CreateUser(username, password, isAdmin)
+			if err != nil {
+				return fmt.Errorf("failed to create user: %w", err)
+			}
+			if isAdmin {
+				bootstrapToken = user.Token
+			}
+		} else if _, err := newClient().CreateUser(cmd.Context(), username, password, isAdmin); err != nil {
+			return fmt.Errorf("failed to create user: %w", err)
 		}
-		cliPrintln(cliSuccessStyle.Render("✓") + " User created: " + cliInfoStyle.Render(username))
+		output := cliSuccessStyle.Render("✓") + " User created: " + cliInfoStyle.Render(username)
+		if bootstrapToken != "" {
+			output += "\n" + cliInfoStyle.Render("Token:      ") + bootstrapToken
+		}
+		_, err = lipgloss.Fprintln(cmd.OutOrStdout(), output)
+		return err
 	},
 }
 
@@ -158,8 +182,8 @@ func promptConfirmedPassword(passwordPrompt, confirmationPrompt string) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to read password: %w", err)
 	}
-	if len(password) < 8 {
-		return "", errors.New("password must be at least 8 characters long")
+	if len(password) < 8 || len(password) > 72 {
+		return "", errors.New("password must contain between 8 and 72 UTF-8 bytes")
 	}
 	confirmation, err := promptPassword(confirmationPrompt)
 	if err != nil {
@@ -205,7 +229,7 @@ func (m passwordModel) View() tea.View {
 	return tea.NewView(m.input.View() + "\n")
 }
 
-func promptPassword(prompt string) (string, error) {
+var promptPassword = func(prompt string) (string, error) {
 	ti := textinput.New()
 	ti.Placeholder = ""
 	ti.EchoMode = textinput.EchoPassword

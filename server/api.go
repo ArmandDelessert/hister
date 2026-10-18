@@ -892,6 +892,17 @@ func init() {
 			Description: "Return the existing access token for the positive numeric user ID in the path, without rotating it. Requires administrator access and user handling. Returns a token object with Cache-Control: no-store.",
 		},
 		{
+			Name:         "Rotate user token",
+			Path:         "/api/users/{id}/token",
+			Method:       POST,
+			CSRFRequired: true,
+			Handler:      serveRotateUserToken,
+			Description:  "Replace the access token for the positive numeric user ID in the path. Requires user handling and the current account revision. Users can rotate their own token; administrators can also rotate other accounts' tokens. Returns token and revision with Cache-Control: no-store, or 409 for a stale revision. The old token stops working; browser sessions remain valid.",
+			JSONSchema: []*JSONSchemaField{
+				{Name: "revision", Type: "int", Required: true, Description: "Current account revision from a user read or creation response."},
+			},
+		},
+		{
 			Name:         "Delete user",
 			Path:         "/api/delete_user",
 			Method:       POST,
@@ -1208,15 +1219,7 @@ func init() {
 			Method:       GET,
 			CSRFRequired: false,
 			Handler:      serveProfile,
-			Description:  "Return the authenticated user's profile information",
-		},
-		{
-			Name:         "GenerateToken",
-			Path:         "/api/profile/token",
-			Method:       POST,
-			CSRFRequired: true,
-			Handler:      serveGenerateToken,
-			Description:  "Regenerate the API access token for the current user",
+			Description:  "Return the authenticated user's profile information, including user_id and the current account revision in user handling mode",
 		},
 		{
 			Name:        "MCP",

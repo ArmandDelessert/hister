@@ -1370,3 +1370,363 @@ func TestUpdateUserAPIDatabaseFailure(t *testing.T) {
 		t.Fatalf("database failure left partial changes: %v", err)
 	}
 }
+
+func TestRotateUserTokenAPI(t *testing.T) {
+	cfg, _, idx, admin := newUserDeletionTestServer(t)
+	if err := cfg.UpdateBaseURL("http://127.0.0.1:4433/hister"); err != nil {
+		t.Fatal(err)
+	}
+	handler := registerEndpoints(cfg, idx)
+	alice := testutil.CreateUser(t, "alice")
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/hister/api/login", strings.NewReader(`{"username":"alice","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	cookie := responseSessionCookie(t, login)
+	path := fmt.Sprintf("/hister/api/users/%d/token", alice.ID)
+	response := testutil.ServeHTTP(t, handler, http.MethodPost, path, strings.NewReader(`{"revision":1}`), map[string]string{"Authorization": "Bearer " + admin.Token, "Origin": "hister://"})
+	var result struct {
+		Token    string
+		Revision uint64
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusOK {
+		t.Fatalf("rotation: %d %s, error %v", response.Code, response.Body, err)
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 2 || result.Token == "" || result.Token == alice.Token || result.Revision != 2 || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("incorrect rotation response: %s", response.Body)
+	}
+	updated, err := model.AuthenticateUser("alice", "password123")
+	if err != nil || updated.Token != result.Token || updated.Revision != 2 {
+		t.Fatalf("rotation was not persisted: %v", err)
+	}
+	// Rotation changes only the token, revision, and modification timestamp.
+	unchanged := *updated
+	unchanged.Token, unchanged.Revision, unchanged.UpdatedAt = alice.Token, alice.Revision, alice.UpdatedAt
+	if unchanged != *alice {
+		t.Fatal("rotation changed other account fields")
+	}
+	for _, token := range []string{alice.Token, result.Token} {
+		profile := testutil.ServeHTTP(t, handler, http.MethodGet, "/hister/api/profile", nil, map[string]string{"Authorization": "Bearer " + token})
+		want := http.StatusForbidden
+		if token == result.Token {
+			want = http.StatusOK
+		}
+		if profile.Code != want {
+			t.Fatalf("token authentication = %d, want %d", profile.Code, want)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/hister/api/profile", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotation revoked the browser session: %d %s", rec.Code, rec.Body)
+	}
+	// Replaying the old revision must not invalidate the token just returned.
+	response = testutil.ServeHTTP(t, handler, http.MethodPost, path, strings.NewReader(`{"revision":1}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+	var conflict struct{ Code string }
+	if err := json.Unmarshal(response.Body.Bytes(), &conflict); err != nil || response.Code != http.StatusConflict || conflict.Code != "stale_revision" {
+		t.Fatalf("stale rotation: %d %s, error %v", response.Code, response.Body, err)
+	}
+	read := testutil.ServeHTTP(t, handler, http.MethodGet, path, nil, map[string]string{"X-Access-Token": admin.Token})
+	var current struct{ Token string }
+	if err := json.Unmarshal(read.Body.Bytes(), &current); err != nil || read.Code != http.StatusOK || current.Token != result.Token {
+		t.Fatalf("stale rotation replaced the token: %d %s, error %v", read.Code, read.Body, err)
+	}
+	response = testutil.ServeHTTP(t, handler, http.MethodPost, path, strings.NewReader(`{"revision":2}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+	var next struct {
+		Token    string
+		Revision uint64
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &next); err != nil || response.Code != http.StatusOK || next.Revision != 3 || next.Token == "" || next.Token == result.Token {
+		t.Fatalf("fresh rotation: %d %s, error %v", response.Code, response.Body, err)
+	}
+}
+
+func TestRotateUserTokenAPIInvalidRequest(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	path := fmt.Sprintf("/api/users/%d/token", alice.ID)
+	for _, body := range []string{
+		"", `null`, `[]`, `{}`, `{"revision":null}`, `{"revision":0}`, `{"revision":-1}`,
+		`{"revision":"1"}`, `{"revision":1.5}`, `{"revision":9223372036854775807}`, `{"revision":18446744073709551616}`,
+		`{"revision":1,"revision":1}`, `{"revision":1} {}`, `{"revision":1} null`, `{"revision":1} trailing`,
+		`{"revision":1,"token":"chosen-token"}`, `{"revision":1,"username":"renamed"}`, `{"revision":1,"password":"password123"}`,
+		`{"revision":1,"is_admin":true}`, `{"revision":1,"regenerate_token":false}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			response := testutil.ServeHTTP(t, handler, http.MethodPost, path, strings.NewReader(body), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+			var result struct{ Code string }
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusBadRequest || result.Code != "invalid_request" {
+				t.Fatalf("invalid rotation: %d %s, error %v", response.Code, response.Body, err)
+			}
+			if strings.Contains(response.Body.String(), "chosen-token") || strings.Contains(response.Body.String(), "password123") {
+				t.Fatal("validation response exposed submitted credentials")
+			}
+		})
+	}
+	current, err := model.GetUserByID(alice.ID)
+	if err != nil || *current != *alice {
+		t.Fatalf("invalid rotation changed the account: %v", err)
+	}
+}
+
+func TestRotateUserTokenAPIAuthorization(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	for _, id := range []uint{admin.ID, alice.ID} {
+		for _, token := range []string{"", "invalid", alice.Token} {
+			if id == alice.ID && token == alice.Token {
+				continue
+			}
+			response := testutil.ServeHTTP(t, handler, http.MethodPost, fmt.Sprintf("/api/users/%d/token", id), strings.NewReader(`{"revision":1}`), map[string]string{"Authorization": "Bearer " + token, "Origin": "hister://"})
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("unauthorized rotation: %d %s", response.Code, response.Body)
+			}
+		}
+		current, err := model.GetUserByID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := alice
+		if id == admin.ID {
+			original = admin
+		}
+		if *current != *original {
+			t.Fatal("unauthorized request changed the account")
+		}
+	}
+	// Session authentication still requires CSRF validation.
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"admin","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	cookie := responseSessionCookie(t, login)
+	for _, csrf := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/users/%d/token", alice.ID), strings.NewReader(`{"revision":1}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://proxy.example")
+		req.AddCookie(cookie)
+		if csrf {
+			configReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+			configReq.Header.Set("Origin", "https://proxy.example")
+			configReq.AddCookie(cookie)
+			configRec := httptest.NewRecorder()
+			handler.ServeHTTP(configRec, configReq)
+			req.Header.Set("X-CSRF-Token", configRec.Header().Get("X-CSRF-Token"))
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		want := http.StatusForbidden
+		if csrf {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("session rotation with CSRF token %t: %d %s", csrf, response.Code, response.Body)
+		}
+		current, err := model.GetUserByID(alice.ID)
+		if err != nil || (current.Token != alice.Token) != csrf {
+			t.Fatalf("CSRF check affected token incorrectly: %v", err)
+		}
+	}
+	// A caller rotating its own token receives a usable replacement in this response.
+	response := testutil.ServeHTTP(t, handler, http.MethodPost, fmt.Sprintf("/api/users/%d/token", admin.ID), strings.NewReader(`{"revision":1}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+	var result struct{ Token string }
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusOK || result.Token == "" || result.Token == admin.Token {
+		t.Fatalf("self rotation: %d %s, error %v", response.Code, response.Body, err)
+	}
+	for _, token := range []string{admin.Token, result.Token} {
+		response := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/users", nil, map[string]string{"X-Access-Token": token})
+		want := http.StatusForbidden
+		if token == result.Token {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("self rotation access = %d, want %d", response.Code, want)
+		}
+	}
+}
+
+func TestRotateUserTokenAPIRequestLimits(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	for _, id := range []string{"0", "-1", "abc", "999999", "18446744073709551616"} {
+		response := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/users/"+id+"/token", strings.NewReader(`{"revision":1}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+		want, code := http.StatusBadRequest, "invalid_request"
+		if id == "999999" {
+			want, code = http.StatusNotFound, "user_not_found"
+		}
+		var result struct{ Code string }
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != want || result.Code != code {
+			t.Fatalf("invalid ID: %d %s, error %v", response.Code, response.Body, err)
+		}
+	}
+	for _, knownLength := range []bool{true, false} {
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/users/%d/token", admin.ID), strings.NewReader(`{"revision":1}`+strings.Repeat(" ", int(maxRequestBodyBytes))))
+		req.Header.Set("X-Access-Token", admin.Token)
+		req.Header.Set("Origin", "hister://")
+		if !knownLength {
+			req.ContentLength = -1
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("oversized rotation: %d %s", response.Code, response.Body)
+		}
+	}
+	current, err := model.GetUserByID(admin.ID)
+	if err != nil || *current != *admin {
+		t.Fatalf("invalid request changed the account: %v", err)
+	}
+}
+
+func TestRotateUserTokenAPIRequiresUserHandling(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	response := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/users/1/token", strings.NewReader(`{"revision":1}`), map[string]string{"X-Access-Token": "secret", "Origin": "hister://"})
+	var result struct{ Code string }
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusBadRequest || result.Code != "user_handling_disabled" {
+		t.Fatalf("single user rotation: %d %s, error %v", response.Code, response.Body, err)
+	}
+}
+
+func TestRotateUserTokenAPIDatabaseFailure(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	if err := model.DB.Exec(`CREATE TRIGGER reject_token_rotation BEFORE UPDATE OF token ON users BEGIN SELECT RAISE(ABORT, 'private database error'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := testutil.ServeHTTP(t, handler, http.MethodPost, fmt.Sprintf("/api/users/%d/token", alice.ID), strings.NewReader(`{"revision":1}`), map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+	var result struct{ Code string }
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusInternalServerError || result.Code != "internal_error" {
+		t.Fatalf("failed rotation: %d %s, error %v", response.Code, response.Body, err)
+	}
+	if strings.Contains(response.Body.String(), "private database error") || strings.Contains(response.Body.String(), alice.Token) {
+		t.Fatal("failed rotation exposed private data")
+	}
+	current, err := model.GetUserByID(alice.ID)
+	if err != nil || *current != *alice {
+		t.Fatalf("failed rotation changed the account: %v", err)
+	}
+}
+
+func TestProfileIncludesAccountRevision(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	for _, user := range []*model.User{alice, admin} {
+		for revision := uint64(1); revision <= 2; revision++ {
+			if revision == 2 {
+				if err := model.UpdatePassword(user.Username, "replacement123"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			response := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/profile", nil, map[string]string{"X-Access-Token": user.Token})
+			var profile struct {
+				ID       uint `json:"user_id"`
+				Username string
+				Revision uint64
+				IsAdmin  bool `json:"is_admin"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &profile); err != nil || response.Code != http.StatusOK || profile.ID != user.ID || profile.Username != user.Username || profile.Revision != revision || profile.IsAdmin != user.IsAdmin {
+				t.Fatalf("profile: %d %s, error %v", response.Code, response.Body, err)
+			}
+			if response.Header().Get("Cache-Control") != "no-store" || strings.Contains(response.Body.String(), user.Token) || strings.Contains(response.Body.String(), "replacement123") {
+				t.Fatalf("unsafe profile response: %s", response.Body)
+			}
+		}
+	}
+}
+
+func TestRotateOwnUserTokenAPI(t *testing.T) {
+	for _, sessionAuth := range []bool{false, true} {
+		t.Run(fmt.Sprintf("session=%t", sessionAuth), func(t *testing.T) {
+			_, handler, _, admin := newUserDeletionTestServer(t)
+			alice := testutil.CreateUser(t, "alice")
+			var cookie *http.Cookie
+			if sessionAuth {
+				login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"alice","password":"password123"}`), map[string]string{"Origin": "hister://"})
+				cookie = responseSessionCookie(t, login)
+			}
+			request := func(method, path, body string, csrf bool) *httptest.ResponseRecorder {
+				t.Helper()
+				req := httptest.NewRequest(method, path, strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				if sessionAuth {
+					req.AddCookie(cookie)
+					req.Header.Set("Origin", "https://proxy.example")
+					if csrf {
+						configReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+						configReq.AddCookie(cookie)
+						configReq.Header.Set("Origin", "https://proxy.example")
+						configRec := httptest.NewRecorder()
+						handler.ServeHTTP(configRec, configReq)
+						req.Header.Set("X-CSRF-Token", configRec.Header().Get("X-CSRF-Token"))
+					}
+				} else {
+					req.Header.Set("Authorization", "Bearer "+alice.Token)
+					req.Header.Set("Origin", "hister://")
+				}
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, req)
+				return response
+			}
+			path := fmt.Sprintf("/api/users/%d/token", alice.ID)
+			// Other accounts, including nonexistent IDs, must be denied without disclosing existence.
+			for _, id := range []uint{admin.ID, alice.ID + 1} {
+				response := request(http.MethodPost, fmt.Sprintf("/api/users/%d/token", id), `{"revision":1}`, true)
+				if response.Code != http.StatusForbidden {
+					t.Fatalf("other account rotation: %d %s", response.Code, response.Body)
+				}
+			}
+			if sessionAuth {
+				if response := request(http.MethodPost, path, `{"revision":1}`, false); response.Code != http.StatusForbidden {
+					t.Fatalf("rotation without CSRF: %d %s", response.Code, response.Body)
+				}
+			}
+			// Account mutation and token retrieval remain privileged, even for one's own account.
+			for _, response := range []*httptest.ResponseRecorder{
+				request(http.MethodPatch, fmt.Sprintf("/api/users/%d", alice.ID), `{"revision":1,"is_admin":true}`, true),
+				request(http.MethodGet, path, "", false),
+			} {
+				if response.Code != http.StatusForbidden {
+					t.Fatalf("self service allowed administrative access: %d %s", response.Code, response.Body)
+				}
+			}
+			response := request(http.MethodPost, path, `{"revision":1}`, true)
+			var result struct {
+				Token    string
+				Revision uint64
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusOK || result.Token == "" || result.Token == alice.Token || result.Revision != 2 {
+				t.Fatalf("own token rotation: %d %s, error %v", response.Code, response.Body, err)
+			}
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("token response may be cached")
+			}
+			if !sessionAuth {
+				alice.Token = result.Token
+			}
+			profile := request(http.MethodGet, "/api/profile", "", false)
+			var current struct{ Revision uint64 }
+			if err := json.Unmarshal(profile.Body.Bytes(), &current); err != nil || profile.Code != http.StatusOK || current.Revision != 2 {
+				t.Fatalf("updated profile: %d %s, error %v", profile.Code, profile.Body, err)
+			}
+			stale := request(http.MethodPost, path, `{"revision":1}`, true)
+			if stale.Code != http.StatusConflict {
+				t.Fatalf("stale self rotation: %d %s", stale.Code, stale.Body)
+			}
+		})
+	}
+}
+
+func TestRemovedProfileTokenEndpoint(t *testing.T) {
+	previousFiles := staticTextFiles
+	staticTextFiles = map[string][]byte{"index.html": []byte("<html>app</html>")}
+	t.Cleanup(func() { staticTextFiles = previousFiles })
+	_, handler, _, _ := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	response := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/profile/token", nil, map[string]string{"X-Access-Token": alice.Token, "Origin": "hister://"})
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("removed endpoint still succeeded: %d %s", response.Code, response.Body)
+	}
+	current, err := model.GetUserByID(alice.ID)
+	if err != nil || *current != *alice {
+		t.Fatalf("removed endpoint changed account: %v", err)
+	}
+}

@@ -95,7 +95,7 @@ func registerEndpoints(cfg *config.Config, idx *indexer.Indexer, overrides ...fu
 	mux.HandleFunc("GET /static/", createHandler(cfg, idx, serveStatic, reloader))
 	mux.HandleFunc("GET /favicon.ico", createHandler(cfg, idx, serveFavicon, reloader))
 	mux.HandleFunc("GET /opensearch.xml", createHandler(cfg, idx, serveOpensearch, reloader))
-	mux.HandleFunc("/", createHandler(cfg, idx, serveSPA, reloader))
+	mux.HandleFunc("GET /", createHandler(cfg, idx, serveSPA, reloader))
 	// If base_url contains a path prefix, require it for application routes.
 	appHandler := withExtensionCORS(http.Handler(mux))
 	basePrefix := cfg.BasePathPrefix()
@@ -364,28 +364,31 @@ func serveLogout(c *webContext) {
 }
 
 func serveProfile(c *webContext) {
+	c.Response.Header().Set("Cache-Control", "no-store")
 	if c.Config.App.UserHandling {
-		resp := map[string]any{
-			"user_id":  c.UserID,
-			"username": c.Username,
-			"is_admin": c.IsAdmin,
+		user, err := model.GetUserByID(c.UserID)
+		if errors.Is(err, model.ErrUserNotFound) {
+			serve403(c)
+			return
 		}
-		if c.IsAdmin {
+		if err != nil {
+			log.Error().Err(err).Msg("failed to get current user")
+			serve500(c)
+			return
+		}
+		resp := map[string]any{
+			"user_id":  user.ID,
+			"username": user.Username,
+			"is_admin": user.IsAdmin,
+			"revision": user.Revision,
+		}
+		if user.IsAdmin {
 			resp["version"] = Version
 		}
 		c.JSON(resp)
 		return
 	}
 	serve200(c)
-}
-
-func serveGenerateToken(c *webContext) {
-	token, err := model.RegenerateToken(c.UserID)
-	if err != nil {
-		serve500(c)
-		return
-	}
-	c.JSON(map[string]string{"token": token})
 }
 
 // serveConfig returns app configuration as JSON and refreshes CSRF token.
@@ -2139,16 +2142,24 @@ func serveCreateUser(c *webContext) {
 	c.JSONStatus(http.StatusCreated, userMetadata(user))
 }
 
-func requestedUser(c *webContext) *model.User {
+func requestedUserID(c *webContext) (uint, bool) {
 	if !userAPIEnabled(c) {
-		return nil
+		return 0, false
 	}
 	id, err := strconv.ParseUint(c.Request.PathValue("id"), 10, strconv.IntSize-1)
 	if err != nil || id == 0 {
 		userAPIError(c, http.StatusBadRequest, "invalid_request", "id must be a positive integer within the supported ID range")
+		return 0, false
+	}
+	return uint(id), true
+}
+
+func requestedUser(c *webContext) *model.User {
+	id, ok := requestedUserID(c)
+	if !ok {
 		return nil
 	}
-	user, err := model.GetUserByID(uint(id))
+	user, err := model.GetUserByID(id)
 	if errors.Is(err, model.ErrUserNotFound) {
 		userAPIError(c, http.StatusNotFound, "user_not_found", "user not found")
 		return nil
@@ -2173,58 +2184,91 @@ func serveUserToken(c *webContext) {
 	}
 }
 
+func serveRotateUserToken(c *webContext) {
+	id, ok := requestedUserID(c)
+	if !ok {
+		return
+	}
+	// Reject access to other accounts before looking up their existence.
+	if c.UserID != id && !c.IsAdmin {
+		userAPIError(c, http.StatusForbidden, "admin_required", "administrator privileges required to rotate another user's token")
+		return
+	}
+	var revision uint64
+	if err := decodeUserFields(c.Request.Body, map[string]any{"revision": &revision}); err != nil {
+		if !requestBodyTooLarge(c, err) {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "invalid token rotation request")
+		}
+		return
+	}
+	updated, err := model.RotateUserToken(c.UserID, id, revision)
+	if userUpdateFailed(c, err) {
+		return
+	}
+	c.JSON(struct {
+		Token    string `json:"token"`
+		Revision uint64 `json:"revision"`
+	}{Token: updated.Token, Revision: updated.Revision})
+}
+
 func decodeUserUpdate(body io.Reader) (uint64, model.UserChanges, error) {
 	var revision uint64
 	var changes model.UserChanges
-	fields := map[string]any{
+	err := decodeUserFields(body, map[string]any{
 		"revision": &revision, "username": &changes.Username,
 		"password": &changes.Password, "is_admin": &changes.IsAdmin,
 		"regenerate_token": &changes.RegenerateToken,
-	}
+	})
+	return revision, changes, err
+}
+
+// decodeUserFields accepts one JSON object containing only the supplied fields.
+// It rejects duplicate keys and null values and consumes the complete body.
+func decodeUserFields(body io.Reader, fields map[string]any) error {
 	decoder := json.NewDecoder(body)
 	token, err := decoder.Token()
 	if err != nil {
-		return 0, changes, err
+		return err
 	}
 	if token != json.Delim('{') {
-		return 0, changes, model.ErrInvalidUserUpdate
+		return model.ErrInvalidUserUpdate
 	}
 	for decoder.More() {
 		token, err := decoder.Token()
 		if err != nil {
-			return 0, changes, err
+			return err
 		}
 		name, ok := token.(string)
 		if !ok {
-			return 0, changes, model.ErrInvalidUserUpdate
+			return model.ErrInvalidUserUpdate
 		}
 		target, ok := fields[name]
 		if !ok {
-			return 0, changes, model.ErrInvalidUserUpdate
+			return model.ErrInvalidUserUpdate
 		}
 		delete(fields, name) // Reject repeated fields as well as unknown ones.
 		var raw json.RawMessage
 		if err := decoder.Decode(&raw); err != nil {
-			return 0, changes, err
+			return err
 		}
 		if bytes.Equal(raw, []byte("null")) {
-			return 0, changes, model.ErrInvalidUserUpdate
+			return model.ErrInvalidUserUpdate
 		}
 		if err := json.Unmarshal(raw, target); err != nil {
-			return 0, changes, err
+			return err
 		}
 	}
 	if _, err := decoder.Token(); err != nil {
-		return 0, changes, err
+		return err
 	}
 	// Read to EOF before changing anything, including whitespace past the body limit.
 	if err := decoder.Decode(new(json.RawMessage)); err != io.EOF {
 		if err == nil {
 			err = model.ErrInvalidUserUpdate
 		}
-		return 0, changes, err
+		return err
 	}
-	return revision, changes, nil
+	return nil
 }
 
 func serveUpdateUser(c *webContext) {
@@ -2240,9 +2284,26 @@ func serveUpdateUser(c *webContext) {
 		return
 	}
 	updated, err := model.UpdateUser(c.UserID, user.ID, revision, changes)
+	if userUpdateFailed(c, err) {
+		return
+	}
+	var token string
+	if changes.RegenerateToken {
+		token = updated.Token
+	}
+	c.JSON(struct {
+		userResponse
+		Token string `json:"token,omitempty"`
+	}{userMetadata(updated), token})
+}
+
+func userUpdateFailed(c *webContext, err error) bool {
+	if err == nil {
+		return false
+	}
 	switch {
 	case errors.Is(err, model.ErrInvalidUserUpdate):
-		userAPIError(c, http.StatusBadRequest, "invalid_request", "provide a positive revision and at least one change; usernames must not be blank or contain control characters, and passwords must contain 8 to 72 UTF-8 bytes")
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "invalid account revision or changes")
 	case errors.Is(err, model.ErrStaleUserRevision):
 		userAPIError(c, http.StatusConflict, "stale_revision", "user has changed; fetch its current revision before updating")
 	case errors.Is(err, model.ErrUserAlreadyExists):
@@ -2253,19 +2314,11 @@ func serveUpdateUser(c *webContext) {
 		userAPIError(c, http.StatusForbidden, "admin_required", "administrator privileges required")
 	case errors.Is(err, model.ErrUserNotFound):
 		userAPIError(c, http.StatusNotFound, "user_not_found", "user not found")
-	case err != nil:
+	default:
 		log.Error().Err(err).Msg("failed to update user")
 		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to update user")
-	default:
-		var token string
-		if changes.RegenerateToken {
-			token = updated.Token
-		}
-		c.JSON(struct {
-			userResponse
-			Token string `json:"token,omitempty"`
-		}{userMetadata(updated), token})
 	}
+	return true
 }
 
 func serveDeleteUser(c *webContext) {

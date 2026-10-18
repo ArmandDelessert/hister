@@ -263,6 +263,10 @@ Skip rules apply upon the **full** URL (from protocol to the query-string parame
 - Query string parameters are **not reordered**. Only `utm_*` parameters are stripped.
 - [Go regular expression](https://pkg.go.dev/regexp/syntax) does not support look-ahead/look-behind regexp.
 
+Any signed in user can reset their own access token from the Profile page. If
+the account changes before the reset completes, reload the page and review the
+account before trying again.
+
 ## Admin Users
 
 Admin users have access to privileged operations. Currently, the following endpoints require admin privileges:
@@ -283,6 +287,9 @@ Account creation, lookup, and token retrieval require user handling to be enable
 response fields, and API examples, and [User Creation](/docs/developer#user-creation)
 for creating accounts through the server. [User Updates](/docs/developer#user-updates)
 explains how to apply changes together and detect conflicting edits.
+[User Token Rotation](/docs/developer#user-token-rotation) covers replacing a token on its own.
+That operation allows users to rotate their own token and administrators to rotate
+other users' tokens.
 
 Grant or revoke admin status using `create-user --admin` (at creation time) or `update-user --toggle-admin` (at any time). The last administrator cannot be demoted or deleted. Create or promote another administrator first.
 

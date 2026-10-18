@@ -159,3 +159,82 @@ for (const target of [
     await expect(page).toHaveURL('http://127.0.0.1:4174/');
   });
 }
+
+async function mockProfile(page: Page, revision = 4) {
+  await mockAPI(page, { config: { authMode: 'user', authenticated: true } });
+  const profile = { user_id: 7, username: 'alice', is_admin: false, revision };
+  await page.route('**/api/profile', (route) => route.fulfill({ json: profile }));
+  return profile;
+}
+
+async function confirmTokenRotation(page: Page) {
+  await page.getByRole('main').getByRole('button', { name: 'Reset Token', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Reset Token', exact: true }).click();
+}
+
+test('profile token rotation uses the account ID and updates its revision', async ({ page }) => {
+  await mockProfile(page);
+  const revisions: number[] = [];
+  await page.route('**/api/profile/token', (route) => route.fulfill({ status: 404 }));
+  await page.route('**/api/users/7/token', async (route) => {
+    expect(route.request().method()).toBe('POST');
+    const body = route.request().postDataJSON();
+    expect(body).toEqual({ revision: 4 + revisions.length });
+    revisions.push(body.revision);
+    await route.fulfill({
+      json: { token: `new-token-${revisions.length}`, revision: body.revision + 1 },
+    });
+  });
+  await page.goto('/profile');
+  await expect(page.getByText('alice', { exact: true })).toBeVisible();
+  await confirmTokenRotation(page);
+  await expect(page.getByText('new-token-1', { exact: true })).toBeVisible();
+  await confirmTokenRotation(page);
+  await expect(page.getByText('new-token-2', { exact: true })).toBeVisible();
+  await expect(page.getByText('new-token-1', { exact: true })).toHaveCount(0);
+  expect(revisions).toEqual([4, 5]);
+});
+
+test('profile token rotation requires a reload after an account conflict', async ({ page }) => {
+  const profile = await mockProfile(page);
+  let requests = 0;
+  await page.route('**/api/users/7/token', async (route) => {
+    requests++;
+    if (requests === 1) {
+      expect(route.request().postDataJSON()).toEqual({ revision: 4 });
+      profile.revision = 5;
+      await route.fulfill({
+        status: 409,
+        json: { code: 'stale_revision', error: 'user has changed' },
+      });
+    } else {
+      expect(route.request().postDataJSON()).toEqual({ revision: 5 });
+      await route.fulfill({ json: { token: 'new-token', revision: 6 } });
+    }
+  });
+  await page.goto('/profile');
+  await expect(page.getByText('alice', { exact: true })).toBeVisible();
+  await confirmTokenRotation(page);
+  await expect(page.getByRole('status')).toContainText('account changed');
+  await expect(
+    page.getByRole('main').getByRole('button', { name: 'Reset Token', exact: true }),
+  ).toBeDisabled();
+  expect(requests).toBe(1);
+  await page.reload();
+  await expect(
+    page.getByRole('main').getByRole('button', { name: 'Reset Token', exact: true }),
+  ).toBeEnabled();
+  await confirmTokenRotation(page);
+  await expect(page.getByText('new-token', { exact: true })).toBeVisible();
+  expect(requests).toBe(2);
+});
+
+test('profile token rotation stays disabled when profile loading fails', async ({ page }) => {
+  await mockProfile(page);
+  await page.route('**/api/profile', (route) => route.fulfill({ status: 500, json: {} }));
+  await page.goto('/profile');
+  await expect(page.getByRole('status')).toContainText('Failed to load profile');
+  await expect(
+    page.getByRole('main').getByRole('button', { name: 'Reset Token', exact: true }),
+  ).toBeDisabled();
+});

@@ -342,6 +342,33 @@ Authorization failures before the handler use the existing middleware's `403`
 response. Validation failures and transaction failures leave all account fields
 unchanged.
 
+### User Token Rotation
+
+`POST /api/users/{id}/token` lets account owners and administrators replace an
+access token. It requires user handling and the same CSRF protection as account
+updates. Get your `user_id` and `revision` from `GET /api/profile`; administrators
+can read another account's revision through `GET /api/users/{id}`.
+
+```http
+POST /api/users/2/token
+Authorization: Bearer <current-user-token>
+Origin: hister://
+Content-Type: application/json
+
+{"revision":1}
+```
+
+Send only the current `revision`. Success returns `200 OK` with
+`Cache-Control: no-store`:
+
+```json
+{ "token": "<new-access-token>", "revision": 2 }
+```
+
+Save the returned token: the old token stops working immediately. Browser
+sessions remain valid. A stale revision returns `409` with code `stale_revision`
+without changing the token. Refresh the account before retrying explicitly.
+
 ### Request Limits
 
 API request bodies have a default limit of 1 MiB, including MCP requests and

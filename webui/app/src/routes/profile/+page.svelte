@@ -11,6 +11,8 @@
   import { Copy, Eye, EyeOff, RefreshCw, User, Info } from '@lucide/svelte';
 
   let username = $state('');
+  let userId = $state(0);
+  let revision = $state(0);
   let token = $state('');
   let tokenVisible = $state(false);
   let message = $state('');
@@ -32,9 +34,22 @@
       return;
     }
     apiFetch('/profile')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to load profile');
+        return r.json();
+      })
       .then((data) => {
+        if (
+          !Number.isSafeInteger(data.user_id) ||
+          data.user_id <= 0 ||
+          !Number.isSafeInteger(data.revision) ||
+          data.revision <= 0
+        ) {
+          throw new Error('Invalid profile response');
+        }
         username = data.username;
+        userId = data.user_id;
+        revision = data.revision;
         isAdmin = data.is_admin ?? false;
         version = data.version ?? '';
       })
@@ -45,22 +60,43 @@
   });
 
   async function generateToken() {
+    if (generating || copying || !userId || !revision) return;
     generating = true;
     message = '';
+    token = '';
+    tokenVisible = false;
     try {
-      const r = await apiFetch('/profile/token', { method: 'POST' });
+      const r = await apiFetch(`/users/${userId}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revision }),
+      });
       if (!r.ok) {
-        message = 'Failed to generate token';
+        revision = 0;
+        message =
+          r.status === 409
+            ? 'Your account changed. Reload this page before resetting the token again.'
+            : 'Failed to generate token. Reload this page before trying again.';
         messageType = 'error';
         return;
       }
       const data = await r.json();
+      if (
+        typeof data.token !== 'string' ||
+        !data.token ||
+        !Number.isSafeInteger(data.revision) ||
+        data.revision !== revision + 1
+      ) {
+        throw new Error('Invalid token response');
+      }
       token = data.token;
+      revision = data.revision;
       tokenVisible = true;
       message = 'New token generated. Store it securely. It will not be shown again.';
       messageType = 'success';
     } catch {
-      message = 'Failed to generate token';
+      revision = 0;
+      message = 'Failed to generate token. Reload this page before trying again.';
       messageType = 'error';
     } finally {
       generating = false;
@@ -176,7 +212,7 @@
 
         <Button
           onclick={() => (resetConfirmOpen = true)}
-          disabled={generating || copying}
+          disabled={generating || copying || !userId || !revision}
           variant="outline"
           class="border-brutal-border font-outfit hover:border-hister-indigo h-11 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[4px_4px_0_var(--brutal-shadow)] disabled:opacity-50"
         >

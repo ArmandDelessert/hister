@@ -99,6 +99,16 @@ func CheckUserDeletion(id uint) error {
 // UpdateUser applies administrative changes together and rejects stale revisions.
 // The caller supplies the authenticated administrator's ID, never a request field.
 func UpdateUser(actorID, userID uint, revision uint64, changes UserChanges) (*User, error) {
+	return updateUser(actorID, userID, revision, changes, false)
+}
+
+// RotateUserToken permits owners and administrators to rotate a token. General
+// account updates still require administrator privileges, including for oneself.
+func RotateUserToken(actorID, userID uint, revision uint64) (*User, error) {
+	return updateUser(actorID, userID, revision, UserChanges{RegenerateToken: true}, true)
+}
+
+func updateUser(actorID, userID uint, revision uint64, changes UserChanges, allowSelfRotation bool) (*User, error) {
 	if revision == 0 || revision >= math.MaxInt64 || (changes.Username == nil && changes.Password == nil && changes.IsAdmin == nil && !changes.RegenerateToken) {
 		return nil, ErrInvalidUserUpdate
 	}
@@ -136,7 +146,7 @@ func UpdateUser(actorID, userID uint, revision uint64, changes UserChanges) (*Us
 			}
 			return err
 		}
-		if !actor.IsAdmin {
+		if !actor.IsAdmin && (!allowSelfRotation || actorID != userID) {
 			return ErrAdminRequired
 		}
 		if err := tx.First(&user, userID).Error; err != nil {

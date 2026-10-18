@@ -254,3 +254,41 @@ func TestUpdateUserRechecksAdministrator(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenRotationOwnership(t *testing.T) {
+	testutil.InitModel(t)
+	admin, err := model.CreateUser("admin", "password123", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice := testutil.CreateUser(t, "alice")
+	bob := testutil.CreateUser(t, "bob")
+	for _, actor := range []uint{0, bob.ID, bob.ID + 1} {
+		if _, err := model.RotateUserToken(actor, alice.ID, 1); !errors.Is(err, model.ErrAdminRequired) {
+			t.Fatalf("unauthorized rotation: %v", err)
+		}
+	}
+	if _, err := model.UpdateUser(alice.ID, alice.ID, 1, model.UserChanges{RegenerateToken: true}); !errors.Is(err, model.ErrAdminRequired) {
+		t.Fatalf("self service weakened administrative updates: %v", err)
+	}
+	rotated, err := model.RotateUserToken(alice.ID, alice.ID, 1)
+	if err != nil || rotated.Revision != 2 || rotated.Token == alice.Token {
+		t.Fatalf("self rotation: %v", err)
+	}
+	if _, err := model.RotateUserToken(alice.ID, alice.ID, 1); !errors.Is(err, model.ErrStaleUserRevision) {
+		t.Fatalf("stale self rotation: %v", err)
+	}
+	rotated, err = model.RotateUserToken(admin.ID, alice.ID, 2)
+	if err != nil || rotated.Revision != 3 {
+		t.Fatalf("admin rotation: %v", err)
+	}
+	if _, err := model.ToggleAdmin("bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := model.ToggleAdmin("admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := model.RotateUserToken(admin.ID, alice.ID, 3); !errors.Is(err, model.ErrAdminRequired) {
+		t.Fatalf("demoted administrator still rotated someone else's token: %v", err)
+	}
+}

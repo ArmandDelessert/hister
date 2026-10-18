@@ -594,6 +594,262 @@ func TestDeleteUserRetainsAccountOnIndexFailure(t *testing.T) {
 	}
 }
 
+func TestDeleteUserByIDAPI(t *testing.T) {
+	cfg, _, idx, admin := newUserDeletionTestServer(t)
+	if err := cfg.UpdateBaseURL("http://127.0.0.1:4433/hister"); err != nil {
+		t.Fatal(err)
+	}
+	handler := registerEndpoints(cfg, idx)
+	alice := testutil.CreateUser(t, "alice")
+	bob := testutil.CreateUser(t, "bob")
+	const sharedURL = "https://example.com/shared"
+	for _, d := range []*document.Document{
+		{URL: sharedURL, UserID: alice.ID, Text: "Alice", Processed: true},
+		{URL: "https://example.com/private", UserID: alice.ID, Text: "Private", Processed: true},
+		{URL: sharedURL, UserID: bob.ID, Text: "Bob", Processed: true},
+		{URL: sharedURL, Text: "Global", Processed: true},
+	} {
+		if err := idx.Add(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, user := range []*model.User{alice, bob} {
+		if err := model.UpdateHistory(user.ID, "test", sharedURL, user.Username); err != nil {
+			t.Fatal(err)
+		}
+	}
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/hister/api/login", strings.NewReader(`{"username":"alice","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	cookie := responseSessionCookie(t, login)
+	path := fmt.Sprintf("/hister/api/users/%d", alice.ID)
+	headers := map[string]string{"Authorization": "Bearer " + admin.Token, "Origin": "hister://"}
+	for _, query := range []string{"", "?purge=false"} {
+		response := testutil.ServeHTTP(t, handler, http.MethodDelete, path+query, nil, headers)
+		assertUserDeletionError(t, response, http.StatusConflict, "purge_required")
+		if _, err := model.GetUserByID(alice.ID); err != nil {
+			t.Fatalf("refused deletion removed account: %v", err)
+		}
+		if count, err := idx.CountByQuery("*", &alice.ID); err != nil || count != 2 {
+			t.Fatalf("refused deletion changed documents: count = %d, error = %v", count, err)
+		}
+	}
+	// The selected ID remains the target after a rename and reuse of its old name.
+	name := "renamed"
+	if _, err := model.UpdateUser(admin.ID, alice.ID, alice.Revision, model.UserChanges{Username: &name}); err != nil {
+		t.Fatal(err)
+	}
+	replacement := testutil.CreateUser(t, "alice")
+	response := testutil.ServeHTTP(t, handler, http.MethodDelete, path+"?purge=true", nil, headers)
+	var result struct {
+		ID               uint   `json:"id"`
+		Username         string `json:"username"`
+		DeletedDocuments int    `json:"deleted_documents"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusOK || result.ID != alice.ID || result.Username != name || result.DeletedDocuments != 2 {
+		t.Fatalf("delete response: %d %s, error = %v", response.Code, response.Body, err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil || len(fields) != 3 || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("unexpected response fields or caching: %s, error = %v", response.Body, err)
+	}
+	if _, err := model.GetUserByID(alice.ID); !errors.Is(err, model.ErrUserNotFound) {
+		t.Fatalf("deleted account lookup = %v", err)
+	}
+	if count, err := idx.CountByQuery("*", &alice.ID); err != nil || count != 0 {
+		t.Fatalf("owned documents remain: count = %d, error = %v", count, err)
+	}
+	if idx.GetByURLAndUser(sharedURL, bob.ID) == nil || idx.GetByURLAndUser(sharedURL, 0) == nil {
+		t.Fatal("purge removed another owner's document")
+	}
+	for _, user := range []*model.User{admin, bob, replacement} {
+		if _, err := model.GetUserByID(user.ID); err != nil {
+			t.Fatalf("purge removed another account: %v", err)
+		}
+	}
+	for _, user := range []*model.User{alice, bob} {
+		want := 0
+		if user.ID == bob.ID {
+			want = 1
+		}
+		if history, err := model.GetURLsByQuery(user.ID, "test"); err != nil || len(history) != want {
+			t.Fatalf("history for user %d: %v, error = %v", user.ID, history, err)
+		}
+	}
+	for _, tokenAuth := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodGet, "/hister/api/profile", nil)
+		if tokenAuth {
+			req.Header.Set("Authorization", "Bearer "+alice.Token)
+		} else {
+			req.AddCookie(cookie)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusForbidden {
+			t.Errorf("deleted account still authenticated: token = %t, status = %d", tokenAuth, response.Code)
+		}
+	}
+	response = testutil.ServeHTTP(t, handler, http.MethodDelete, path+"?purge=true", nil, headers)
+	assertUserDeletionError(t, response, http.StatusNotFound, "user_not_found")
+}
+
+func TestDeleteUserByIDAPIValidation(t *testing.T) {
+	_, handler, idx, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	if err := idx.Add(&document.Document{URL: "https://example.com/private", UserID: alice.ID, Text: "Private", Processed: true}); err != nil {
+		t.Fatal(err)
+	}
+	path := fmt.Sprintf("/api/users/%d", alice.ID)
+	for _, tc := range []struct {
+		path, code string
+		status     int
+	}{
+		{"/api/users/0", "invalid_request", http.StatusBadRequest},
+		{"/api/users/-1", "invalid_request", http.StatusBadRequest},
+		{"/api/users/abc", "invalid_request", http.StatusBadRequest},
+		{"/api/users/18446744073709551616", "invalid_request", http.StatusBadRequest},
+		{"/api/users/999999", "user_not_found", http.StatusNotFound},
+		{path + "?purge=", "invalid_request", http.StatusBadRequest},
+		{path + "?purge=yes", "invalid_request", http.StatusBadRequest},
+		{path + "?purge=true&purge=false", "invalid_request", http.StatusBadRequest},
+		{path + "?purge=true&purge=true", "invalid_request", http.StatusBadRequest},
+		{path + "?purge=true&username=admin", "invalid_request", http.StatusBadRequest},
+		{path + "?purge=true&bad=%zz", "invalid_request", http.StatusBadRequest},
+		{path + "?purge=true;ignored=false", "invalid_request", http.StatusBadRequest},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			response := testutil.ServeHTTP(t, handler, http.MethodDelete, tc.path, nil, map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+			assertUserDeletionError(t, response, tc.status, tc.code)
+			if user, err := model.GetUserByID(alice.ID); err != nil || *user != *alice {
+				t.Fatalf("invalid request changed account: %v", err)
+			}
+			if count, err := idx.CountByQuery("*", &alice.ID); err != nil || count != 1 {
+				t.Fatalf("invalid request changed documents: count = %d, error = %v", count, err)
+			}
+		})
+	}
+}
+
+func TestDeleteUserByIDAPIAuthorization(t *testing.T) {
+	_, handler, _, admin := newUserDeletionTestServer(t)
+	alice := testutil.CreateUser(t, "alice")
+	bob := testutil.CreateUser(t, "bob")
+	path := fmt.Sprintf("/api/users/%d", alice.ID)
+	for _, tc := range []struct{ token, origin string }{
+		{"", "hister://"},
+		{"invalid", "hister://"},
+		{alice.Token, "hister://"},
+		{bob.Token, "hister://"},
+		{admin.Token, "https://other.example"},
+	} {
+		response := testutil.ServeHTTP(t, handler, http.MethodDelete, path+"?purge=true", nil, map[string]string{"Authorization": "Bearer " + tc.token, "Origin": tc.origin})
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("unauthorized deletion: %d %s", response.Code, response.Body)
+		}
+		if _, err := model.GetUserByID(alice.ID); err != nil {
+			t.Fatalf("unauthorized request deleted account: %v", err)
+		}
+	}
+	login := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/login", strings.NewReader(`{"username":"admin","password":"password123"}`), map[string]string{"Origin": "hister://"})
+	cookie := responseSessionCookie(t, login)
+	for _, csrf := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodDelete, path, nil)
+		req.Header.Set("Origin", "https://proxy.example")
+		req.AddCookie(cookie)
+		if csrf {
+			configReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+			configReq.Header.Set("Origin", "https://proxy.example")
+			configReq.AddCookie(cookie)
+			configRec := httptest.NewRecorder()
+			handler.ServeHTTP(configRec, configReq)
+			req.Header.Set("X-CSRF-Token", configRec.Header().Get("X-CSRF-Token"))
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		want := http.StatusForbidden
+		if csrf {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("deletion with CSRF token %t: %d %s", csrf, response.Code, response.Body)
+		}
+		_, err := model.GetUserByID(alice.ID)
+		if csrf && !errors.Is(err, model.ErrUserNotFound) || !csrf && err != nil {
+			t.Fatalf("deletion with CSRF token %t: account lookup = %v", csrf, err)
+		}
+		if csrf && !strings.Contains(response.Body.String(), `"deleted_documents":0`) {
+			t.Fatalf("empty account deletion response: %s", response.Body)
+		}
+	}
+}
+
+func TestDeleteUserByIDAPILastAdmin(t *testing.T) {
+	_, handler, idx, admin := newUserDeletionTestServer(t)
+	if err := idx.Add(&document.Document{URL: "https://example.com/admin", UserID: admin.ID, Text: "Admin", Processed: true}); err != nil {
+		t.Fatal(err)
+	}
+	path := fmt.Sprintf("/api/users/%d?purge=true", admin.ID)
+	headers := map[string]string{"Authorization": "Bearer " + admin.Token, "Origin": "hister://"}
+	response := testutil.ServeHTTP(t, handler, http.MethodDelete, path, nil, headers)
+	assertUserDeletionError(t, response, http.StatusConflict, "last_admin")
+	if user, err := model.GetUserByID(admin.ID); err != nil || *user != *admin {
+		t.Fatalf("last administrator changed: %v", err)
+	}
+	if count, err := idx.CountByQuery("*", &admin.ID); err != nil || count != 1 {
+		t.Fatalf("last administrator deletion purged documents: count = %d, error = %v", count, err)
+	}
+	if _, err := model.CreateUser("other-admin", "password123", true); err != nil {
+		t.Fatal(err)
+	}
+	response = testutil.ServeHTTP(t, handler, http.MethodDelete, path, nil, headers)
+	if response.Code != http.StatusOK {
+		t.Fatalf("administrator self deletion with another admin: %d %s", response.Code, response.Body)
+	}
+}
+
+func TestDeleteUserByIDAPIRequiresUserHandling(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	alice := testutil.CreateUser(t, "alice")
+	response := testutil.ServeHTTP(t, handler, http.MethodDelete, fmt.Sprintf("/api/users/%d?purge=true", alice.ID), nil, map[string]string{"X-Access-Token": "secret", "Origin": "hister://"})
+	assertUserDeletionError(t, response, http.StatusBadRequest, "user_handling_disabled")
+	if _, err := model.GetUserByID(alice.ID); err != nil {
+		t.Fatalf("disabled user handling request deleted account: %v", err)
+	}
+}
+
+func TestDeleteUserByIDAPIFailures(t *testing.T) {
+	for _, failure := range []string{"index", "database"} {
+		t.Run(failure, func(t *testing.T) {
+			_, handler, idx, admin := newUserDeletionTestServer(t)
+			alice := testutil.CreateUser(t, "alice")
+			if failure == "index" {
+				idx.Close()
+			} else if err := model.DB.Exec(`CREATE TRIGGER reject_user_delete BEFORE DELETE ON users BEGIN SELECT RAISE(ABORT, 'private database error'); END`).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, query := range []string{"", "?purge=true"} {
+				response := testutil.ServeHTTP(t, handler, http.MethodDelete, fmt.Sprintf("/api/users/%d%s", alice.ID, query), nil, map[string]string{"X-Access-Token": admin.Token, "Origin": "hister://"})
+				assertUserDeletionError(t, response, http.StatusInternalServerError, "internal_error")
+				if strings.Contains(response.Body.String(), "private database error") {
+					t.Fatal("failed deletion exposed private database details")
+				}
+				if user, err := model.GetUserByID(alice.ID); err != nil || *user != *alice {
+					t.Fatalf("failed deletion changed account: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func assertUserDeletionError(t *testing.T, response *httptest.ResponseRecorder, status int, code string) {
+	t.Helper()
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != status || result["code"] != code || result["error"] == "" {
+		t.Fatalf("deletion response: %d %s, want %d %s, decode error = %v", response.Code, response.Body, status, code, err)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("deletion response is missing Cache-Control: no-store")
+	}
+}
+
 func TestUserReadAPI(t *testing.T) {
 	cfg, _, idx, admin := newUserDeletionTestServer(t)
 	if err := cfg.UpdateBaseURL("http://127.0.0.1:4433/hister"); err != nil {

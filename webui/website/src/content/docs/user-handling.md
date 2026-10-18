@@ -275,10 +275,10 @@ Admin users have access to privileged operations. Currently, the following endpo
 - **`POST /api/users`** creates an account, optionally with administrator privileges.
 - **`GET /api/users/{id}`** shows account information without credentials.
 - **`PATCH /api/users/{id}`** changes a username, password, administrator status, or access token together.
+- **`DELETE /api/users/{id}`** deletes an account, with `?purge=true` to also remove its indexed documents.
 - **`GET /api/users/{id}/token`** explicitly retrieves an account's existing access token without changing it.
 - **`POST /api/reindex`** rebuilds the entire full-text search index.
 - **`POST /api/cleanup`** removes local documents that no longer match configured directories and removes stored HTML and favicon files that no current document references.
-- **`POST /api/delete_user`** deletes a named account and optionally its indexed documents on the server. User handling must be enabled.
 
 Non-admin users receive `403 Forbidden` when attempting to call admin-only endpoints.
 
@@ -287,6 +287,7 @@ Account creation, lookup, and token retrieval require user handling to be enable
 response fields, and API examples, and [User Creation](/docs/developer#user-creation)
 for creating accounts through the server. [User Updates](/docs/developer#user-updates)
 explains how to apply changes together and detect conflicting edits.
+[User Deletion](/docs/developer#user-deletion) covers deleting accounts and their documents.
 [User Token Rotation](/docs/developer#user-token-rotation) covers replacing a token on its own.
 That operation allows users to rotate their own token and administrators to rotate
 other users' tokens.

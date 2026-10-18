@@ -15,6 +15,8 @@ const (
 	PUT string = "PUT"
 	// PATCH is HTTP PATCH request type
 	PATCH string = "PATCH"
+	// DELETE is HTTP DELETE request type
+	DELETE string = "DELETE"
 	// HEAD is HTTP HEAD request type
 	HEAD string = "HEAD"
 )
@@ -881,6 +883,18 @@ func init() {
 				{Name: "password", Type: "string", Description: "New password containing 8 to 72 UTF-8 bytes. Invalidates existing browser sessions."},
 				{Name: "is_admin", Type: "bool", Description: "Set administrator privileges. The last administrator cannot be demoted."},
 				{Name: "regenerate_token", Type: "bool", Description: "Rotate the access token and return the new token (default false)."},
+			},
+		},
+		{
+			Name:         "Delete user by ID",
+			Path:         "/api/users/{id}",
+			Method:       DELETE,
+			CSRFRequired: true,
+			AdminOnly:    true,
+			Handler:      serveDeleteUserByID,
+			Description:  "Delete an account by ID. Requires user handling. Accounts with indexed documents require purge. The last administrator cannot be deleted. Returns id, username, and deleted_documents.",
+			Args: []*EndpointArg{
+				{Name: "purge", Type: "bool", Description: "Remove the account's indexed documents before deletion (default false)."},
 			},
 		},
 		{

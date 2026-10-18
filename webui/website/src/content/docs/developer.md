@@ -369,6 +369,20 @@ Save the returned token: the old token stops working immediately. Browser
 sessions remain valid. A stale revision returns `409` with code `stale_revision`
 without changing the token. Refresh the account before retrying explicitly.
 
+### User Deletion
+
+`DELETE /api/users/{id}` deletes an account. It requires user handling, an
+authenticated administrator, and the same CSRF protection as account updates.
+Set `?purge=true` to remove the account's indexed documents first; the default
+is `false`.
+
+Success returns `200 OK` with `{"id":2,"username":"alice","deleted_documents":3}`.
+An unknown ID returns `404`. Conflicts return `409` with code `purge_required`
+when documents remain or `last_admin` when deleting the final administrator.
+
+Purged documents are not restored if account deletion fails. See
+[Data Lifecycle and Retention](data-lifecycle#multi-user-ownership) for retention limits.
+
 ### Request Limits
 
 API request bodies have a default limit of 1 MiB, including MCP requests and

@@ -2321,6 +2321,27 @@ func userUpdateFailed(c *webContext, err error) bool {
 	return true
 }
 
+func serveDeleteUserByID(c *webContext) {
+	user := requestedUser(c)
+	if user == nil {
+		return
+	}
+	params, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil {
+		userAPIError(c, http.StatusBadRequest, "invalid_request", "invalid query parameters")
+		return
+	}
+	for name, values := range params {
+		if name != "purge" || len(values) != 1 || (values[0] != "true" && values[0] != "false") {
+			userAPIError(c, http.StatusBadRequest, "invalid_request", "only one purge parameter is allowed, with value true or false")
+			return
+		}
+	}
+	if count, ok := deleteUserAccount(c, user, params.Get("purge") == "true"); ok {
+		c.JSON(map[string]any{"id": user.ID, "username": user.Username, "deleted_documents": count})
+	}
+}
+
 func serveDeleteUser(c *webContext) {
 	if !c.Config.App.UserHandling {
 		http.Error(c.Response, "user handling is not enabled on this server", http.StatusBadRequest)
@@ -2342,17 +2363,18 @@ func serveDeleteUser(c *webContext) {
 		http.Error(c.Response, "user not found", http.StatusNotFound)
 		return
 	}
-	if err := model.CheckUserDeletion(user.ID); err != nil {
-		if errors.Is(err, model.ErrLastAdmin) {
-			userAPIError(c, http.StatusConflict, "last_admin", "cannot remove the last administrator")
-		} else {
-			log.Error().Err(err).Msg("failed to check user deletion")
-			serve500(c)
-		}
-		return
+	if count, ok := deleteUserAccount(c, user, req.Purge); ok {
+		c.JSON(map[string]any{"username": user.Username, "deleted_documents": count})
 	}
+}
+
+func deleteUserAccount(c *webContext, user *model.User, purge bool) (int, bool) {
+	if userDeletionFailed(c, model.CheckUserDeletion(user.ID)) {
+		return 0, false
+	}
+	var err error
 	var count int
-	if req.Purge {
+	if purge {
 		count, err = c.Indexer.DeleteByQuery("*", &user.ID, func(url string, uid uint) {
 			if err := model.DeleteHistoryURL(uid, url); err != nil {
 				log.Warn().Err(err).Str("url", url).Msg("failed to delete history for deleted document")
@@ -2363,24 +2385,34 @@ func serveDeleteUser(c *webContext) {
 	}
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("failed to check or purge user documents")
-		serve500(c)
-		return
+		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to check or purge user documents")
+		return 0, false
 	}
-	if !req.Purge && count > 0 {
-		http.Error(c.Response, fmt.Sprintf("user %q has %d indexed document(s); use --purge to delete them along with the user", req.Username, count), http.StatusConflict)
-		return
+	if !purge && count > 0 {
+		userAPIError(c, http.StatusConflict, "purge_required", fmt.Sprintf("user %q has %d indexed document(s); enable purge to delete them along with the user", user.Username, count))
+		return 0, false
 	}
 	// Keep deletion tied to the resolved account even if its username changes during the purge.
-	if err := model.DeleteUserByID(user.ID); err != nil {
-		if errors.Is(err, model.ErrLastAdmin) {
-			userAPIError(c, http.StatusConflict, "last_admin", "cannot remove the last administrator")
-			return
-		}
-		log.Error().Err(err).Uint("user_id", user.ID).Msg("failed to delete user")
-		serve500(c)
-		return
+	if userDeletionFailed(c, model.DeleteUserByID(user.ID)) {
+		return 0, false
 	}
-	c.JSON(map[string]any{"username": req.Username, "deleted_documents": count})
+	return count, true
+}
+
+func userDeletionFailed(c *webContext, err error) bool {
+	if err == nil {
+		return false
+	}
+	switch {
+	case errors.Is(err, model.ErrLastAdmin):
+		userAPIError(c, http.StatusConflict, "last_admin", "cannot remove the last administrator")
+	case errors.Is(err, model.ErrUserNotFound):
+		userAPIError(c, http.StatusNotFound, "user_not_found", "user not found")
+	default:
+		log.Error().Err(err).Msg("failed to delete user")
+		userAPIError(c, http.StatusInternalServerError, "internal_error", "failed to delete user")
+	}
+	return true
 }
 
 type batchOp struct {

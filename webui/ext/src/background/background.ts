@@ -437,10 +437,15 @@ chrome.webRequest.onHeadersReceived.addListener(
       (h) => h.name.toLowerCase() === 'content-type',
     )?.value;
     if (!isPDFContentType(contentType)) return;
+    // Use details.url (the request URL) rather than the tab's current URL:
+    // onHeadersReceived fires before the navigation commits, so chrome.tabs
+    // would still report the *previous* page and we'd upload that instead of
+    // the PDF. Pass the request URL through so both detection and the fetch
+    // in indexPDFTab target the actual PDF.
     void chrome.tabs.get(details.tabId).then((tab) => {
-      if (!tab.url) return;
-      if (doNotIndexUrl(tab.url) || !markPdfIndexed(tab.id!, tab.url)) return;
-      void indexPDFTab(tab.id!, tab);
+      if (!tab?.id) return;
+      if (doNotIndexUrl(details.url) || !markPdfIndexed(tab.id, details.url)) return;
+      void indexPDFTab(tab.id, { ...tab, url: details.url });
     });
   },
   { urls: ['<all_urls>'], types: ['main_frame'] },

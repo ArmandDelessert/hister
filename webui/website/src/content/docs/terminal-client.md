@@ -41,11 +41,11 @@ configured Hister HTTP server. Examples include `hister crawl list` and `hister 
 
 **Remote** commands use the configured Hister HTTP server without opening the local Hister
 database or search index. Examples include `hister search`, `hister export`, `hister cleanup`,
-`hister show-user`, `hister update-user`, and `hister delete-user`.
+`hister user show`, `hister user update`, and `hister user delete`.
 
 **Hybrid** commands use or can use both local Hister state and the configured server. Examples
 include persistent `hister index` modes, `hister import browser`, and `hister list-urls --offline`.
-`hister create-user` also belongs to this group: it uses the server by default and
+`hister user create` also belongs to this group: it uses the server by default and
 creates an account directly in the configured database only with `--offline`.
 
 Use the scope label before running a command against a remote deployment. Local commands operate

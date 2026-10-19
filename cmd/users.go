@@ -19,8 +19,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var userCmd = &cobra.Command{
+	Use:   "user",
+	Short: "Manage user accounts",
+	Long:  "Create, show, update, or delete user accounts on the configured Hister server. Use user create --offline with the server stopped to create an account directly in its database.",
+}
+
 var createUserCmd = &cobra.Command{
-	Use:   "create-user USERNAME",
+	Use:   "create USERNAME",
 	Short: "Create a user on the server",
 	Long:  "Create a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Use --offline to create an account directly in the configured database with the server stopped. Offline administrator creation prints the new access token for bootstrap or recovery.",
 	Args:  cobra.ExactArgs(1),
@@ -63,7 +69,7 @@ var createUserCmd = &cobra.Command{
 }
 
 var deleteUserCmd = &cobra.Command{
-	Use:   "delete-user USERNAME",
+	Use:   "delete USERNAME",
 	Short: "Delete a user on the server",
 	Long:  "Delete a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Use --purge to also remove all indexed documents belonging to the user.",
 	Args:  cobra.ExactArgs(1),
@@ -93,7 +99,7 @@ var deleteUserCmd = &cobra.Command{
 }
 
 var showUserCmd = &cobra.Command{
-	Use:   "show-user USERNAME",
+	Use:   "show USERNAME",
 	Short: "Show user information from the server",
 	Long:  "Display information about a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Use --show-token to also retrieve and display the user's access token.",
 	Args:  cobra.ExactArgs(1),
@@ -129,7 +135,7 @@ var showUserCmd = &cobra.Command{
 }
 
 var updateUserCmd = &cobra.Command{
-	Use:   "update-user USERNAME",
+	Use:   "update USERNAME",
 	Short: "Update a user on the server",
 	Long:  "Update a user account on the configured running Hister server. Requires user handling on that server and an administrator token. Combine flags to change the username or password, regenerate the token, or toggle administrator status in one update. Concurrent account changes are rejected; review the account before retrying.",
 	Args:  cobra.ExactArgs(1),
@@ -195,6 +201,30 @@ var updateUserCmd = &cobra.Command{
 		_, err = lipgloss.Fprintln(cmd.OutOrStdout(), strings.Join(lines, "\n"))
 		return err
 	},
+}
+
+var (
+	createUserAliasCmd = deprecatedUserCommand(createUserCmd)
+	deleteUserAliasCmd = deprecatedUserCommand(deleteUserCmd)
+	showUserAliasCmd   = deprecatedUserCommand(showUserCmd)
+	updateUserAliasCmd = deprecatedUserCommand(updateUserCmd)
+)
+
+func deprecatedUserCommand(command *cobra.Command) *cobra.Command {
+	name := command.Name() + "-user"
+	replacement := "hister user " + command.Name()
+	return &cobra.Command{
+		Use:    name + " USERNAME",
+		Short:  "Deprecated alias for user " + command.Name(),
+		Long:   "Deprecated: use " + replacement + " instead.\n\n" + command.Long,
+		Hidden: true,
+		Args:   command.Args,
+		// Keep migration notices on stderr so existing scripts retain their output.
+		PreRun: func(cmd *cobra.Command, _ []string) {
+			cmd.PrintErrln("Command " + name + " is deprecated; use " + replacement + " instead.")
+		},
+		RunE: command.RunE,
+	}
 }
 
 func promptConfirmedPassword(passwordPrompt, confirmationPrompt string) (string, error) {

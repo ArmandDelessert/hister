@@ -72,17 +72,20 @@ to `127.0.0.1:4433`; setting `base_url` alone does not configure HTTPS.
 `user_handling` enables individual accounts. With `public: false`, searching the
 instance requires authentication, including searches over shared documents.
 
-On the server host, create an administrator and two ordinary member accounts:
+With the server stopped, create an administrator and two ordinary member accounts:
 
 ```bash
-hister --config config.yml create-user admin --admin
-hister --config config.yml create-user alice
-hister --config config.yml create-user bob
+hister --config config.yml user create admin --offline --admin
+hister --config config.yml user create alice --offline
+hister --config config.yml user create bob --offline
 ```
 
 Each command prompts for a password. Run these commands with the same
 configuration and operating system account that will run the server, so they
 use the same database and data directory.
+
+Save the administrator token printed by the first command as `ADMIN_TOKEN` for
+the commands below.
 
 Then start Hister:
 
@@ -103,16 +106,10 @@ to move those documents to a personal account.
 Hister calls documents owned by user ID `0` global documents. In this setup,
 they form the shared collection available to all members.
 
-The administrator can add to it with the `--global` indexing flag. First,
-retrieve the administrator's personal access token on the server host:
-
-```bash
-hister --config config.yml show-user admin --token
-```
-
-Use that token in place of `ADMIN_TOKEN` below. Run the crawl from the same
-server configuration, replacing the handbook URL and allowed domain with your
-own:
+The administrator can add to it with the `--global` indexing flag. Use the token
+saved during account creation in place of `ADMIN_TOKEN` below. Run the crawl from
+the same server configuration, replacing the handbook URL and allowed domain
+with your own:
 
 ```bash
 hister --config config.yml --token 'ADMIN_TOKEN' index \

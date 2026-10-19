@@ -19,7 +19,7 @@ app:
 > **Note**: When `user_handling` is active, `access_token` is used only to authenticate users by comparing it to the user's access token. This can be useful when the Hister admin sets `app.access_token` in the configuration file to their personal access token in order to execute command-line Hister commands as the admin user.
 
 After enabling user handling, create your first administrator with
-[`create-user --offline --admin`](#create-user) while the server is stopped, then
+[`user create --offline --admin`](#user-create) while the server is stopped, then
 start the server. OAuth and proxy authentication can create ordinary accounts
 automatically. Setting `server.proxy_auth_header` also enables user handling
 automatically.
@@ -93,12 +93,17 @@ hister -t <your-token> search "query"
 
 ## User Management Commands
 
-`create-user`, `show-user`, `update-user`, and `delete-user` use the configured
+Use `hister user --help` to list account management commands. The old
+`create-user`, `show-user`, `update-user`, and `delete-user` commands are deprecated
+aliases. They still accept the same arguments and flags, but print a migration
+notice to standard error. Update scripts to use the `hister user` subcommands.
+
+`user create`, `user show`, `user update`, and `user delete` use the configured
 running server and require an administrator's personal access token.
-`create-user --offline` requires `user_handling: true` in the local configuration
+`user create --offline` requires `user_handling: true` in the local configuration
 and direct access to the server's data.
 
-### `create-user`
+### `user create`
 
 Create a new account on the configured running server. User handling must be
 enabled on that server; it does not need to be enabled locally. The command
@@ -106,10 +111,10 @@ prompts for a password twice. Passwords must contain 8 to 72 UTF-8 bytes; a
 Unicode character may occupy multiple bytes.
 
 ```bash
-hister create-user USERNAME [--admin] [--offline]
+hister user create USERNAME [--admin] [--offline]
 
 # Create an account on a remote server
-hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN create-user alice
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN user create alice
 ```
 
 | Flag        | Description                                                                         |
@@ -121,7 +126,7 @@ To create the first administrator or recover access, stop the server and use its
 configuration and data directory:
 
 ```bash
-hister --config /path/to/config.yml create-user admin --offline --admin
+hister --config /path/to/config.yml user create admin --offline --admin
 ```
 
 Choose an unused username. Offline creation with `--admin` prints the new account's
@@ -129,21 +134,21 @@ access token. After starting the server, use this token with `--token` to manage
 other accounts. Offline creation of an ordinary account does not print its token.
 
 Creation through the server displays a confirmation without retrieving the new
-token. Use `show-user USERNAME --show-token` if you need it. The server must support
+token. Use `user show USERNAME --show-token` if you need it. The server must support
 remote user creation. If it rejects the request or cannot be reached, the command
 reports an error without creating a local account.
 
-### `delete-user`
+### `user delete`
 
 Soft delete a user account on the configured server. That server must have `user_handling: true`. The username and owned documents are both resolved there, so local accounts are unaffected even when they have the same name or numeric ID. Local user handling does not need to be enabled.
 
 If the user owns indexed documents, the command refuses to continue unless `--purge` is supplied. Purging removes that user's current indexed documents before deleting the account and reports the number removed. If checking or purging documents fails, the account remains; a failed purge may already have removed some documents. If account deletion is rejected after a purge, documents already removed are not restored. This is not complete data erasure, as explained in [Data Lifecycle and Retention](data-lifecycle#multi-user-ownership).
 
 ```bash
-hister delete-user USERNAME [--purge]
+hister user delete USERNAME [--purge]
 
 # Delete an account and its indexed documents on a remote server
-hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN delete-user alice --purge
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN user delete alice --purge
 ```
 
 | Flag      | Description                                                      |
@@ -152,18 +157,18 @@ hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN delete-user 
 
 The server must support remote user deletion. If an older server rejects the request, upgrade it and retry. The command does not fall back to deleting a local account or retry failed requests automatically.
 
-### `show-user`
+### `user show`
 
 Display information about a user account on the configured running server. The server must have user handling enabled, and the request requires an administrator's personal access token. Local user handling does not need to be enabled.
 
 ```bash
-hister show-user USERNAME [--show-token]
+hister user show USERNAME [--show-token]
 
 # Inspect a user on a remote server
-hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN show-user alice
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN user show alice
 
 # Also retrieve the user's existing access token
-hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN show-user alice --show-token
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN user show alice --show-token
 ```
 
 | Flag           | Description                                                         |
@@ -188,7 +193,7 @@ Created at: 2026-03-26 09:00:00
 Updated at: 2026-03-26 09:00:00
 ```
 
-### `update-user`
+### `user update`
 
 Modify an existing account on the configured running server. User handling must
 be enabled on that server, and the command requires an administrator's personal
@@ -196,10 +201,10 @@ access token. Local user handling does not need to be enabled. At least one
 change must be requested.
 
 ```bash
-hister update-user USERNAME [--username NEW] [--password] [--regen-token] [--toggle-admin]
+hister user update USERNAME [--username NEW] [--password] [--regen-token] [--toggle-admin]
 
 # Rename an account and change its password together on a remote server
-hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN update-user alice --username alice-new --password
+hister --server-url https://hister.example --token YOUR_ADMIN_TOKEN user update alice --username alice-new --password
 ```
 
 | Flag             | Description                                                        |
@@ -216,7 +221,7 @@ entered twice for confirmation. Confirmations and any new token are displayed
 only after the server accepts the update.
 
 If the account changes while you are entering a password or submitting the
-update, the server rejects the request. Inspect the account with `show-user`
+update, the server rejects the request. Inspect the account with `user show`
 and review your intended changes before trying again. The command does not
 retry conflicting updates automatically. The last administrator cannot be
 demoted; create or promote another administrator first.
@@ -292,14 +297,14 @@ explains how to apply changes together and detect conflicting edits.
 That operation allows users to rotate their own token and administrators to rotate
 other users' tokens.
 
-Grant or revoke admin status using `create-user --admin` (at creation time) or `update-user --toggle-admin` (at any time). The last administrator cannot be demoted or deleted. Create or promote another administrator first.
+Grant or revoke admin status using `user create --admin` (at creation time) or `user update --toggle-admin` (at any time). The last administrator cannot be demoted or deleted. Create or promote another administrator first.
 
 ## Single User Compatibility
 
 Hister reserves user ID `0` for unauthenticated use. Documents indexed without user handling enabled are stored under user ID `0` and remain visible to all authenticated users after the feature is turned on. This means you can enable user handling on an existing instance without losing access to previously indexed content.
 
 To make existing global documents private to one user, find the numeric user ID with
-`hister show-user USERNAME`, then run the query update as an administrator:
+`hister user show USERNAME`, then run the query update as an administrator:
 
 ```bash
 hister update 'user_id:0' --user-id USER_ID
@@ -330,9 +335,9 @@ Authenticated users can still add, delete, label, manage their own content, and 
 
 Every user account has a personal access token used for API authentication. Tokens are random and stored in the database.
 
-- Generate a new token from the web UI (Profile → Generate Token) or via `hister update-user --regen-token`.
+- Generate a new token from the web UI (Profile → Generate Token) or via `hister user update USERNAME --regen-token`.
 - Generating a new token immediately invalidates the previous one. Update any clients (browser extension, scripts) accordingly.
-- Tokens are not retrieved or displayed in `show-user` output by default; use `--show-token` to reveal them.
+- Tokens are not retrieved or displayed in `user show` output by default; use `--show-token` to reveal them.
 
 ## Security Considerations
 
@@ -341,6 +346,6 @@ Every user account has a personal access token used for API authentication. Toke
 - Personal access tokens bypass session cookies and can be used in scripts. Keep them secret and regenerate them if compromised.
 - OAuth state tokens are single use random values stored in the server side session. They prevent cross site request forgery during the OAuth redirect flow.
 - OAuth logins use S256 PKCE by default. A private verifier binds the authorization request to its token exchange and is stored with the state and provider in the server side session. See [PKCE and compatibility](/docs/configuration#pkce-and-compatibility) for older provider settings and upgrade behavior.
-- OAuth accounts are created without a password. An administrator can assign one with `hister update-user USERNAME --password`. If you need to disable an OAuth user's access, use `hister delete-user` or remove the provider from the configuration.
+- OAuth accounts are created without a password. An administrator can assign one with `hister user update USERNAME --password`. If you need to disable an OAuth user's access, use `hister user delete` or remove the provider from the configuration.
 - Enable `server.oauth_only: true` to enforce OAuth login and prevent password authentication. Personal access tokens remain valid for API and CLI access. In multiple user mode, `app.access_token` must contain a user's personal token.
 - User handling is intended for a trusted group of users on a shared instance (family, team). For public-facing deployments, place Hister behind a reverse proxy with HTTPS and only index content that may be shown publicly.

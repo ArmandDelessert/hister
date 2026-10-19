@@ -267,10 +267,9 @@ func init() {
 	rootCmd.AddCommand(checkUpdateCmd)
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(updateDocumentsCmd)
-	rootCmd.AddCommand(createUserCmd)
-	rootCmd.AddCommand(deleteUserCmd)
-	rootCmd.AddCommand(showUserCmd)
-	rootCmd.AddCommand(updateUserCmd)
+	rootCmd.AddCommand(userCmd)
+	userCmd.AddCommand(createUserCmd, deleteUserCmd, showUserCmd, updateUserCmd)
+	rootCmd.AddCommand(createUserAliasCmd, deleteUserAliasCmd, showUserAliasCmd, updateUserAliasCmd)
 	rootCmd.AddCommand(crawlCmd)
 	rootCmd.AddCommand(companionCmd)
 	crawlCmd.AddCommand(crawlListCmd)
@@ -340,13 +339,17 @@ func init() {
 	exportCmd.Flags().String("start-date", "", "only export documents updated on or after this date (YYYY-MM-DD)")
 	exportCmd.Flags().String("end-date", "", "only export documents updated on or before this date (YYYY-MM-DD)")
 
-	createUserCmd.Flags().Bool("admin", false, "create user with admin privileges")
-	createUserCmd.Flags().Bool("offline", false, "create user directly in the configured database (server must be stopped); prints the new token with --admin")
+	for _, cmd := range []*cobra.Command{createUserCmd, createUserAliasCmd} {
+		cmd.Flags().Bool("admin", false, "create user with admin privileges")
+		cmd.Flags().Bool("offline", false, "create user directly in the configured database (server must be stopped); prints the new token with --admin")
+	}
 
-	updateUserCmd.Flags().String("username", "", "new username")
-	updateUserCmd.Flags().Bool("password", false, "change password")
-	updateUserCmd.Flags().Bool("regen-token", false, "regenerate access token")
-	updateUserCmd.Flags().Bool("toggle-admin", false, "toggle admin status")
+	for _, cmd := range []*cobra.Command{updateUserCmd, updateUserAliasCmd} {
+		cmd.Flags().String("username", "", "new username")
+		cmd.Flags().Bool("password", false, "change password")
+		cmd.Flags().Bool("regen-token", false, "regenerate access token")
+		cmd.Flags().Bool("toggle-admin", false, "toggle admin status")
+	}
 
 	deleteCmd.Flags().Bool("dry", false, "display the number of documents that would be deleted without actually deleting them")
 	deleteCmd.Flags().BoolP("verbose", "v", false, "list all URLs that would be deleted before performing the deletion. Can be used with --dry")
@@ -359,9 +362,13 @@ func init() {
 	updateDocumentsCmd.Flags().Bool("dry", false, "display the number of affected documents without updating them")
 	updateDocumentsCmd.Flags().BoolP("yes", "y", false, "update without prompting for confirmation")
 
-	deleteUserCmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
+	for _, cmd := range []*cobra.Command{deleteUserCmd, deleteUserAliasCmd} {
+		cmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
+	}
 
-	showUserCmd.Flags().Bool("show-token", false, "retrieve and display the user's access token")
+	for _, cmd := range []*cobra.Command{showUserCmd, showUserAliasCmd} {
+		cmd.Flags().Bool("show-token", false, "retrieve and display the user's access token")
+	}
 
 	reindexCmd.Flags().BoolP("exclude-sensitive", "x", false, "skip sensitive content checks during reindexing, allowing matching documents to be indexed")
 

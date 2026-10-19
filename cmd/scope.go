@@ -51,10 +51,12 @@ func configureCommandScopes() {
 	setCommandScope(deleteCmd, executionScopeRemote, "client-timeout")
 	setCommandScope(updateDocumentsCmd, executionScopeRemote, "client-timeout")
 
-	setCommandScope(createUserCmd, executionScopeHybrid, "client-timeout")
-	setCommandScope(deleteUserCmd, executionScopeRemote, "client-timeout")
-	setCommandScope(showUserCmd, executionScopeRemote, "client-timeout")
-	setCommandScope(updateUserCmd, executionScopeRemote, "client-timeout")
+	for _, cmd := range []*cobra.Command{userCmd, createUserCmd, createUserAliasCmd} {
+		setCommandScope(cmd, executionScopeHybrid, "client-timeout")
+	}
+	for _, cmd := range []*cobra.Command{deleteUserCmd, deleteUserAliasCmd, showUserCmd, showUserAliasCmd, updateUserCmd, updateUserAliasCmd} {
+		setCommandScope(cmd, executionScopeRemote, "client-timeout")
+	}
 
 	setCommandScope(crawlCmd, executionScopeLocal)
 	setCommandScope(crawlListCmd, executionScopeLocal)
@@ -87,6 +89,7 @@ func configureCommandScopes() {
 	configureScopeGroups(crawlCmd)
 	configureScopeGroups(companionCmd)
 	configureScopeGroups(configCmd)
+	configureScopeGroups(userCmd)
 	configureScopedHelp()
 }
 

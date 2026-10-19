@@ -71,7 +71,7 @@ Alternatively, use the `X-Access-Token` header with the same value.
 Generate a personal token on the profile page (`/profile`) or via:
 
 ```bash
-hister update-user <username> --regen-token
+hister user update <username> --regen-token
 ```
 
 Then pass it the same way:

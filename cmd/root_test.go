@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,12 +19,199 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
 )
+
+func executeUserCommandForTest(t *testing.T, args ...string) (string, string, error) {
+	t.Helper()
+	command, _, err := rootCmd.Find(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.InitDefaultHelpFlag()
+	command.Flags().VisitAll(func(flag *pflag.Flag) {
+		value, changed := flag.Value.String(), flag.Changed
+		t.Cleanup(func() {
+			if err := flag.Value.Set(value); err != nil {
+				t.Error(err)
+			}
+			flag.Changed = changed
+		})
+	})
+	return executeInspectionWithStderr(t, args...)
+}
+
+func TestUserCommandHelp(t *testing.T) {
+	previousPreRun := rootCmd.PersistentPreRun
+	rootCmd.PersistentPreRun = func(*cobra.Command, []string) { t.Error("help initialized runtime state") }
+	t.Cleanup(func() { rootCmd.PersistentPreRun = previousPreRun })
+	for _, args := range [][]string{{"--help"}, {"user"}, {"user", "--help"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			out, _, err := executeUserCommandForTest(t, args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "user") {
+				t.Errorf("help does not mention user commands: %s", out)
+			}
+			for _, action := range []string{"create", "show", "update", "delete"} {
+				if strings.Contains(out, action+"-user") {
+					t.Errorf("help advertises deprecated command %s-user", action)
+				}
+				if args[0] == "user" && !strings.Contains(out, action) {
+					t.Errorf("user help does not list %s", action)
+				}
+			}
+		})
+	}
+	for _, tc := range []struct {
+		action string
+		flags  []string
+	}{
+		{"create", []string{"--admin", "--offline"}},
+		{"show", []string{"--show-token"}},
+		{"update", []string{"--username", "--password", "--regen-token", "--toggle-admin"}},
+		{"delete", []string{"--purge"}},
+	} {
+		for _, legacy := range []bool{false, true} {
+			args := []string{"user", tc.action}
+			if legacy {
+				args = []string{tc.action + "-user"}
+			}
+			t.Run(strings.Join(args, " "), func(t *testing.T) {
+				out, _, err := executeUserCommandForTest(t, append(args, "--help")...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, want := range append(tc.flags, "hister "+strings.Join(args, " ")+" USERNAME", "--server-url", "--token", "--client-timeout") {
+					if !strings.Contains(out, want) {
+						t.Errorf("help missing %q: %s", want, out)
+					}
+				}
+				if strings.Contains(out, "--search-url") {
+					t.Error("user help includes an unrelated search flag")
+				}
+				if legacy && (!strings.Contains(out, "Deprecated") || !strings.Contains(out, "hister user "+tc.action)) {
+					t.Errorf("legacy help lacks migration guidance: %s", out)
+				}
+			})
+		}
+	}
+}
+
+func TestUserCommandsAndDeprecatedAliases(t *testing.T) {
+	for _, tc := range []struct {
+		action, method, path, response, output string
+		flags                                  []string
+		payload                                map[string]any
+	}{
+		{"create", http.MethodPost, "/hister/api/users", `{"id":77,"username":"alice","is_admin":true}`, "User created: alice", []string{"--admin"}, map[string]any{"username": "alice", "password": "password123", "is_admin": true}},
+		{"show", http.MethodGet, "/hister/api/users", `{"users":[{"id":77,"username":"alice","revision":4}]}`, "Username:   alice", nil, nil},
+		{"show", http.MethodGet, "/hister/api/users/77/token", `{"token":"user-token"}`, "Token:      user-token", []string{"--show-token"}, nil},
+		{"update", http.MethodPatch, "/hister/api/users/77", `{"id":77,"username":"renamed","is_admin":true,"revision":5,"token":"new-token"}`, "New token for renamed: new-token", []string{"--username", "renamed", "--password", "--regen-token", "--toggle-admin"}, map[string]any{"username": "renamed", "password": "password123", "regenerate_token": true, "is_admin": true, "revision": float64(4)}},
+		{"delete", http.MethodDelete, "/hister/api/users/77", `{"id":77,"username":"alice","deleted_documents":0}`, "User deleted: alice", nil, nil},
+		{"delete", http.MethodDelete, "/hister/api/users/77?purge=true", `{"id":77,"username":"alice","deleted_documents":3}`, "Purged 3 document(s)", []string{"--purge"}, nil},
+	} {
+		for _, legacy := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%v/legacy=%t", tc.action, tc.flags, legacy), func(t *testing.T) {
+				oldCfg, oldAgent, oldTransport, oldPrompt := cfg, UserAgent, http.DefaultTransport, promptPassword
+				oldDB := model.DB
+				t.Cleanup(func() {
+					cfg, UserAgent, http.DefaultTransport, promptPassword = oldCfg, oldAgent, oldTransport, oldPrompt
+				})
+				dir := t.TempDir()
+				filename := filepath.Join(dir, "client.yml")
+				if err := os.WriteFile(filename, []byte("app:\n  user_handling: false\nserver:\n  database: /does/not/exist/hister.db\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "unused-data"))
+				promptPassword = func(string) (string, error) { return "password123", nil }
+				calls := 0
+				http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					calls++
+					if req.URL.Host != "remote.example" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" {
+						t.Errorf("unexpected server or authentication: %s", req.URL)
+					}
+					if req.Method == http.MethodGet && req.URL.Path == "/hister/api/users" {
+						if req.URL.Query().Get("username") != "alice" || req.URL.Query().Get("limit") != "1" {
+							t.Errorf("unexpected user lookup: %s", req.URL)
+						}
+						return jsonHTTPResponse(req, http.StatusOK, `{"users":[{"id":77,"username":"alice","revision":4}]}`), nil
+					}
+					if req.Method != tc.method || req.URL.RequestURI() != tc.path {
+						t.Errorf("unexpected request: %s %s", req.Method, req.URL)
+					}
+					if tc.payload != nil {
+						body, err := io.ReadAll(req.Body)
+						if err != nil {
+							t.Fatal(err)
+						}
+						assertContractJSON(t, body, contractJSON(t, tc.payload))
+					}
+					status := http.StatusOK
+					if tc.action == "create" {
+						status = http.StatusCreated
+					}
+					return jsonHTTPResponse(req, status, tc.response), nil
+				})
+				globals := []string{"--config", filename, "--server-url", "https://remote.example/hister", "--token", "admin-token", "--client-timeout", "2"}
+				args := append(globals, "user", tc.action, "alice")
+				if legacy {
+					args = append([]string{tc.action + "-user", "alice"}, globals...)
+				}
+				out, stderr, err := executeUserCommandForTest(t, append(args, tc.flags...)...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = ansi.Strip(out)
+				wantCalls := 2
+				if tc.action == "create" || tc.action == "show" && len(tc.flags) == 0 {
+					wantCalls = 1
+				}
+				if calls != wantCalls || !strings.Contains(out, tc.output) {
+					t.Errorf("requests = %d, want %d; output = %q", calls, wantCalls, out)
+				}
+				if strings.Contains(out, "deprecated") || strings.Contains(out, "admin-token") || strings.Contains(out, "password123") {
+					t.Errorf("stdout contains a warning or credentials: %q", out)
+				}
+				if legacy {
+					if !strings.Contains(stderr, "deprecated") || !strings.Contains(stderr, "hister user "+tc.action) {
+						t.Errorf("missing migration notice: %q", stderr)
+					}
+				} else if stderr != "" {
+					t.Errorf("unexpected stderr: %q", stderr)
+				}
+				if model.DB != oldDB {
+					t.Error("remote command opened a local database")
+				}
+			})
+		}
+	}
+}
+
+func TestUserCommandsRequireOneUsername(t *testing.T) {
+	previousPreRun := rootCmd.PersistentPreRun
+	rootCmd.PersistentPreRun = func(*cobra.Command, []string) { t.Error("invalid arguments reached runtime initialization") }
+	t.Cleanup(func() { rootCmd.PersistentPreRun = previousPreRun })
+	for _, action := range []string{"create", "show", "update", "delete"} {
+		for _, path := range [][]string{{"user", action}, {action + "-user"}} {
+			for _, names := range [][]string{nil, {"alice", "bob"}} {
+				args := append(append([]string{}, path...), names...)
+				t.Run(strings.Join(args, " "), func(t *testing.T) {
+					_, _, err := executeUserCommandForTest(t, args...)
+					if err == nil || !strings.Contains(err.Error(), "accepts 1 arg(s)") {
+						t.Errorf("expected username argument error, got %v", err)
+					}
+				})
+			}
+		}
+	}
+}
 
 func TestDeleteUserUsesRemoteAccount(t *testing.T) {
 	previousConfig, previousDB, previousTransport := cfg, model.DB, http.DefaultTransport

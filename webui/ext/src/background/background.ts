@@ -380,12 +380,17 @@ async function updateTabIcon(tabId: number, url: string): Promise<void> {
 
 // The primary signal for "this tab is a PDF" is the actual HTTP Content-Type
 // header reported by the server (observed via webRequest.onHeadersReceived),
-// not a URL regex — URL heuristics miss content-server PDFs whose path has no
-// .pdf extension and can misfire on non-PDF URLs that merely contain /pdf/.
-// isPDFUrl() is retained only as a fallback for the manual "index current
-// page" command, where no network response is being navigated at that moment.
+// which handles content-server PDFs whose path has no .pdf extension. isPDFUrl()
+// is retained only as a conservative fallback for the manual "index current
+// page" command, where no network response is being navigated at that moment:
+// it just matches URLs whose path ends in .pdf.
 function isPDFUrl(url: string): boolean {
-  return /\.pdf(\?.*)?$/i.test(url) || /\/pdf\/[^/]+\/?(\?.*)?$/i.test(url);
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.endsWith('.pdf');
+  } catch (_) {
+    return false;
+  }
 }
 
 // Content-Type value split on ';' so we match "application/pdf; charset=..." too.

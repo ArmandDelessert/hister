@@ -450,7 +450,12 @@ chrome.webRequest.onHeadersReceived.addListener(
     void chrome.tabs.get(details.tabId).then((tab) => {
       if (!tab?.id) return;
       if (doNotIndexUrl(details.url) || !markPdfIndexed(tab.id, details.url)) return;
-      void indexPDFTab(tab.id, { ...tab, url: details.url });
+      // Same pre-commit caveat applies to the title: tab.title is the previous
+      // page's title (or an interstitial like "Preparing to download ..."),
+      // which would corrupt retrieval if indexed. Send the request URL as the
+      // title instead; the real title is not available before the navigation
+      // commits.
+      void indexPDFTab(tab.id, { ...tab, url: details.url, title: details.url });
     });
   },
   { urls: ['<all_urls>'], types: ['main_frame'] },

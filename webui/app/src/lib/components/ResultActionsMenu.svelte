@@ -8,7 +8,7 @@
   import { Input } from '@hister/components/ui/input';
   import { Button } from '@hister/components/ui/button';
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
-  import { MoreVertical, Pin, PinOff, Tag, Trash2, Unlink } from '@lucide/svelte';
+  import { Copy, MoreVertical, Pin, PinOff, Tag, Trash2, Unlink } from '@lucide/svelte';
 
   interface Props {
     url: string;
@@ -94,47 +94,58 @@
   }
 </script>
 
-{#if canWrite}
-  {#if mobile}
-    <ResultActionsSheet
-      bind:open
-      {url}
-      {title}
-      {query}
-      {pinned}
-      {historyResult}
-      {resultState}
-      onAddSkipRule={addSkipRule}
-      onForget={forgetResult}
-      {onDelete}
-    />
-  {:else}
-    <DropdownMenu.Root
-      bind:open
-      onOpenChange={(isOpen) => {
-        if (!isOpen) return;
-        resultState.onOpen();
-      }}
+{#if mobile}
+  <ResultActionsSheet
+    bind:open
+    {url}
+    {title}
+    {query}
+    {pinned}
+    {historyResult}
+    {canWrite}
+    {resultState}
+    onAddSkipRule={addSkipRule}
+    onForget={forgetResult}
+    {onDelete}
+  />
+{:else}
+  <DropdownMenu.Root
+    bind:open
+    onOpenChange={(isOpen) => {
+      if (!isOpen) return;
+      resultState.onOpen();
+    }}
+  >
+    <DropdownMenu.Trigger>
+      {#snippet child({ props })}
+        <Button
+          {...props}
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Actions for ${title || url}`}
+          class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer self-start"
+        >
+          <MoreVertical class="size-4" />
+        </Button>
+      {/snippet}
+    </DropdownMenu.Trigger>
+    <DropdownMenu.Content
+      class="border-brutal-border bg-card-surface {pinned || !canWrite
+        ? 'w-72'
+        : 'w-100'} rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
     >
-      <DropdownMenu.Trigger>
-        {#snippet child({ props })}
-          <Button
-            {...props}
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Actions for ${title || url}`}
-            class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer self-start"
-          >
-            <MoreVertical class="size-4" />
-          </Button>
-        {/snippet}
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content
-        class="border-brutal-border bg-card-surface {pinned
-          ? 'w-72'
-          : 'w-100'} rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-      >
-        <div class="space-y-3">
+      <div class="space-y-3">
+        <Button
+          variant="outline"
+          size="sm"
+          class="w-full border-[2px] text-xs"
+          onclick={() => resultState.copyURL(url)}
+        >
+          <Copy class="size-3.5" />
+          Copy URL
+        </Button>
+        {#if canWrite}
+          <hr />
           <div class="space-y-2">
             {#if pinned}
               <p
@@ -235,19 +246,22 @@
               Delete result
             </Button>
           {/if}
-          {#if resultState.actionsMessage}
-            <p
-              class="font-inter text-xs {resultState.actionsError
-                ? 'text-hister-rose'
-                : 'text-hister-teal'}"
-            >
-              {resultState.actionsMessage}
-            </p>
-          {/if}
-        </div>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
-  {/if}
+        {/if}
+        {#if resultState.actionsMessage}
+          <p
+            role={resultState.actionsError ? 'alert' : 'status'}
+            class="font-inter text-xs {resultState.actionsError
+              ? 'text-hister-rose'
+              : 'text-hister-teal'}"
+          >
+            {resultState.actionsMessage}
+          </p>
+        {/if}
+      </div>
+    </DropdownMenu.Content>
+  </DropdownMenu.Root>
+{/if}
+{#if canWrite}
   <DeleteMatchingDocumentsDialog
     bind:open={deleteConfirmOpen}
     matched={deleteConfirmMatched}

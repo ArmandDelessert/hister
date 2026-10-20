@@ -9,6 +9,71 @@ async function openActions(page: Page) {
   return trigger;
 }
 
+test('result titles sit close to their bodies with space between results and usable action buttons', async ({
+  page,
+  isMobile,
+}) => {
+  await mockAPI(page);
+  const titles = [
+    preview.title,
+    'A longer article title that wraps across multiple lines while keeping its source and excerpt close together',
+    'Another article',
+  ];
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage(() =>
+      socket.send(
+        JSON.stringify({
+          documents: titles.map((title, index) => ({
+            id: `document-${index}`,
+            url: `${original}/${index}`,
+            title,
+            domain: 'example.com',
+            text: index === 2 ? '' : 'A short excerpt from the saved article.',
+          })),
+          total: titles.length,
+        }),
+      ),
+    );
+  });
+  await page.goto('/?q=article');
+  const rows = page.locator('[data-result]');
+  await expect(rows).toHaveCount(titles.length);
+  await page.evaluate(() => document.fonts.ready);
+
+  async function checkSpacing() {
+    for (let index = 0; index < titles.length; index++) {
+      const row = rows.nth(index);
+      const title = (await row.locator('[data-result-link]').boundingBox())!;
+      const body = (await row.locator('.result-meta').boundingBox())!;
+      const actions = (await row.getByRole('button', { name: /^Actions for / }).boundingBox())!;
+      const titleGap = body.y - (title.y + title.height);
+      expect(titleGap).toBeGreaterThanOrEqual(0);
+      expect(titleGap).toBeLessThanOrEqual(4);
+      expect(actions.height).toBeGreaterThanOrEqual(isMobile ? 44 : 32);
+      expect(actions.width).toBeGreaterThanOrEqual(isMobile ? 44 : 32);
+      expect(title.x + title.width).toBeLessThanOrEqual(actions.x);
+      expect(body.x + body.width).toBeLessThanOrEqual(actions.x);
+      if (index > 0) {
+        const previous = (await rows.nth(index - 1).boundingBox())!;
+        const current = (await row.boundingBox())!;
+        expect(current.y - (previous.y + previous.height)).toBeGreaterThanOrEqual(20);
+      }
+    }
+  }
+
+  await expect(checkSpacing).toPass();
+  await page.screenshot({ path: test.info().outputPath('result-spacing.png') });
+  if (!isMobile) {
+    await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+    await expect(checkSpacing).toPass();
+  }
+  const trigger = rows.nth(1).getByRole('button', { name: /^Actions for / });
+  await trigger.click();
+  await expect(isMobile ? page.getByRole('dialog') : page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
+
 test('result actions use a bottom sheet on phones and a dropdown on desktop', async ({
   page,
   isMobile,
@@ -180,13 +245,78 @@ test('pinned and history results retain their mobile actions', async ({ page, is
   ]);
 });
 
-test('result actions stay hidden for read only users', async ({ page }) => {
+test('read only result actions offer copying without editing controls', async ({
+  page,
+  isMobile,
+}) => {
   await mockAPI(page, { canWrite: false });
   await page.goto('/?q=article');
-  await expect(page.locator('[data-result]')).toHaveCount(1);
-  await expect(
-    page.locator('[data-result]').getByRole('button', { name: /^Actions for / }),
-  ).toHaveCount(0);
+  await openActions(page);
+  const actions = isMobile
+    ? page.getByRole('dialog', { name: 'Result actions', exact: true })
+    : page.getByRole('menu');
+  await expect(actions.getByRole('button', { name: 'Copy URL', exact: true })).toBeVisible();
+  await expect(actions.getByRole('textbox')).toHaveCount(0);
+  for (const name of [
+    'Pin',
+    'Pin result',
+    'Edit label',
+    'Save',
+    'Disable indexing',
+    'Delete result',
+  ]) {
+    await expect(actions.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+});
+
+for (const canWrite of [false, true]) {
+  test(`result actions copy the original URL for ${canWrite ? 'editing' : 'read only'} users`, async ({
+    page,
+    context,
+    isMobile,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await mockAPI(page, { canWrite });
+    await page.goto('/?q=article');
+    const row = page.locator('[data-result]');
+    await expect(row.getByRole('button', { name: 'Copy URL' })).toHaveCount(0);
+    const trigger = await openActions(page);
+    const actions = isMobile
+      ? page.getByRole('dialog', { name: 'Result actions', exact: true })
+      : page.getByRole('menu');
+    const copy = actions.getByRole('button', { name: 'Copy URL', exact: true });
+    await copy.focus();
+    await page.keyboard.press('Enter');
+    await expect(actions.getByRole('status')).toHaveText('URL copied.');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(original);
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+    await expect(page).toHaveURL(/q=article/);
+  });
+}
+
+test('copy failure is reported and can be retried', async ({ page, context, isMobile }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await mockAPI(page);
+  await page.goto('/?q=article');
+  await page.evaluate(() => {
+    const writeText = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = async (text) => {
+      navigator.clipboard.writeText = writeText;
+      throw new DOMException('Permission denied', 'NotAllowedError');
+    };
+  });
+  await openActions(page);
+  const actions = isMobile
+    ? page.getByRole('dialog', { name: 'Result actions', exact: true })
+    : page.getByRole('menu');
+  const copy = actions.getByRole('button', { name: 'Copy URL', exact: true });
+  await copy.click();
+  await expect(actions.getByRole('alert')).toHaveText('Could not copy URL. Please try again.');
+  await copy.click();
+  await expect(actions.getByRole('status')).toHaveText('URL copied.');
+  await expect(actions.getByRole('alert')).toHaveCount(0);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(original);
 });
 
 test('the mobile delete action removes the selected result', async ({ page, isMobile }) => {

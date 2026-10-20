@@ -7,6 +7,183 @@ test.beforeEach(async ({ page }) => {
   await mockAPI(page);
 });
 
+test('narrow results truncate the URL while keeping Preview beside it', async ({
+  page,
+  isMobile,
+}) => {
+  const urls = [
+    `${original}/${'saved-reading/'.repeat(12)}?lang=en#overview`,
+    `${original}/${'reference-notes/'.repeat(12)}`,
+  ];
+  const label = 'Reference material to read for the next research project';
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage(() =>
+      socket.send(
+        JSON.stringify({
+          history: [
+            {
+              id: 'document-1',
+              url: urls[0],
+              title: 'Pinned article',
+              domain: 'example.com',
+              text: 'A saved article with a long label.',
+              label,
+              pinned: true,
+            },
+          ],
+          documents: [
+            {
+              id: 'document-2',
+              url: urls[1],
+              title: 'Another article',
+              domain: 'example.com',
+              text: 'A saved article without a label.',
+            },
+          ],
+          total: 2,
+        }),
+      ),
+    );
+  });
+  await page.goto('/?q=article');
+  const rows = page.locator('[data-result]');
+  await expect(rows).toHaveCount(2);
+  await page.evaluate(() => document.fonts.ready);
+
+  for (const width of isMobile ? [375, 320] : [1280, 1024]) {
+    await page.setViewportSize({ width, height: 812 });
+    for (let index = 0; index < urls.length; index++) {
+      const row = rows.nth(index);
+      const url = row.locator('.result-url-text');
+      const previewLink = row.getByRole('link', { name: 'Preview', exact: true });
+      await expect(url).toHaveAttribute('title', urls[index]);
+      await expect(previewLink).toBeVisible();
+      await expect(async () => {
+        const urlBox = (await url.boundingBox())!;
+        const previewBox = (await previewLink.boundingBox())!;
+        const rowBox = (await row.boundingBox())!;
+        expect(
+          Math.abs(urlBox.y + urlBox.height / 2 - (previewBox.y + previewBox.height / 2)),
+        ).toBeLessThanOrEqual(2);
+        expect(previewBox.x).toBeGreaterThanOrEqual(urlBox.x + urlBox.width);
+        expect(previewBox.x + previewBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+        expect(urlBox.width).toBeGreaterThan(20);
+        expect(await url.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
+          true,
+        );
+        expect(await url.evaluate((element) => getComputedStyle(element).textOverflow)).toBe(
+          'ellipsis',
+        );
+      }).toPass({ timeout: 5000 });
+    }
+    await expect(rows.first().getByText(label, { exact: true })).toBeVisible();
+    await expect(rows.first().getByText('pinned', { exact: true })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`url-preview-${width}.png`) });
+  }
+
+  await rows.nth(1).getByRole('link', { name: 'Preview', exact: true }).click();
+  await expect(page.getByText('Saved article content', { exact: true })).toBeVisible();
+});
+
+test('result metadata is available in preview details instead of the result row', async ({
+  page,
+  isMobile,
+}) => {
+  await mockAPI(page, { config: { semanticEnabled: true } });
+  await page.addInitScript(() => localStorage.setItem('hister-semantic-on', 'true'));
+  const updated = 1700086400;
+  const articleURL = `${original}?lang=en#overview`;
+  const fileURL = 'file:///home/me/notes.txt';
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage(() =>
+      socket.send(
+        JSON.stringify({
+          documents: [
+            {
+              id: 'document-1',
+              url: articleURL,
+              title: preview.title,
+              domain: 'example.com',
+              text: 'An indexed article',
+              label: 'reading',
+              added: preview.added,
+              updated,
+              add_count: 7,
+              score: 0.73,
+            },
+            {
+              id: 'document-2',
+              url: fileURL,
+              title: 'Local notes',
+              domain: '',
+              text: 'Saved notes',
+              added: preview.added,
+              score: 0,
+            },
+          ],
+          total: 2,
+        }),
+      ),
+    );
+  });
+  await page.route('**/api/preview?**', async (route) => {
+    const isFile = new URL(route.request().url()).searchParams.get('url') === fileURL;
+    await route.fulfill({
+      json: {
+        ...preview,
+        title: isFile ? 'Local notes' : preview.title,
+        updated,
+        details: {
+          type: isFile ? 'local' : 'web',
+          language: 'en',
+          label: isFile ? '' : 'reading',
+          visits: isFile ? 1 : 7,
+          user_id: 1,
+          metadata: {},
+        },
+      },
+    });
+  });
+  await page.goto('/?q=article');
+  const rows = page.locator('[data-result]');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().locator('.result-url-text')).toHaveText(
+    'example.com/article?lang=en#overview',
+  );
+  await expect(rows.first().locator('.result-url-text')).toHaveAttribute('title', articleURL);
+  await expect(rows.first().getByText('reading', { exact: true })).toBeVisible();
+  await expect(rows.first().getByTitle('index count')).toHaveCount(0);
+  await expect(rows.first().locator('time')).toHaveCount(0);
+  await expect(rows.first().getByText('0.73', { exact: true })).toHaveCount(0);
+  await expect(rows.first().getByRole('button', { name: 'Copy URL' })).toHaveCount(0);
+  await expect(rows.nth(1).locator('.result-url-text')).toHaveText('/home/me/notes.txt');
+  await page.screenshot({ path: test.info().outputPath('result-metadata.png') });
+
+  await rows.first().getByRole('link', { name: 'Preview', exact: true }).click();
+  await expect(page.getByRole('button', { name: '1 previous version', exact: true })).toBeVisible();
+  await expect(page.locator('time')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show document details', exact: true }).click();
+  const details = page.locator('#preview-document-details');
+  await expect(details).toBeVisible();
+  await expect(details.getByText('0.73', { exact: true })).toBeVisible();
+  await expect(
+    details.locator('div').filter({ has: page.locator('dt', { hasText: /^visits$/ }) }),
+  ).toContainText('7');
+  for (const timestamp of [preview.added, updated]) {
+    await expect(
+      details.locator(`time[datetime="${new Date(timestamp * 1000).toISOString()}"]`),
+    ).toBeVisible();
+  }
+
+  if (isMobile) await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+  await rows.nth(1).getByRole('link', { name: 'Preview', exact: true }).click();
+  await expect(details.getByText('0.00', { exact: true })).toBeVisible();
+  await expect(details.getByText('0.73', { exact: true })).toHaveCount(0);
+  await expect(
+    details.locator('div').filter({ has: page.locator('dt', { hasText: /^visits$/ }) }),
+  ).toContainText('1');
+});
+
 test('recent searches explain browser scope and hiding never deletes server history', async ({
   page,
 }) => {

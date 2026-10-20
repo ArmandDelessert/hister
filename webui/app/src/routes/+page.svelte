@@ -16,8 +16,6 @@
     exportJSON,
     exportCSV,
     exportRSS,
-    formatTimestamp,
-    formatRelativeTime,
     scrollTo,
     escapeHTML,
     buildSearchQuery,
@@ -101,7 +99,6 @@
     Filter,
     Sparkles,
     SlidersHorizontal,
-    Copy,
     Check,
     ArrowUpDown,
     RefreshCw,
@@ -266,7 +263,6 @@
   let showDeleteAllConfirm = $state(false);
   let deleteError: string | null = $state(null);
   let deleteErrorTimer: any = null;
-  let copiedUrl: string | null = $state(null);
 
   let recentSearches: string[] = $state([]);
   let rulesCount = $state(0);
@@ -491,6 +487,16 @@
     })),
     ...mergedResults.map((r): DisplayResult => ({ ...r, isPinned: false, isHistoryResult: false })),
   ]);
+  const panelResult = $derived(
+    displayResults.find(
+      (result) => result.url === panelUrl && (!panelDocumentId || result.id === panelDocumentId),
+    ),
+  );
+  const panelSearchScore = $derived(
+    config.semanticEnabled && semanticOn && !panelResult?.isPinned
+      ? panelResult?.finalScore
+      : undefined,
+  );
 
   // Faceted navigation — lazy fetch on dropdown open
   const termFacetDefinitions = $derived(
@@ -2538,12 +2544,10 @@
                       ? 'hister-amber'
                       : 'hister-cyan'}
                   {@const state = getResultState(r.url, r.label)}
-                  {@const resultDate = r.updated || r.added}
                   <article
                     data-result
                     class="result-card flex w-full scroll-my-[6em] gap-3 transition-all duration-150"
                     class:result-card-active={i === highlightIdx}
-                    class:mt-2.5={i !== 0}
                     style="--result-color: var(--{color});"
                   >
                     <div class="w-0 min-w-0 flex-1 space-y-0.5">
@@ -2573,37 +2577,13 @@
                         >
                           {r.title || '*title*'}
                         </a>
-                        <ResultActionsMenu
-                          url={r.url}
-                          title={r.title || '*title*'}
-                          domain={r.domain}
-                          resultState={state}
-                          {query}
-                          pinned={r.isPinned}
-                          historyResult={r.isHistoryResult}
-                          canWrite={config.canWrite}
-                          onForget={() => sendQuery(query)}
-                          onDelete={r.isPinned || !config.canWrite
-                            ? undefined
-                            : () => deleteResult(r.url)}
-                          {removeResult}
-                          {removeResultsByDomain}
-                        />
                       </div>
                       <div
                         class="result-meta flex max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
                       >
                         <div
-                          class="result-url-line flex max-w-full min-w-0 shrink items-center gap-1.5"
+                          class="result-url-line flex max-w-full min-w-0 shrink items-center gap-3"
                         >
-                          {#if r.add_count && r.add_count > 1}
-                            <span
-                              class="border-border-brand-muted text-text-brand-muted inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-none border-[2px] px-1.5 text-[11px] leading-none font-semibold"
-                              title="index count"
-                            >
-                              {r.add_count}
-                            </span>
-                          {/if}
                           <span
                             class="result-url-text min-w-0 overflow-hidden text-xs text-ellipsis whitespace-nowrap md:text-sm"
                             title={r.url}
@@ -2614,60 +2594,6 @@
                               >{displayResultPath(r.url, r.domain)}</span
                             >
                           </span>
-                        </div>
-                        <div
-                          class="result-secondary-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
-                        >
-                          <button
-                            class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
-                            title="Copy URL"
-                            onclick={async () => {
-                              await navigator.clipboard.writeText(r.url);
-                              copiedUrl = r.url;
-                              setTimeout(() => {
-                                copiedUrl = null;
-                              }, 1500);
-                            }}
-                          >
-                            {#if copiedUrl === r.url}
-                              <Check class="text-hister-teal size-3" />
-                            {:else}
-                              <Copy class="size-3" />
-                            {/if}
-                          </button>
-                          {#if resultDate}
-                            <time
-                              class="font-inter text-text-brand-muted text-xs whitespace-nowrap md:text-sm"
-                              datetime={new Date(resultDate * 1000).toISOString()}
-                              title={formatTimestamp(resultDate)}
-                            >
-                              {r.updated ? 'Updated' : 'Added'}
-                              {formatRelativeTime(resultDate)}
-                            </time>
-                          {/if}
-                          {#if r.isPinned}
-                            <Badge
-                              variant="secondary"
-                              class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
-                              >pinned</Badge
-                            >
-                          {:else if r.isHistoryResult}
-                            <Badge
-                              variant="secondary"
-                              class="bg-hister-amber/10 text-hister-amber h-4 border-0 px-1.5 py-0"
-                              title="Prioritized because you opened it for this query. Use the result menu to forget it for this query."
-                              >prioritized</Badge
-                            >
-                          {/if}
-                          {#if state.displayLabel}
-                            <Badge
-                              variant="secondary"
-                              class="result-label bg-hister-teal/20 min-h-4 max-w-full border-0 px-1.5 py-0"
-                              title={state.displayLabel}
-                            >
-                              <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
-                            </Badge>
-                          {/if}
                           {#if !disablePreviews}
                             <Button
                               data-readable
@@ -2684,25 +2610,36 @@
                               <Eye class="size-3" /><span>Preview</span>
                             </Button>
                           {/if}
-                          {#if !r.isPinned && r.finalScore && config.semanticEnabled && semanticOn}
-                            <Tooltip.Provider delayDuration={0}>
-                              <Tooltip.Root>
-                                <Tooltip.Trigger>
-                                  <Badge
-                                    variant="secondary"
-                                    class="bg-hister-indigo/10 text-hister-indigo shrink-0 border-0 px-1.5 py-0 align-middle font-mono text-[10px]"
-                                    >{r.finalScore?.toFixed(2)}</Badge
-                                  >
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                  <Tooltip.Content>
-                                    Result score: {r.finalScore?.toFixed(2)}
-                                  </Tooltip.Content>
-                                </Tooltip.Portal>
-                              </Tooltip.Root>
-                            </Tooltip.Provider>
-                          {/if}
                         </div>
+                        {#if r.isPinned || r.isHistoryResult || state.displayLabel}
+                          <div
+                            class="result-secondary-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
+                          >
+                            {#if r.isPinned}
+                              <Badge
+                                variant="secondary"
+                                class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
+                                >pinned</Badge
+                              >
+                            {:else if r.isHistoryResult}
+                              <Badge
+                                variant="secondary"
+                                class="bg-hister-amber/10 text-hister-amber h-4 border-0 px-1.5 py-0"
+                                title="Prioritized because you opened it for this query. Use the result menu to forget it for this query."
+                                >prioritized</Badge
+                              >
+                            {/if}
+                            {#if state.displayLabel}
+                              <Badge
+                                variant="secondary"
+                                class="result-label bg-hister-teal/20 min-h-4 max-w-full border-0 px-1.5 py-0"
+                                title={state.displayLabel}
+                              >
+                                <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
+                              </Badge>
+                            {/if}
+                          </div>
+                        {/if}
                       </div>
                       {#if r.text}
                         <p
@@ -2712,6 +2649,22 @@
                         </p>
                       {/if}
                     </div>
+                    <ResultActionsMenu
+                      url={r.url}
+                      title={r.title || '*title*'}
+                      domain={r.domain}
+                      resultState={state}
+                      {query}
+                      pinned={r.isPinned}
+                      historyResult={r.isHistoryResult}
+                      canWrite={config.canWrite}
+                      onForget={() => sendQuery(query)}
+                      onDelete={r.isPinned || !config.canWrite
+                        ? undefined
+                        : () => deleteResult(r.url)}
+                      {removeResult}
+                      {removeResultsByDomain}
+                    />
                   </article>
                 {/each}
               {/if}
@@ -2767,6 +2720,7 @@
             url={panelUrl}
             documentId={panelDocumentId}
             hintTitle={panelHintTitle}
+            searchScore={panelSearchScore}
             fullscreen={true}
             onclose={closePanelAndFullscreen}
             onfullscreentoggle={isDesktop ? exitFullscreen : undefined}
@@ -2795,6 +2749,7 @@
               url={panelUrl}
               documentId={panelDocumentId}
               hintTitle={panelHintTitle}
+              searchScore={panelSearchScore}
               fullscreen={false}
               onclose={() => {
                 panelOpen = false;
@@ -3284,8 +3239,13 @@
     overflow: hidden;
     border: 0;
     background: transparent;
+    margin-block: 0;
     padding: 0.2rem 0;
     box-shadow: none;
+  }
+
+  .result-card + .result-card {
+    margin-block-start: 1.5rem;
   }
 
   .result-card:hover {

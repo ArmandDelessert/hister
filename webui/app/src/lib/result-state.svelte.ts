@@ -66,6 +66,18 @@ export class ResultState {
     this.labelError = false;
   }
 
+  async copyURL(url: string) {
+    this.actionsMessage = null;
+    this.actionsError = false;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.actionsMessage = 'URL copied.';
+    } catch {
+      this.actionsMessage = 'Could not copy URL. Please try again.';
+      this.actionsError = true;
+    }
+  }
+
   async updateLabel(url: string) {
     this.labelMessage = null;
     this.labelError = false;

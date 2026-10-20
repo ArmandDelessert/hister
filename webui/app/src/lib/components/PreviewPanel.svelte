@@ -38,6 +38,7 @@
     url: string;
     documentId?: string;
     hintTitle?: string;
+    searchScore?: number;
     onclose: () => void;
     fullscreen?: boolean;
     onfullscreentoggle?: () => void;
@@ -50,6 +51,7 @@
     url,
     documentId = '',
     hintTitle = '',
+    searchScore,
     onclose,
     fullscreen = false,
     onfullscreentoggle,
@@ -83,6 +85,9 @@
 
   let showEmbeddedVideos = $state(false);
   let showDocumentDetails = $state(false);
+  const hasDocumentDetails = $derived(
+    !!documentDetails || added !== null || updated !== null || searchScore !== undefined,
+  );
 
   type DetailEntry = { field: string; value: unknown };
 
@@ -417,7 +422,7 @@
           >
             <ExternalLink class="size-4" />
           </Button>
-          {#if documentDetails}
+          {#if hasDocumentDetails}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -477,28 +482,15 @@
           {#if meta?.type}<span class="uppercase">{meta.type}</span>{/if}
         </span>
       {/if}
-      {#if added}
-        <span
-          class="font-inter inline-flex flex-wrap items-center gap-1.5 text-xs"
-          title={formatTimestamp(added)}
+      {#if versionCount > 0}
+        <button
+          onclick={toggleVersions}
+          class="font-inter text-hister-teal inline-flex cursor-pointer items-center gap-1 text-xs hover:underline"
         >
-          <span>added {formatTimestamp(added)}</span>
-          {#if updated && updated !== added}
-            <span class="text-text-brand-muted">·</span>
-            <span title={formatTimestamp(updated)}>updated {formatTimestamp(updated)}</span>
-          {/if}
-          {#if versionCount > 0}
-            <span class="text-text-brand-muted">·</span>
-            <button
-              onclick={toggleVersions}
-              class="font-inter text-hister-teal inline-flex cursor-pointer items-center gap-1 text-xs hover:underline"
-            >
-              <History class="size-3" />
-              {versionCount}
-              {versionCount === 1 ? 'previous version' : 'previous versions'}
-            </button>
-          {/if}
-        </span>
+          <History class="size-3" />
+          {versionCount}
+          {versionCount === 1 ? 'previous version' : 'previous versions'}
+        </button>
       {/if}
       {#if meta?.description}
         <p class="font-inter text-text-brand-secondary mt-1 line-clamp-3 max-w-[60em] text-sm">
@@ -517,7 +509,7 @@
           {meta.videos.length === 1 ? 'video' : 'videos'}
         </button>
       {/if}
-      {#if showDocumentDetails && documentDetails}
+      {#if showDocumentDetails && hasDocumentDetails}
         <div
           id="preview-document-details"
           class="border-border-brand-muted mt-2 max-h-[min(20rem,40vh)] overflow-y-auto overscroll-contain border-t pt-2"
@@ -528,6 +520,28 @@
             Current document properties
           </p>
           <dl class="font-inter text-xs">
+            {#each [{ label: 'Added', timestamp: added }, { label: 'Updated', timestamp: updated }] as { label, timestamp }}
+              {#if timestamp !== null}
+                <div
+                  class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
+                >
+                  <dt class="text-text-brand-muted">{label}</dt>
+                  <dd class="text-text-brand-secondary">
+                    <time datetime={new Date(timestamp * 1000).toISOString()}>
+                      {formatTimestamp(timestamp)}
+                    </time>
+                  </dd>
+                </div>
+              {/if}
+            {/each}
+            {#if searchScore !== undefined}
+              <div
+                class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
+              >
+                <dt class="text-text-brand-muted">Search relevance score</dt>
+                <dd class="text-text-brand-secondary">{searchScore.toFixed(2)}</dd>
+              </div>
+            {/if}
             {#each documentDetailEntries as entry (entry.field)}
               <div
                 class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
@@ -539,26 +553,28 @@
               </div>
             {/each}
           </dl>
-          <p
-            class="font-outfit text-text-brand-muted mt-3 mb-1 text-xs font-bold tracking-widest uppercase"
-          >
-            Metadata
-          </p>
-          {#if documentMetadataEntries.length}
-            <dl class="font-inter text-xs">
-              {#each documentMetadataEntries as entry (entry.field)}
-                <div
-                  class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
-                >
-                  <dt><code class="text-hister-teal break-all">{entry.field}</code></dt>
-                  <dd class="text-text-brand-secondary min-w-0 break-all whitespace-pre-wrap">
-                    {formatTechnicalValue(entry.value)}
-                  </dd>
-                </div>
-              {/each}
-            </dl>
-          {:else}
-            <p class="font-inter text-text-brand-muted text-xs">No metadata stored.</p>
+          {#if documentDetails}
+            <p
+              class="font-outfit text-text-brand-muted mt-3 mb-1 text-xs font-bold tracking-widest uppercase"
+            >
+              Metadata
+            </p>
+            {#if documentMetadataEntries.length}
+              <dl class="font-inter text-xs">
+                {#each documentMetadataEntries as entry (entry.field)}
+                  <div
+                    class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
+                  >
+                    <dt><code class="text-hister-teal break-all">{entry.field}</code></dt>
+                    <dd class="text-text-brand-secondary min-w-0 break-all whitespace-pre-wrap">
+                      {formatTechnicalValue(entry.value)}
+                    </dd>
+                  </div>
+                {/each}
+              </dl>
+            {:else}
+              <p class="font-inter text-text-brand-muted text-xs">No metadata stored.</p>
+            {/if}
           {/if}
         </div>
       {/if}

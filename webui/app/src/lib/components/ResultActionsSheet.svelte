@@ -10,6 +10,7 @@
   import {
     ArrowLeft,
     Ban,
+    Copy,
     MoreVertical,
     Pin,
     PinOff,
@@ -26,6 +27,7 @@
     query,
     pinned,
     historyResult,
+    canWrite,
     resultState,
     onAddSkipRule,
     onForget,
@@ -37,6 +39,7 @@
     query: string;
     pinned: boolean;
     historyResult: boolean;
+    canWrite: boolean;
     resultState: ResultState;
     onAddSkipRule: (type: 'url' | 'domain', deleteMatches: boolean) => Promise<void>;
     onForget: () => Promise<void>;
@@ -156,63 +159,72 @@
 
     {#if view === 'actions'}
       <fieldset disabled={pending} class="flex min-w-0 flex-col gap-2">
-        {#if pinned}
-          <Button
-            variant="outline"
-            class={actionClass}
-            onclick={() => perform(() => resultState.pin(url, title, query, true))}
-          >
-            <PinOff class="size-4" /> Unpin
-          </Button>
-        {:else}
-          <Button
-            bind:ref={pinButton}
-            variant="outline"
-            class={actionClass}
-            onclick={() => showEditor('pin')}
-          >
-            <Pin class="size-4" /> Pin result
-          </Button>
-        {/if}
         <Button
-          bind:ref={labelButton}
           variant="outline"
           class={actionClass}
-          onclick={() => showEditor('label')}
+          onclick={() => perform(() => resultState.copyURL(url))}
         >
-          <Tag class="size-4" /> Edit label
+          <Copy class="size-4" /> Copy URL
         </Button>
-        <Button
-          bind:ref={skipButton}
-          variant="outline"
-          class={actionClass}
-          onclick={() => showEditor('skip')}
-        >
-          <Ban class="size-4" /> Disable indexing
-        </Button>
-        {#if historyResult}
-          <Button variant="outline" class={actionClass} onclick={() => perform(onForget)}>
-            <Unlink class="size-4" /> Forget for this query
-          </Button>
-          <p class="font-inter text-text-brand-muted text-xs">
-            Stops prioritizing this result for “{query}”. The document remains indexed.
-          </p>
-        {/if}
-        {#if !pinned}
-          <hr class="border-border-brand-muted my-1" />
+        {#if canWrite}
+          {#if pinned}
+            <Button
+              variant="outline"
+              class={actionClass}
+              onclick={() => perform(() => resultState.pin(url, title, query, true))}
+            >
+              <PinOff class="size-4" /> Unpin
+            </Button>
+          {:else}
+            <Button
+              bind:ref={pinButton}
+              variant="outline"
+              class={actionClass}
+              onclick={() => showEditor('pin')}
+            >
+              <Pin class="size-4" /> Pin result
+            </Button>
+          {/if}
           <Button
+            bind:ref={labelButton}
             variant="outline"
-            class="{actionClass} border-hister-rose text-hister-rose"
-            onclick={() => {
-              open = false;
-              onDelete?.();
-            }}
+            class={actionClass}
+            onclick={() => showEditor('label')}
           >
-            <Trash2 class="size-4" /> Delete result
+            <Tag class="size-4" /> Edit label
           </Button>
+          <Button
+            bind:ref={skipButton}
+            variant="outline"
+            class={actionClass}
+            onclick={() => showEditor('skip')}
+          >
+            <Ban class="size-4" /> Disable indexing
+          </Button>
+          {#if historyResult}
+            <Button variant="outline" class={actionClass} onclick={() => perform(onForget)}>
+              <Unlink class="size-4" /> Forget for this query
+            </Button>
+            <p class="font-inter text-text-brand-muted text-xs">
+              Stops prioritizing this result for “{query}”. The document remains indexed.
+            </p>
+          {/if}
+          {#if !pinned}
+            <hr class="border-border-brand-muted my-1" />
+            <Button
+              variant="outline"
+              class="{actionClass} border-hister-rose text-hister-rose"
+              onclick={() => {
+                open = false;
+                onDelete?.();
+              }}
+            >
+              <Trash2 class="size-4" /> Delete result
+            </Button>
+          {/if}
         {/if}
       </fieldset>
-    {:else if view === 'pin'}
+    {:else if canWrite && view === 'pin'}
       <form
         onsubmit={(event) => {
           event.preventDefault();
@@ -237,7 +249,7 @@
           </Button>
         </fieldset>
       </form>
-    {:else if view === 'label'}
+    {:else if canWrite && view === 'label'}
       <form
         onsubmit={(event) => {
           event.preventDefault();
@@ -270,7 +282,7 @@
           {resultState.labelMessage}
         </p>
       {/if}
-    {:else if view === 'skip'}
+    {:else if canWrite && view === 'skip'}
       <p class="font-inter text-text-brand-secondary text-sm break-all">
         Choose whether to stop indexing this URL or all pages on its domain.
       </p>

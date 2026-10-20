@@ -1,10 +1,180 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { expect, test } from '@playwright/test';
+import { expect, test, type WebSocketRoute } from '@playwright/test';
 
 import { mockAPI, original, preview, previewPath } from './fixtures';
 
 test.beforeEach(async ({ page }) => {
   await mockAPI(page);
+});
+
+test('the compact toolbar keeps filters and sorting visible and secondary actions accessible', async ({
+  page,
+  isMobile,
+}) => {
+  await mockAPI(page, {
+    canWrite: false,
+    config: {
+      searchUrl: 'https://example.com/search?q={query}',
+      search: {
+        version: 1,
+        fields: [{ name: 'domain', label: 'Domain', kind: 'keyword', description: '' }],
+        facets: [
+          {
+            name: 'domains',
+            label: 'Domain',
+            queryField: 'domain',
+            kind: 'terms',
+            defaultSize: 5,
+          },
+        ],
+        sort: {
+          field: 'sort',
+          label: 'Sort',
+          description: '',
+          options: [
+            { value: 'relevance', label: 'Relevance', default: true, visible: true },
+            { value: 'date', label: 'Newest', visible: true },
+          ],
+        },
+        valueSets: {},
+      },
+    },
+  });
+  await page.route('**/api/facets?*', (route) =>
+    route.fulfill({
+      json: { terms: { domains: { terms: [{ term: 'example.com', count: 1 }] } } },
+    }),
+  );
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage((message) => {
+      const request = JSON.parse(String(message));
+      const documents =
+        request.text === 'missing'
+          ? []
+          : [{ id: 'document-1', url: original, title: preview.title, text: 'An indexed article' }];
+      socket.send(
+        JSON.stringify({ documents, total: documents.length, search_duration: '12.34ms' }),
+      );
+    });
+  });
+  await page.goto('/?q=article%20domain%3Aexample.com');
+  const toolbar = page.locator('.results-toolbar');
+  const actions = toolbar.getByRole('button', { name: 'Actions', exact: true });
+  const webSearch = toolbar.getByRole('link', { name: 'Search the web', exact: true });
+  const filters = page.getByRole('group', { name: 'Active filters' });
+  const input = page.getByRole('searchbox');
+  await expect(page.locator('[data-result]')).toHaveCount(1);
+  await page.evaluate(() => document.fonts.ready);
+  for (const width of isMobile ? [375, 320] : [1280, 1024]) {
+    await page.setViewportSize({ width, height: 812 });
+    await expect(webSearch).toBeVisible();
+    await expect(async () => {
+      const bounds = (await toolbar.boundingBox())!;
+      expect(bounds.height).toBeLessThanOrEqual(isMobile ? 100 : 65);
+      for (const control of await toolbar.locator('button, a').all()) {
+        const box = (await control.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(bounds.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+      }
+    }).toPass({ timeout: 5000 });
+    await expect(filters).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: /^Filters/ })).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: 'Sort: Relevance' })).toHaveText('Sort');
+    await expect(toolbar).not.toContainText('12.34ms');
+    await expect(page.getByRole('button', { name: 'Server connected', exact: true })).toHaveCount(
+      0,
+    );
+    await page.screenshot({ path: test.info().outputPath(`compact-toolbar-${width}.png`) });
+  }
+  await toolbar.getByRole('button', { name: /^Filters/ }).click();
+  await expect(
+    page.getByRole('menu').getByRole('button', { name: 'example.com (1)' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await toolbar.getByRole('button', { name: 'Sort: Relevance' }).click();
+  const newest = page.getByRole('menu').getByRole('button', { name: 'Newest', exact: true });
+  await newest.focus();
+  await newest.press('Enter');
+  await expect(input).toHaveValue('article domain:example.com sort:date');
+  await expect(toolbar.getByRole('button', { name: 'Sort: Newest' })).toContainText('Newest');
+  await filters.getByRole('button', { name: 'Remove Domain: example.com filter' }).click();
+  await expect(input).toHaveValue('article sort:date');
+  await expect(filters).toHaveCount(0);
+  await expect(webSearch).toHaveAttribute(
+    'href',
+    'https://example.com/search?q=article%20sort%3Adate',
+  );
+  await actions.click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('link', { name: 'Search the web' })).toHaveCount(0);
+  await expect(menu.getByText('Search time: 12.34ms', { exact: true })).toBeVisible();
+  await expect(menu.getByRole('checkbox', { name: 'Always expand snippets' })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'JSON', exact: true })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Delete all matching results' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  if (!isMobile) {
+    await page.setViewportSize({ width: 1280, height: 812 });
+    await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+    await expect(toolbar.getByRole('button', { name: 'Preview', exact: true })).toHaveCount(0);
+    await actions.click();
+    await menu.getByRole('button', { name: 'Show preview', exact: true }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Close preview', exact: true })).toBeVisible();
+  }
+  await input.fill('missing');
+  await expect(page.getByText('No results found for', { exact: false })).toBeVisible();
+  await expect(webSearch).toBeVisible();
+  await expect(webSearch).toHaveAttribute('href', 'https://example.com/search?q=missing');
+  await page.route('https://example.com/search?*', (route) =>
+    route.fulfill({ body: 'External search', contentType: 'text/plain' }),
+  );
+  await webSearch.focus();
+  await webSearch.press('Enter');
+  await expect(page).toHaveURL('https://example.com/search?q=missing');
+});
+
+test('connection failures remain visible and retry restores search without routine status clutter', async ({
+  page,
+}) => {
+  let socket: WebSocketRoute | undefined;
+  let disconnected = false;
+  let respond: (() => void) | undefined;
+  await page.routeWebSocket('**/search', (connection) => {
+    if (disconnected) {
+      connection.close();
+      return;
+    }
+    socket = connection;
+    respond = undefined;
+    connection.onMessage(() => {
+      respond = () =>
+        connection.send(
+          JSON.stringify({
+            documents: [{ id: 'document-1', url: original, title: preview.title }],
+            total: 1,
+          }),
+        );
+    });
+  });
+  await page.goto('/?q=article');
+  await expect(page.locator('.results-toolbar')).toContainText('Searching…');
+  await expect(page.locator('.results-list')).toHaveAttribute('aria-busy', 'true');
+  await expect.poll(() => !!respond).toBe(true);
+  respond!();
+  await expect(page.locator('[data-result]')).toHaveCount(1);
+  disconnected = true;
+  socket!.close();
+  const notice = page.getByRole('alert');
+  await expect(notice).toContainText('Cannot connect to Hister');
+  await expect(notice).toContainText('Showing the last loaded results');
+  await expect(page.locator('[data-result]')).toHaveCount(1);
+  disconnected = false;
+  await notice.getByRole('button', { name: 'Retry now' }).click();
+  await expect(notice).toHaveCount(0);
+  await expect.poll(() => !!respond).toBe(true);
+  respond!();
+  await expect(page.locator('.results-list')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.getByRole('button', { name: 'Server connected', exact: true })).toHaveCount(0);
 });
 
 test('narrow results truncate the URL while keeping Preview beside it', async ({

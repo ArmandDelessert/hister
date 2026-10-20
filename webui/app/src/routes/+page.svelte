@@ -95,11 +95,10 @@
     Keyboard,
     HelpCircle,
     X,
-    ChevronDown,
     Calendar,
     Filter,
     Sparkles,
-    SlidersHorizontal,
+    Ellipsis,
     Check,
     ArrowUpDown,
     RefreshCw,
@@ -477,6 +476,7 @@
   const historyLen = $derived((lastResults?.history as any)?.length || 0);
   const docsLen = $derived(mergedResults.length);
   const totalResults = $derived(historyLen + docsLen);
+  const resultCount = $derived(Math.max(lastResults?.total ?? 0, totalResults));
   const hasResults = $derived(!searchPending && totalResults > 0);
   const showPreviewPanel = $derived(
     hasResults && !disablePreviews && (previewFullscreen || (panelOpen && isDesktop)),
@@ -2031,30 +2031,6 @@
               <X class="size-4" />
             </button>
           {/if}
-          <Tooltip.Provider delayDuration={0}>
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                <button
-                  type="button"
-                  class="text-text-brand-muted hover:bg-muted-surface flex h-8 items-center gap-2 px-2 text-xs font-semibold transition-colors md:h-9 md:px-3"
-                  aria-label={connectionStatus.description}
-                  onclick={() => {
-                    if (connectionState === 'disconnected') retryConnection();
-                  }}
-                >
-                  <span class="h-2 w-2 shrink-0 {connectionStatus.dotClass}"></span>
-                  <span class="hidden md:inline">{connectionStatus.label}</span>
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content>
-                  {connectionStatus.description}{connectionState === 'disconnected'
-                    ? '. Click to retry.'
-                    : ''}
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-          </Tooltip.Provider>
         </div>
       </div>
       <QuerySuggestions
@@ -2128,36 +2104,16 @@
             <div
               class="results-toolbar flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 py-2"
             >
-              <span class="font-outfit text-text-brand text-sm font-bold md:text-base">
+              <span class="font-inter text-text-brand-muted min-w-0 text-sm font-medium">
                 {#if isSearchLoading}
                   Searching…
                 {:else if !searchPending && lastResults?.error}
                   Invalid query
                 {:else if !searchPending && lastResults}
-                  {lastResults?.total && lastResults.total > totalResults
-                    ? lastResults.total
-                    : totalResults} results{#if lastResults?.search_duration}{' '}<span
-                      class="text-xs font-normal md:text-sm"
-                    >
-                      ({lastResults.search_duration})</span
-                    >{/if}
+                  {resultCount} {resultCount === 1 ? 'result' : 'results'}
                 {/if}
               </span>
-              <div class="flex min-w-0 flex-wrap items-center justify-end gap-2 overflow-hidden">
-                {#if hasResults && isDesktop && !panelOpen && !disablePreviews}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="font-inter text-text-brand-muted hover:text-hister-indigo gap-1 text-xs"
-                    onclick={() => {
-                      panelOpen = true;
-                      localStorage.setItem('hister-panel-open', 'true');
-                    }}
-                  >
-                    <Eye class="size-3" />
-                    Preview
-                  </Button>
-                {/if}
+              <div class="flex min-w-0 flex-wrap items-center justify-end gap-1">
                 {#if showFiltersButton}
                   <DropdownMenu.Root bind:open={filtersDropdownOpen}>
                     <DropdownMenu.Trigger>
@@ -2166,7 +2122,8 @@
                           {...props}
                           variant="ghost"
                           size="sm"
-                          class="font-inter gap-1 text-xs {filtersDropdownOpen
+                          class="font-inter min-h-10 gap-1 px-2 text-xs has-[>svg]:px-2 {filtersDropdownOpen ||
+                          activeFilterCount > 0
                             ? 'text-hister-indigo'
                             : 'text-text-brand-muted hover:text-hister-indigo'}"
                         >
@@ -2178,11 +2135,6 @@
                               >{activeFilterCount}</span
                             >
                           {/if}
-                          <ChevronDown
-                            class="size-3 transition-transform duration-200 {filtersDropdownOpen
-                              ? 'rotate-180'
-                              : ''}"
-                          />
                         </Button>
                       {/snippet}
                     </DropdownMenu.Trigger>
@@ -2328,32 +2280,122 @@
                     </DropdownMenu.Content>
                   </DropdownMenu.Root>
                 {/if}
-                {#if hasResults || config.semanticEnabled}
-                  <DropdownMenu.Root bind:open={actionsDropdownOpen}>
+                {#if sortOptions.length > 1}
+                  <DropdownMenu.Root bind:open={sortDropdownOpen}>
                     <DropdownMenu.Trigger>
                       {#snippet child({ props })}
                         <Button
                           {...props}
                           variant="ghost"
                           size="sm"
-                          class="font-inter gap-1 text-xs {actionsDropdownOpen
+                          aria-label={`Sort: ${currentSortLabel}`}
+                          title={`Sort: ${currentSortLabel}`}
+                          class="font-inter min-h-10 gap-1 px-2 text-xs has-[>svg]:px-2 {sortDropdownOpen ||
+                          currentSort
                             ? 'text-hister-indigo'
                             : 'text-text-brand-muted hover:text-hister-indigo'}"
                         >
-                          <SlidersHorizontal class="size-3" />
-                          Actions
-                          <ChevronDown
-                            class="size-3 transition-transform duration-200 {actionsDropdownOpen
-                              ? 'rotate-180'
-                              : ''}"
-                          />
+                          <ArrowUpDown class="size-3" />
+                          <span class="max-w-28 truncate"
+                            >{currentSort ? currentSortLabel : 'Sort'}</span
+                          >
                         </Button>
                       {/snippet}
                     </DropdownMenu.Trigger>
                     <DropdownMenu.Content
-                      class="border-brutal-border bg-card-surface w-80 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
+                      class="border-brutal-border bg-card-surface w-52 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
+                    >
+                      <div class="space-y-1.5">
+                        <p
+                          class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                        >
+                          <ArrowUpDown class="size-3" />
+                          Sort by
+                        </p>
+                        <div class="flex flex-col gap-1">
+                          {#each sortOptions as { value, label } (value)}
+                            <button
+                              class="font-inter flex cursor-pointer items-center gap-2 rounded-none border-[2px] px-2 py-1 text-xs transition-colors {currentSort ===
+                              value
+                                ? 'border-hister-indigo bg-hister-indigo text-background'
+                                : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
+                              onclick={() => {
+                                setSort(value);
+                                sortDropdownOpen = false;
+                              }}
+                              onkeydown={(event) => {
+                                if (event.key !== 'Escape') event.stopPropagation();
+                              }}
+                            >
+                              {label}
+                              {#if currentSort === value}
+                                <Check class="ml-auto size-3" />
+                              {/if}
+                            </button>
+                          {/each}
+                        </div>
+                      </div>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Root>
+                {/if}
+                {#if config.searchUrl}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="font-inter text-text-brand-muted hover:text-hister-coral min-h-10 gap-1 px-2 text-xs has-[>svg]:px-2"
+                    href={getSearchUrl(config.searchUrl, query)}
+                    aria-label="Search the web"
+                    title="Search the web"
+                    onkeydown={(event) => {
+                      if (event.key !== 'Escape') event.stopPropagation();
+                    }}
+                  >
+                    <ExternalLink class="size-3" />
+                    Web
+                  </Button>
+                {/if}
+                {#if hasResults || config.semanticEnabled || (!searchPending && lastResults?.search_duration)}
+                  <DropdownMenu.Root bind:open={actionsDropdownOpen}>
+                    <DropdownMenu.Trigger>
+                      {#snippet child({ props })}
+                        <Button
+                          {...props}
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Actions"
+                          title="Actions"
+                          class="font-inter {actionsDropdownOpen
+                            ? 'text-hister-indigo'
+                            : 'text-text-brand-muted hover:text-hister-indigo'}"
+                        >
+                          <Ellipsis class="size-4" />
+                        </Button>
+                      {/snippet}
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Content
+                      align="end"
+                      class="border-brutal-border bg-card-surface w-80 max-w-[calc(100vw-1rem)] rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
                     >
                       <div class="space-y-3">
+                        {#if hasResults && isDesktop && !panelOpen && !disablePreviews}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            class="font-inter text-text-brand-secondary hover:text-hister-indigo w-full justify-start gap-2 text-xs"
+                            onclick={() => {
+                              panelOpen = true;
+                              actionsDropdownOpen = false;
+                              localStorage.setItem('hister-panel-open', 'true');
+                            }}
+                            onkeydown={(event) => {
+                              if (event.key !== 'Escape') event.stopPropagation();
+                            }}
+                          >
+                            <Eye class="size-3" />
+                            Show preview
+                          </Button>
+                          <Separator class="bg-border-brand-muted" />
+                        {/if}
                         {#if config.semanticEnabled}
                           <div class="space-y-2">
                             <p
@@ -2493,72 +2535,15 @@
                             </div>
                           {/if}
                         {/if}
+                        {#if !searchPending && lastResults?.search_duration}
+                          <p class="font-inter text-text-brand-muted text-xs">
+                            Search time: {lastResults.search_duration}
+                          </p>
+                        {/if}
                       </div>
                     </DropdownMenu.Content>
                   </DropdownMenu.Root>
                 {/if}
-                <DropdownMenu.Root bind:open={sortDropdownOpen}>
-                  <DropdownMenu.Trigger>
-                    {#snippet child({ props })}
-                      <Button
-                        {...props}
-                        variant="ghost"
-                        size="sm"
-                        class="font-inter gap-1 text-xs {sortDropdownOpen || currentSort
-                          ? 'text-hister-indigo'
-                          : 'text-text-brand-muted hover:text-hister-indigo'}"
-                      >
-                        <ArrowUpDown class="size-3" />
-                        Sort: {currentSortLabel}
-                        <ChevronDown
-                          class="size-3 transition-transform duration-200 {sortDropdownOpen
-                            ? 'rotate-180'
-                            : ''}"
-                        />
-                      </Button>
-                    {/snippet}
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content
-                    class="border-brutal-border bg-card-surface w-52 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-                  >
-                    <div class="space-y-1.5">
-                      <p
-                        class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
-                      >
-                        <ArrowUpDown class="size-3" />
-                        Sort by
-                      </p>
-                      <div class="flex flex-col gap-1">
-                        {#each sortOptions as { value, label } (value)}
-                          <button
-                            class="font-inter flex cursor-pointer items-center gap-2 rounded-none border-[2px] px-2 py-1 text-xs transition-colors {currentSort ===
-                            value
-                              ? 'border-hister-indigo bg-hister-indigo text-background'
-                              : 'border-border-brand-muted text-text-brand-secondary hover:border-hister-indigo hover:text-hister-indigo'}"
-                            onclick={() => {
-                              setSort(value);
-                              sortDropdownOpen = false;
-                            }}
-                          >
-                            {label}
-                            {#if currentSort === value}
-                              <Check class="ml-auto size-3" />
-                            {/if}
-                          </button>
-                        {/each}
-                      </div>
-                    </div>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Root>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  class="font-inter text-text-brand-muted hover:text-hister-coral gap-1 text-xs no-underline"
-                  href={getSearchUrl(config.searchUrl, query)}
-                >
-                  <ExternalLink class="size-3" />
-                  Web
-                </Button>
               </div>
             </div>
 

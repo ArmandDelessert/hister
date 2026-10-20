@@ -17,6 +17,8 @@ hister
 
 This searches for "hister" in the title, text content, URL, and domain of all indexed pages.
 
+In the web app, use **Filters** and **Sort** above the results, or select **Web** to search the web. Active filters remain below the search field, where you can remove them individually or clear them all. Open **Actions** (the three dots) for exports, snippet preferences, and search timing. On desktop, **Actions → Show preview** reopens a closed preview panel.
+
 ## Quoted Phrases
 
 Use double quotes to search for exact phrases:

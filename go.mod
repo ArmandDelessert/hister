@@ -9,7 +9,7 @@ require (
 	codeberg.org/readeck/go-readability/v2 v2.1.3
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/asciimoo/lingua-go v0.15.0
-	github.com/asciimoo/pdf v0.2.0
+	github.com/asciimoo/pdf v0.3.0
 	github.com/blevesearch/bleve/v2 v2.6.1
 	github.com/blevesearch/bleve_index_api v1.4.1
 	github.com/bodgit/sevenzip v1.6.5

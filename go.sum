@@ -18,8 +18,8 @@ github.com/andybalholm/cascadia v1.3.5 h1:RLjq12WJy58dN6eCIQrz0bAGZkztHWsEPFxP53
 github.com/andybalholm/cascadia v1.3.5/go.mod h1:BLRmbRjpEtNKieZOCCvYj4RqN+KRA41GBe/5O+G93kM=
 github.com/asciimoo/lingua-go v0.15.0 h1:Z5Ekpsjgqr4orqWqdf9wfx/oMwW25zty8mLstuofTII=
 github.com/asciimoo/lingua-go v0.15.0/go.mod h1:WZ+yQ71I3DFwFQ44FwPDcsmRzAwy4abn4Q/sV3ChLAA=
-github.com/asciimoo/pdf v0.2.0 h1:t2xC6A7icdS0FMY5O8ARuJG33xTLUtJCKz5Ke5o8rTU=
-github.com/asciimoo/pdf v0.2.0/go.mod h1:8tLK3IYkB6jGuIaaR906fItMFrLjaRnrEOljd3o1f+s=
+github.com/asciimoo/pdf v0.3.0 h1:UlEBXiAQvql3NKLZmmZI/ryv/VnLXOKlYuC1zQoAGiU=
+github.com/asciimoo/pdf v0.3.0/go.mod h1:8tLK3IYkB6jGuIaaR906fItMFrLjaRnrEOljd3o1f+s=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=

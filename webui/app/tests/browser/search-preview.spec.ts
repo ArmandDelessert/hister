@@ -77,7 +77,9 @@ test('narrow results truncate the URL while keeping Preview beside it', async ({
       }).toPass({ timeout: 5000 });
     }
     await expect(rows.first().getByText(label, { exact: true })).toBeVisible();
-    await expect(rows.first().getByText('pinned', { exact: true })).toBeVisible();
+    await expect(
+      rows.first().getByRole('img', { name: 'Pinned result', exact: true }),
+    ).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`url-preview-${width}.png`) });
   }
 

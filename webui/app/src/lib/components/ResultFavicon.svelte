@@ -1,15 +1,14 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { Globe, Star } from '@lucide/svelte';
+  import { Globe } from '@lucide/svelte';
 
   interface Props {
     favicon?: string;
     faviconKey?: string;
-    pinned?: boolean;
     class?: string;
   }
 
-  let { favicon, faviconKey, pinned = false, class: className = '' }: Props = $props();
+  let { favicon, faviconKey, class: className = '' }: Props = $props();
 
   let imageFailed = $state(false);
 
@@ -35,8 +34,6 @@
         imageFailed = true;
       }}
     />
-  {:else if pinned}
-    <Star class="text-text-brand-muted size-3" />
   {:else}
     <Globe class="text-text-brand-muted size-3" />
   {/if}

@@ -9,6 +9,88 @@ async function openActions(page: Page) {
   return trigger;
 }
 
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`selecting results keeps their text in place in the ${colorScheme} theme`, async ({
+    page,
+    isMobile,
+  }) => {
+    await mockAPI(page, { config: { colorScheme } });
+    const results = [
+      { title: 'Pinned article', pinned: true, label: 'reading' },
+      { title: 'Previously opened article', pinned: false, label: '' },
+      { title: 'Another article', pinned: false, label: 'reference' },
+    ].map((result, index) => ({
+      ...result,
+      id: `document-${index}`,
+      url: `${original}/${index}`,
+      domain: 'example.com',
+      text: 'A saved article with useful context.',
+    }));
+    await page.routeWebSocket('**/search', (socket) => {
+      socket.onMessage(() =>
+        socket.send(
+          JSON.stringify({
+            history: results.slice(0, 2),
+            documents: results.slice(2),
+            total: results.length,
+          }),
+        ),
+      );
+    });
+    await page.goto('/?q=article');
+    const rows = page.locator('[data-result]');
+    await expect(rows).toHaveCount(3);
+    await page.evaluate(() => document.fonts.ready);
+    if (colorScheme === 'dark') await expect(page.locator('html')).toHaveClass(/dark/);
+    else await expect(page.locator('html')).not.toHaveClass(/dark/);
+    await rows.first().locator('[data-result-link]').focus();
+
+    async function textPositions() {
+      return rows.evaluateAll((elements) =>
+        elements.map((element) =>
+          ['[data-result-link]', '.result-meta', '.result-snippet'].map((selector) => {
+            const part = element.querySelector(selector)!;
+            const bounds = part.getBoundingClientRect();
+            const row = element.getBoundingClientRect();
+            return {
+              x: bounds.x - row.x,
+              y: bounds.y - row.y,
+              width: bounds.width,
+              height: bounds.height,
+            };
+          }),
+        ),
+      );
+    }
+    const before = await textPositions();
+    for (const selected of [1, 2, 0]) {
+      await page.keyboard.press('ArrowDown');
+      await expect(rows.nth(selected)).toHaveClass(/result-card-active/);
+      await expect.poll(textPositions).toEqual(before);
+    }
+    await expect(
+      rows.first().getByRole('img', { name: 'Pinned result', exact: true }),
+    ).toBeVisible();
+    await expect(
+      rows.nth(1).getByRole('img', { name: 'Prioritized for this query', exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`result-hierarchy-${colorScheme}.png`) });
+
+    const trigger = rows.first().getByRole('button', { name: 'Actions for Pinned article' });
+    await trigger.click();
+    const actions = isMobile ? page.getByRole('dialog') : page.getByRole('menu');
+    await expect(actions.getByRole('button', { name: 'Unpin', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await rows
+      .nth(1)
+      .getByRole('button', { name: 'Actions for Previously opened article' })
+      .click();
+    await expect(
+      actions.getByRole('button', { name: 'Forget for this query', exact: true }),
+    ).toBeVisible();
+  });
+}
+
 test('result titles sit close to their bodies with space between results and usable action buttons', async ({
   page,
   isMobile,
@@ -28,6 +110,10 @@ test('result titles sit close to their bodies with space between results and usa
             url: `${original}/${index}`,
             title,
             domain: 'example.com',
+            favicon:
+              index === 0
+                ? 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"%3E%3Crect width="20" height="20" rx="3" fill="%230891b2"/%3E%3Cpath d="M5 4v12m10-12v12M5 10h10" stroke="white" stroke-width="2"/%3E%3C/svg%3E'
+                : '',
             text: index === 2 ? '' : 'A short excerpt from the saved article.',
           })),
           total: titles.length,

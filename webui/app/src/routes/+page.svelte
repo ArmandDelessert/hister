@@ -81,6 +81,7 @@
   import {
     Search,
     Star,
+    Pin,
     Globe,
     Eye,
     Trash2,
@@ -2538,30 +2539,23 @@
 
               {#if displayResults.length > 0}
                 {#each displayResults as r, i}
-                  {@const color = r.isPinned
-                    ? 'hister-teal'
-                    : r.isHistoryResult
-                      ? 'hister-amber'
-                      : 'hister-cyan'}
                   {@const state = getResultState(r.url, r.label)}
                   <article
                     data-result
-                    class="result-card flex w-full scroll-my-[6em] gap-3 transition-all duration-150"
+                    class="result-card flex w-full scroll-my-[6em] gap-3 transition-colors duration-150"
                     class:result-card-active={i === highlightIdx}
-                    style="--result-color: var(--{color});"
                   >
                     <div class="w-0 min-w-0 flex-1 space-y-0.5">
                       <div class="flex min-w-0 items-start gap-1.5">
                         <ResultFavicon
                           favicon={r.favicon}
                           faviconKey={r.favicon_key}
-                          pinned={r.isPinned}
-                          class="mt-0.5"
+                          class="mt-1"
                         />
                         <a
                           data-result-link={r.url}
                           href={fileResultUrl(r.url, r.id, r.title || '*title*')}
-                          class="result-title font-outfit text-md line-clamp-3 min-w-0 flex-1 font-semibold hover:underline md:text-xl"
+                          class="result-title font-outfit line-clamp-3 min-w-0 flex-1 text-xl leading-tight font-semibold hover:underline md:text-2xl"
                           title={r.title || '*title*'}
                           target={config.openResultsOnNewTab ? '_blank' : undefined}
                           onclick={() => {
@@ -2577,6 +2571,22 @@
                         >
                           {r.title || '*title*'}
                         </a>
+                        {#if r.isPinned || r.isHistoryResult}
+                          <span
+                            role="img"
+                            aria-label={r.isPinned ? 'Pinned result' : 'Prioritized for this query'}
+                            title={r.isPinned
+                              ? 'Pinned result'
+                              : 'Prioritized because you opened it for this query. Use the result menu to forget it for this query.'}
+                            class="text-text-brand-muted mt-1 inline-flex h-5 shrink-0 items-center"
+                          >
+                            {#if r.isPinned}
+                              <Pin class="size-3.5" />
+                            {:else}
+                              <History class="size-3.5" />
+                            {/if}
+                          </span>
+                        {/if}
                       </div>
                       <div
                         class="result-meta flex max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
@@ -2585,13 +2595,11 @@
                           class="result-url-line flex max-w-full min-w-0 shrink items-center gap-3"
                         >
                           <span
-                            class="result-url-text min-w-0 overflow-hidden text-xs text-ellipsis whitespace-nowrap md:text-sm"
+                            class="result-url-text font-inter min-w-0 overflow-hidden text-xs text-ellipsis whitespace-nowrap md:text-sm"
                             title={r.url}
                           >
-                            {#if r.domain}<span class="result-domain font-inter font-semibold"
-                                >{r.domain}</span
-                              >{/if}<span class="result-path font-fira text-text-brand-muted"
-                              >{displayResultPath(r.url, r.domain)}</span
+                            {#if r.domain}<span class="result-domain">{r.domain}</span>{/if}<span
+                              class="result-path">{displayResultPath(r.url, r.domain)}</span
                             >
                           </span>
                           {#if !disablePreviews}
@@ -2611,33 +2619,17 @@
                             </Button>
                           {/if}
                         </div>
-                        {#if r.isPinned || r.isHistoryResult || state.displayLabel}
+                        {#if state.displayLabel}
                           <div
                             class="result-secondary-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
                           >
-                            {#if r.isPinned}
-                              <Badge
-                                variant="secondary"
-                                class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
-                                >pinned</Badge
-                              >
-                            {:else if r.isHistoryResult}
-                              <Badge
-                                variant="secondary"
-                                class="bg-hister-amber/10 text-hister-amber h-4 border-0 px-1.5 py-0"
-                                title="Prioritized because you opened it for this query. Use the result menu to forget it for this query."
-                                >prioritized</Badge
-                              >
-                            {/if}
-                            {#if state.displayLabel}
-                              <Badge
-                                variant="secondary"
-                                class="result-label bg-hister-teal/20 min-h-4 max-w-full border-0 px-1.5 py-0"
-                                title={state.displayLabel}
-                              >
-                                <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
-                              </Badge>
-                            {/if}
+                            <Badge
+                              variant="secondary"
+                              class="result-label bg-muted-surface/60 text-text-brand-secondary min-h-4 max-w-full border-0 px-1.5 py-0"
+                              title={state.displayLabel}
+                            >
+                              <Tag class="mr-0.5 size-2.5 shrink-0" />{state.displayLabel}
+                            </Badge>
                           </div>
                         {/if}
                       </div>
@@ -3238,9 +3230,10 @@
     max-width: 100%;
     overflow: hidden;
     border: 0;
+    border-left: 3px solid transparent;
     background: transparent;
     margin-block: 0;
-    padding: 0.2rem 0;
+    padding: 0.2rem 0 0.2rem 0.75rem;
     box-shadow: none;
   }
 
@@ -3249,15 +3242,7 @@
   }
 
   .result-card:hover {
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--result-color) 4%, transparent),
-      transparent 44%
-    );
-  }
-
-  .result-domain {
-    color: color-mix(in srgb, var(--result-color) 70%, var(--text-primary-brand));
+    background: color-mix(in srgb, var(--text-primary-brand) 4%, transparent);
   }
 
   .result-meta {
@@ -3265,36 +3250,24 @@
   }
 
   .result-card-active {
-    border-left: 3px solid var(--result-color);
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--result-color) 8%, transparent),
-      color-mix(in srgb, var(--result-color) 2%, transparent) 62%,
-      transparent
-    );
-    padding-left: 0.75rem;
-    box-shadow: none;
+    border-left-color: var(--hister-cyan);
+    background: color-mix(in srgb, var(--text-primary-brand) 8%, transparent);
   }
 
-  :global(.results-list-panel) .result-card:not(.result-card-active),
-  :global(.results-list-panel) .result-card-active {
+  :global(.results-list-panel) .result-card {
     width: calc(100% - 1.5rem);
     max-width: 100%;
     overflow: hidden;
   }
 
-  :global(.results-list-panel) .result-card-active {
-    box-shadow: none;
-  }
-
   .result-title {
-    color: color-mix(in srgb, var(--result-color) 82%, var(--text-primary-brand));
+    color: color-mix(in srgb, var(--hister-cyan) 82%, var(--text-primary-brand));
     overflow-wrap: anywhere;
     word-break: break-word;
   }
 
   .result-title:hover {
-    color: var(--result-color);
+    color: var(--hister-cyan);
   }
 
   .result-snippet {
@@ -3359,34 +3332,7 @@
     background: color-mix(in srgb, var(--card-surface) 88%, transparent);
   }
 
-  :global(.dark) .result-card {
-    box-shadow: none;
-  }
-
-  :global(.dark) .result-card:hover {
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--result-color) 7%, transparent),
-      transparent 46%
-    );
-  }
-
   :global(.dark) .result-title {
-    color: color-mix(in srgb, var(--result-color) 88%, white);
-  }
-
-  :global(.dark) .result-card-active {
-    border-left-color: var(--result-color);
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--result-color) 10%, transparent),
-      color-mix(in srgb, var(--result-color) 4%, transparent) 58%,
-      transparent
-    );
-    box-shadow: none;
-  }
-
-  :global(.dark .results-list-panel .result-card-active) {
-    box-shadow: none;
+    color: color-mix(in srgb, var(--hister-cyan) 88%, white);
   }
 </style>

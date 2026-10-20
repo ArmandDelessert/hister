@@ -2650,8 +2650,9 @@
                             class="result-url-text font-inter min-w-0 overflow-hidden text-xs text-ellipsis whitespace-nowrap md:text-sm"
                             title={r.url}
                           >
-                            {#if r.domain}<span class="result-domain">{r.domain}</span>{/if}<span
-                              class="result-path">{displayResultPath(r.url, r.domain)}</span
+                            {#if r.domain}<span class="result-domain font-bold">{r.domain}</span
+                              >{/if}<span class="result-path"
+                              >{displayResultPath(r.url, r.domain)}</span
                             >
                           </span>
                           {#if !disablePreviews}

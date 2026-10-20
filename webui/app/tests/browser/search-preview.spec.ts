@@ -332,11 +332,17 @@ test('result metadata is available in preview details instead of the result row'
   await page.screenshot({ path: test.info().outputPath('result-metadata.png') });
 
   await rows.first().getByRole('link', { name: 'Preview', exact: true }).click();
-  await expect(page.getByRole('button', { name: '1 previous version', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: preview.title, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '1 previous version', exact: true })).toHaveCount(
+    0,
+  );
   await expect(page.locator('time')).toHaveCount(0);
   await page.getByRole('button', { name: 'Show document details', exact: true }).click();
   const details = page.locator('#preview-document-details');
   await expect(details).toBeVisible();
+  await expect(
+    details.getByRole('button', { name: '1 previous version', exact: true }),
+  ).toBeVisible();
   await expect(details.getByText('0.73', { exact: true })).toBeVisible();
   await expect(
     details.locator('div').filter({ has: page.locator('dt', { hasText: /^visits$/ }) }),
@@ -354,6 +360,100 @@ test('result metadata is available in preview details instead of the result row'
   await expect(
     details.locator('div').filter({ has: page.locator('dt', { hasText: /^visits$/ }) }),
   ).toContainText('1');
+});
+
+test('preview header keeps only the title while details retain metadata and content controls', async ({
+  page,
+  isMobile,
+}) => {
+  const meta = {
+    author: 'Article author',
+    published: '2026-04-09',
+    type: 'article',
+    description: 'A detailed description of the saved article.',
+    videos: [{ type: 'video', url: 'https://example.com/saved-video.mp4' }],
+  };
+  await page.route('**/api/preview?**', (route) => route.fulfill({ json: { ...preview, meta } }));
+  await page.route('**/api/versions?**', (route) =>
+    route.fulfill({
+      json: [{ id: 7, created_at: '2023-11-14T22:13:20Z', text_diff: '+Older content' }],
+    }),
+  );
+  await page.route('https://example.com/saved-video.mp4', (route) =>
+    route.fulfill({ body: '', contentType: 'video/mp4' }),
+  );
+  await page.goto('/?q=article');
+  if (isMobile) {
+    await page.locator('[data-result]').getByRole('link', { name: 'Preview', exact: true }).click();
+  }
+  const header = page.locator('.preview-header');
+  const details = page.locator('#preview-document-details');
+  const showDetails = header.getByRole('button', { name: 'Show document details', exact: true });
+  const hideDetails = header.getByRole('button', { name: 'Hide document details', exact: true });
+  await expect(header.getByRole('heading', { name: preview.title, exact: true })).toBeVisible();
+  await expect(header).toHaveText(preview.title);
+  await expect(showDetails).toHaveAttribute('aria-expanded', 'false');
+  await expect(header.getByRole('link', { name: preview.title, exact: true })).toHaveAttribute(
+    'href',
+    original,
+  );
+  await expect(header.getByRole('link', { name: 'Open direct preview' })).toBeVisible();
+  await expect(header.getByRole('button', { name: 'Change extractor' })).toBeVisible();
+  await expect(header.getByRole('button', { name: 'Close preview' })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('preview-header.png') });
+
+  await showDetails.focus();
+  await showDetails.press('Enter');
+  await expect(hideDetails).toHaveAttribute('aria-expanded', 'true');
+  await expect(details.getByText(meta.author, { exact: true })).toBeVisible();
+  await expect(details).toContainText('2026');
+  await expect(details.getByText(meta.type, { exact: true })).toBeVisible();
+  await expect(details.getByText(meta.description, { exact: true })).toBeVisible();
+  await details.getByRole('button', { name: 'Show embedded video', exact: true }).click();
+  await expect(page.locator('.preview-content video')).toBeVisible();
+  await details.getByRole('button', { name: 'Hide embedded video', exact: true }).click();
+  await expect(page.locator('.preview-content video')).toHaveCount(0);
+  await details.getByRole('button', { name: '1 previous version', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'show this version' })).toBeVisible();
+  await hideDetails.click();
+  await expect(header).toHaveText(preview.title);
+  await expect(page.getByRole('button', { name: 'show this version' })).toBeVisible();
+  await showDetails.click();
+  await details.getByRole('button', { name: '1 previous version', exact: true }).click();
+  await expect(page.getByText('Saved article content', { exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('preview-details.png') });
+
+  await page.reload();
+  await expect(details).toBeVisible();
+  await hideDetails.click();
+  await page.reload();
+  await expect(header).toHaveText(preview.title);
+  await expect(showDetails).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('preview details remain available with only header metadata or version history', async ({
+  page,
+}) => {
+  for (const fields of [
+    { meta: { author: 'Article author' } },
+    { meta: { published: '2026-04-09' } },
+    { meta: { type: 'article' } },
+    { meta: { description: 'Article description' } },
+    { meta: { videos: [{ type: 'video', url: 'https://example.com/saved-video.mp4' }] } },
+    { version_count: 2 },
+  ]) {
+    await page.route('**/api/preview?**', (route) =>
+      route.fulfill({ json: { title: preview.title, content: preview.content, ...fields } }),
+    );
+    await page.goto(previewPath());
+    const header = page.locator('.preview-header');
+    const showDetails = header.getByRole('button', { name: 'Show document details', exact: true });
+    await expect(showDetails).toBeVisible();
+    await expect(header).toHaveText(preview.title);
+    await showDetails.click();
+    await expect(page.locator('#preview-document-details')).toBeVisible();
+    await header.getByRole('button', { name: 'Hide document details', exact: true }).click();
+  }
 });
 
 test('recent searches explain browser scope and hiding never deletes server history', async ({
@@ -431,6 +531,7 @@ for (const failure of ['server', 'network'] as const) {
       }
     });
     await page.goto(previewPath());
+    await page.getByRole('button', { name: 'Show document details', exact: true }).click();
     await page.getByRole('button', { name: '1 previous version', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Could not load previous versions.');
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
@@ -452,6 +553,7 @@ test('version history distinguishes loading from an empty successful response', 
     await route.fulfill({ json: [] });
   });
   await page.goto(previewPath());
+  await page.getByRole('button', { name: 'Show document details', exact: true }).click();
   await page.getByRole('button', { name: '1 previous version', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('Loading previous versions…');
   finish();

@@ -85,8 +85,22 @@
 
   let showEmbeddedVideos = $state(false);
   let showDocumentDetails = $state(false);
+  const previewMetadataEntries = $derived(
+    [
+      { label: 'Author', value: meta?.author },
+      { label: 'Published', value: formatMetaDate(meta?.published) },
+      { label: 'Content type', value: meta?.type },
+      { label: 'Description', value: meta?.description },
+    ].filter((entry) => entry.value),
+  );
   const hasDocumentDetails = $derived(
-    !!documentDetails || added !== null || updated !== null || searchScore !== undefined,
+    !!documentDetails ||
+      added !== null ||
+      updated !== null ||
+      searchScore !== undefined ||
+      previewMetadataEntries.length > 0 ||
+      versionCount > 0 ||
+      !!meta?.videos?.length,
   );
 
   type DetailEntry = { field: string; value: unknown };
@@ -473,53 +487,55 @@
           {/if}
         </h2>
       </div>
-      {#if meta?.author || meta?.published || meta?.type}
-        <span class="font-inter text-text-brand-muted text-xs">
-          {#if meta?.author}<span>{meta.author}</span>{/if}
-          {#if meta?.author && meta?.published}<span class="mx-1">·</span>{/if}
-          {#if meta?.published}<span>{formatMetaDate(meta.published)}</span>{/if}
-          {#if (meta?.author || meta?.published) && meta?.type}<span class="mx-1">·</span>{/if}
-          {#if meta?.type}<span class="uppercase">{meta.type}</span>{/if}
-        </span>
-      {/if}
-      {#if versionCount > 0}
-        <button
-          onclick={toggleVersions}
-          class="font-inter text-hister-teal inline-flex cursor-pointer items-center gap-1 text-xs hover:underline"
-        >
-          <History class="size-3" />
-          {versionCount}
-          {versionCount === 1 ? 'previous version' : 'previous versions'}
-        </button>
-      {/if}
-      {#if meta?.description}
-        <p class="font-inter text-text-brand-secondary mt-1 line-clamp-3 max-w-[60em] text-sm">
-          {meta.description}
-        </p>
-      {/if}
-      {#if meta?.videos?.length}
-        <button
-          onclick={() => (showEmbeddedVideos = !showEmbeddedVideos)}
-          class="font-inter mt-1 inline-flex cursor-pointer items-center gap-1.5 text-xs {showEmbeddedVideos
-            ? 'text-hister-teal'
-            : 'text-text-brand-muted hover:text-text-brand'}"
-        >
-          <Video class="size-3.5 shrink-0" />
-          {showEmbeddedVideos ? 'Hide' : 'Show'} embedded
-          {meta.videos.length === 1 ? 'video' : 'videos'}
-        </button>
-      {/if}
       {#if showDocumentDetails && hasDocumentDetails}
         <div
           id="preview-document-details"
           class="border-border-brand-muted mt-2 max-h-[min(20rem,40vh)] overflow-y-auto overscroll-contain border-t pt-2"
         >
+          {#if versionCount > 0 || meta?.videos?.length}
+            <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {#if versionCount > 0}
+                <button
+                  onclick={toggleVersions}
+                  aria-expanded={showVersions}
+                  class="font-inter text-hister-teal inline-flex cursor-pointer items-center gap-1 text-xs hover:underline"
+                >
+                  <History class="size-3" />
+                  {versionCount}
+                  {versionCount === 1 ? 'previous version' : 'previous versions'}
+                </button>
+              {/if}
+              {#if meta?.videos?.length}
+                <button
+                  onclick={() => (showEmbeddedVideos = !showEmbeddedVideos)}
+                  aria-expanded={showEmbeddedVideos}
+                  class="font-inter inline-flex cursor-pointer items-center gap-1.5 text-xs {showEmbeddedVideos
+                    ? 'text-hister-teal'
+                    : 'text-text-brand-muted hover:text-text-brand'}"
+                >
+                  <Video class="size-3.5 shrink-0" />
+                  {showEmbeddedVideos ? 'Hide' : 'Show'} embedded
+                  {meta.videos.length === 1 ? 'video' : 'videos'}
+                </button>
+              {/if}
+            </div>
+          {/if}
           <p
             class="font-outfit text-text-brand-muted mb-1 text-xs font-bold tracking-widest uppercase"
           >
             Current document properties
           </p>
           <dl class="font-inter text-xs">
+            {#each previewMetadataEntries as entry (entry.label)}
+              <div
+                class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
+              >
+                <dt class="text-text-brand-muted">{entry.label}</dt>
+                <dd class="text-text-brand-secondary min-w-0 wrap-anywhere whitespace-pre-wrap">
+                  {entry.value}
+                </dd>
+              </div>
+            {/each}
             {#each [{ label: 'Added', timestamp: added }, { label: 'Updated', timestamp: updated }] as { label, timestamp }}
               {#if timestamp !== null}
                 <div

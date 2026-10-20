@@ -108,10 +108,10 @@ trusted resource last changed.
 
 #### Viewing stored versions
 
-Once Hister has recorded at least one version diff for a document, the preview
-panel shows a previous version count. Clicking it opens a changelog with each
-recorded diff and timestamp. From there you can inspect a diff or reconstruct
-and display an archived version.
+Once Hister has recorded at least one version diff for a document, open
+**Document details** (the **i** icon) in the preview panel and click the previous
+version count. This opens a changelog with each recorded diff and timestamp.
+From there you can inspect a diff or reconstruct and display an archived version.
 
 ### Aliases
 

@@ -91,7 +91,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
   });
 }
 
-test('result titles sit close to their bodies with space between results and usable action buttons', async ({
+test('result titles wrap below favicons and sit close to their bodies with space between results', async ({
   page,
   isMobile,
 }) => {
@@ -99,7 +99,7 @@ test('result titles sit close to their bodies with space between results and usa
   const titles = [
     preview.title,
     'A longer article title that wraps across multiple lines while keeping its source and excerpt close together',
-    'Another article',
+    'Another long article title with no favicon that wraps while keeping the fallback icon beside the first line',
   ];
   await page.routeWebSocket('**/search', (socket) => {
     socket.onMessage(() =>
@@ -111,7 +111,7 @@ test('result titles sit close to their bodies with space between results and usa
             title,
             domain: 'example.com',
             favicon:
-              index === 0
+              index < 2
                 ? 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"%3E%3Crect width="20" height="20" rx="3" fill="%230891b2"/%3E%3Cpath d="M5 4v12m10-12v12M5 10h10" stroke="white" stroke-width="2"/%3E%3C/svg%3E'
                 : '',
             text: index === 2 ? '' : 'A short excerpt from the saved article.',
@@ -140,6 +140,26 @@ test('result titles sit close to their bodies with space between results and usa
       expect(title.x + title.width).toBeLessThanOrEqual(actions.x);
       expect(body.x + body.width).toBeLessThanOrEqual(actions.x);
       if (index > 0) {
+        const lines = await row.locator('[data-result-link]').evaluate((link) => {
+          const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
+          const lines: { x: number; y: number }[] = [];
+          while (walker.nextNode()) {
+            if (!walker.currentNode.textContent?.trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(walker.currentNode);
+            for (const rect of range.getClientRects()) {
+              if (rect.width > 0 && !lines.some((line) => Math.abs(line.y - rect.y) < 1)) {
+                lines.push({ x: rect.x, y: rect.y });
+              }
+            }
+          }
+          return lines;
+        });
+        expect(lines.length).toBeGreaterThan(1);
+        expect(lines[0].x - body.x).toBeGreaterThanOrEqual(20);
+        expect(Math.abs(lines[1].x - body.x)).toBeLessThanOrEqual(1);
+      }
+      if (index > 0) {
         const previous = (await rows.nth(index - 1).boundingBox())!;
         const current = (await row.boundingBox())!;
         expect(current.y - (previous.y + previous.height)).toBeGreaterThanOrEqual(20);
@@ -147,11 +167,11 @@ test('result titles sit close to their bodies with space between results and usa
     }
   }
 
-  await expect(checkSpacing).toPass();
+  await expect(checkSpacing).toPass({ timeout: 5000 });
   await page.screenshot({ path: test.info().outputPath('result-spacing.png') });
   if (!isMobile) {
     await page.getByRole('button', { name: 'Close preview', exact: true }).click();
-    await expect(checkSpacing).toPass();
+    await expect(checkSpacing).toPass({ timeout: 5000 });
   }
   const trigger = rows.nth(1).getByRole('button', { name: /^Actions for / });
   await trigger.click();

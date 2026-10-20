@@ -1189,7 +1189,9 @@ app:
   snippet_length: 800
 ```
 
-The default is 300 characters. The value must be a positive integer. Highlighting and ellipses do not count toward this limit. Short documents and semantic chunks can return less text. Larger values make result cards taller and increase the amount of data returned by each search.
+The default is 300 characters. The value must be a positive integer. Highlighting and ellipses do not count toward this limit. Short documents and semantic chunks can return less text. Larger values increase the amount of data returned by each search.
+
+The web app shows up to three lines of each snippet. Select **Show more** to expand a clipped snippet or **Show less** to collapse it. To expand snippets by default, enable **Always expand snippets** in **Actions**. This preference is remembered in your browser.
 
 You can also set `HISTER__APP__SNIPPET_LENGTH=800`. Restart Hister after changing the setting. Existing documents use the new length immediately after restart; no reindexing is needed.
 

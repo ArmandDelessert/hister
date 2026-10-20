@@ -45,6 +45,9 @@ async function deleteSkipRuleDocuments(
 }
 
 export class ResultState {
+  snippetExpanded = $state<boolean | undefined>(undefined);
+  snippetOverflows = $state(false);
+
   labelInput = $state('');
   labelMessage = $state<string | null>(null);
   labelError = $state(false);

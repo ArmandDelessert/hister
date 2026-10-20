@@ -215,6 +215,7 @@
   let popupHintTitle = $state('');
   let previewFullscreen = $state(false);
   let disablePreviews = $state(false);
+  let expandSnippets = $state(localStorage.getItem('hister-expanded-snippets') === 'true');
 
   // Desktop split-pane readability panel state
   let panelUrl = $state('');
@@ -1019,6 +1020,41 @@
       resultStates.set(url, new ResultState(initialLabel));
     }
     return resultStates.get(url)!;
+  }
+
+  function setExpandSnippets(expanded: boolean) {
+    expandSnippets = expanded;
+    for (const state of resultStates.values()) state.snippetExpanded = undefined;
+    localStorage.setItem('hister-expanded-snippets', String(expanded));
+  }
+
+  function measureSnippet(node: HTMLElement, result: { state: ResultState; text: string }) {
+    let active = true;
+    let frame = 0;
+    function measure() {
+      if (!active) return;
+      const lineHeight = parseFloat(getComputedStyle(node).lineHeight);
+      result.state.snippetOverflows = node.scrollHeight > lineHeight * 3 + 1;
+    }
+    function scheduleMeasure() {
+      if (!active) return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    }
+    const observer = new ResizeObserver(scheduleMeasure);
+    observer.observe(node);
+    document.fonts.ready.then(scheduleMeasure);
+    return {
+      update(next: typeof result) {
+        result = next;
+        tick().then(scheduleMeasure);
+      },
+      destroy() {
+        active = false;
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+      },
+    };
   }
 
   function removeMatchingResults(matches: (doc: SearchResult) => boolean) {
@@ -2382,6 +2418,21 @@
                           {#if hasResults}<Separator class="bg-border-brand-muted" />{/if}
                         {/if}
                         {#if hasResults}
+                          <label
+                            class="font-inter text-text-brand-secondary flex min-h-8 cursor-pointer items-center gap-2 text-xs"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={expandSnippets}
+                              onchange={(event) => setExpandSnippets(event.currentTarget.checked)}
+                              onkeydown={(event) => {
+                                if (event.key !== 'Escape') event.stopPropagation();
+                              }}
+                              class="accent-hister-indigo size-4 cursor-pointer"
+                            />
+                            Always expand snippets
+                          </label>
+                          <Separator class="bg-border-brand-muted" />
                           <div class="space-y-2">
                             <p
                               class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
@@ -2540,6 +2591,7 @@
               {#if displayResults.length > 0}
                 {#each displayResults as r, i}
                   {@const state = getResultState(r.url, r.label)}
+                  {@const snippetExpanded = state.snippetExpanded ?? expandSnippets}
                   <article
                     data-result
                     class="result-card flex w-full scroll-my-[6em] gap-3 transition-colors duration-150"
@@ -2547,11 +2599,6 @@
                   >
                     <div class="w-0 min-w-0 flex-1 space-y-0.5">
                       <div class="flex min-w-0 items-start gap-1.5">
-                        <ResultFavicon
-                          favicon={r.favicon}
-                          faviconKey={r.favicon_key}
-                          class="mt-1"
-                        />
                         <a
                           data-result-link={r.url}
                           href={fileResultUrl(r.url, r.id, r.title || '*title*')}
@@ -2569,6 +2616,11 @@
                             }
                           }}
                         >
+                          <ResultFavicon
+                            favicon={r.favicon}
+                            faviconKey={r.favicon_key}
+                            class="float-left mt-1 mr-1.5"
+                          />
                           {r.title || '*title*'}
                         </a>
                         {#if r.isPinned || r.isHistoryResult}
@@ -2635,10 +2687,28 @@
                       </div>
                       {#if r.text}
                         <p
+                          id={`result-snippet-${i}`}
+                          use:measureSnippet={{ state, text: r.text }}
                           class="result-snippet font-inter text-text-brand-secondary text-sm leading-[1.45] md:text-base"
+                          class:line-clamp-3={!snippetExpanded}
                         >
                           {@html r.text}
                         </p>
+                        {#if state.snippetOverflows}
+                          <Button
+                            variant="link"
+                            size="sm"
+                            class="font-inter text-text-brand-muted hover:text-text-brand h-auto px-0 py-1 text-xs"
+                            aria-expanded={snippetExpanded}
+                            aria-controls={`result-snippet-${i}`}
+                            onclick={() => (state.snippetExpanded = !snippetExpanded)}
+                            onkeydown={(event) => {
+                              if (event.key !== 'Escape') event.stopPropagation();
+                            }}
+                          >
+                            {snippetExpanded ? 'Show less' : 'Show more'}
+                          </Button>
+                        {/if}
                       {/if}
                     </div>
                     <ResultActionsMenu
@@ -3307,8 +3377,8 @@
 
   :global(.result-snippet mark) {
     color: var(--text-primary-brand);
-    background: color-mix(in srgb, var(--hister-amber) 18%, transparent);
-    padding: 0 0.12em;
+    background: color-mix(in srgb, var(--hister-amber) 8%, transparent);
+    font-weight: 600;
   }
 
   :global(.dark) .home-search {

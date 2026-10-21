@@ -403,6 +403,7 @@ func serveConfig(c *webContext) {
 		ColorScheme          string                    `json:"colorScheme"`
 		SearchURL            string                    `json:"searchUrl"`
 		OpenResultsOnNewTab  bool                      `json:"openResultsOnNewTab"`
+		ShowSuggestions      bool                      `json:"showSuggestions"`
 		Hotkeys              map[string]string         `json:"hotkeys"`
 		AuthMode             string                    `json:"authMode"`
 		Authenticated        bool                      `json:"authenticated"`
@@ -447,6 +448,7 @@ func serveConfig(c *webContext) {
 		ColorScheme:          c.Config.App.ColorScheme,
 		SearchURL:            c.Config.App.SearchURL,
 		OpenResultsOnNewTab:  c.Config.App.OpenResultsOnNewTab,
+		ShowSuggestions:      c.Config.App.ShowSuggestions,
 		Hotkeys:              hotkeys,
 		AuthMode:             authMode,
 		Authenticated:        authenticated,

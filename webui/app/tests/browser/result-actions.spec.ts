@@ -1,6 +1,119 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { expect, test, type Page } from '@playwright/test';
 import { mockAPI, original, preview, previewPath } from './fixtures';
+import { emptySearchCapabilities } from '../../src/lib/search-schema';
+
+for (const configured of [undefined, true, false]) {
+  test(`suggestions follow the ${configured ?? 'omitted'} default and remember a browser override`, async ({
+    page,
+  }) => {
+    const config = configured === undefined ? {} : { showSuggestions: configured };
+    await mockAPI(page, { canWrite: false, config });
+    await page.goto('/?q=sve');
+    const search = page.getByRole('searchbox');
+    const suggestions = page.getByRole('listbox', { name: 'Search suggestions' });
+    const actions = page.getByRole('button', { name: 'Actions', exact: true });
+    const preference = page.getByRole('checkbox', { name: 'Show suggestions', exact: true });
+    const defaultEnabled = configured ?? false;
+    await expect(page.locator('[data-result]')).toHaveCount(1);
+    await search.focus();
+    await expect(suggestions).toBeVisible({ visible: defaultEnabled });
+    await expect(search).toHaveAttribute('aria-expanded', String(defaultEnabled));
+    expect(await page.evaluate(() => localStorage.getItem('hister-show-suggestions'))).toBeNull();
+    await actions.click();
+    await expect(preference).toBeChecked({ checked: defaultEnabled });
+    await preference.setChecked(!defaultEnabled);
+    await page.keyboard.press('Escape');
+    await search.focus();
+    await expect(suggestions).toBeVisible({ visible: !defaultEnabled });
+    await page.reload();
+    await expect(page.locator('[data-result]')).toHaveCount(1);
+    await search.focus();
+    await expect(suggestions).toBeVisible({ visible: !defaultEnabled });
+    await actions.click();
+    await expect(preference).toBeChecked({ checked: !defaultEnabled });
+    await preference.setChecked(defaultEnabled);
+    await page.keyboard.press('Escape');
+    await page.reload();
+    await expect(page.locator('[data-result]')).toHaveCount(1);
+    await search.focus();
+    await expect(suggestions).toBeVisible({ visible: defaultEnabled });
+
+    if (defaultEnabled) {
+      await search.press('ArrowDown');
+      await search.press('Enter');
+      await expect(search).toHaveValue('svelte');
+    } else {
+      await expect(search).not.toHaveAttribute('aria-activedescendant');
+      await search.press('Tab');
+      await expect(search).toHaveValue('sve');
+    }
+  });
+}
+
+test('suggestions can be enabled from Actions when a search has no results', async ({ page }) => {
+  await mockAPI(page, { canWrite: false, config: { showSuggestions: false } });
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage(() => socket.send(JSON.stringify({ documents: [], total: 0 })));
+  });
+  await page.goto('/?q=sve');
+  await expect(page.getByText('0 results', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show suggestions', exact: true }).check();
+  await page.keyboard.press('Escape');
+  await page.getByRole('searchbox').focus();
+  await expect(page.getByRole('listbox', { name: 'Search suggestions' })).toBeVisible();
+});
+
+test('hidden suggestions skip facet lookups and preserve Tab result navigation', async ({
+  page,
+}) => {
+  const searchConfig = emptySearchCapabilities();
+  searchConfig.fields = [
+    { name: 'domain', label: 'Domain', description: '', kind: 'keyword', facet: 'domains' },
+  ];
+  searchConfig.facets = [
+    { name: 'domains', label: 'Domains', queryField: 'domain', kind: 'terms', defaultSize: 10 },
+  ];
+  await mockAPI(page, {
+    config: { showSuggestions: false, search: searchConfig, hotkeys: { tab: 'autocomplete' } },
+  });
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage(() =>
+      socket.send(
+        JSON.stringify({
+          documents: [
+            { id: 'document-1', url: original, title: 'First article' },
+            { id: 'document-2', url: `${original}/2`, title: 'Second article' },
+          ],
+          total: 2,
+          query_suggestion: 'domain:example.com',
+        }),
+      ),
+    );
+  });
+  let facetRequests = 0;
+  await page.route('**/api/facets?**', async (route) => {
+    facetRequests++;
+    await route.fulfill({ json: { domains: [{ term: 'example.com', count: 1 }] } });
+  });
+  await page.goto('/?q=domain:exa');
+  await expect(page.locator('[data-result]')).toHaveCount(2);
+  const search = page.getByRole('searchbox');
+  await search.focus();
+  await search.press('Tab');
+  await expect(search).toHaveValue('domain:exa');
+  await expect(page.locator('[data-result]').nth(1)).toHaveClass(/result-card-active/);
+  await page.waitForTimeout(250);
+  expect(facetRequests).toBe(0);
+
+  await page.getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show suggestions', exact: true }).check();
+  await page.keyboard.press('Escape');
+  await search.focus();
+  await expect.poll(() => facetRequests).toBeGreaterThan(0);
+  await expect(page.getByRole('listbox', { name: 'Search suggestions' })).toBeVisible();
+});
 
 async function openActions(page: Page) {
   const trigger = page.getByRole('button', { name: `Actions for ${preview.title}`, exact: true });

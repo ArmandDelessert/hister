@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/indexer/searchschema"
@@ -102,6 +104,32 @@ func TestPublicModeConfigResponse(t *testing.T) {
 	}
 	if len(body.Search.Facets) == 0 || len(body.Search.Sort.Options) == 0 {
 		t.Fatal("search schema is missing facets or sort options")
+	}
+}
+
+func TestServeConfigShowSuggestions(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			cfg := config.CreateDefaultConfig()
+			if err := yaml.Unmarshal(fmt.Appendf(nil, "app:\n  show_suggestions: %t\n", enabled), cfg); err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			serveConfig(&webContext{
+				Request:  httptest.NewRequest(http.MethodGet, "/api/config", nil),
+				Response: rec,
+				Config:   cfg,
+			})
+			var response struct {
+				ShowSuggestions *bool `json:"showSuggestions"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.ShowSuggestions == nil || *response.ShowSuggestions != enabled {
+				t.Fatalf("showSuggestions missing or incorrect: %s", rec.Body)
+			}
+		})
 	}
 }
 

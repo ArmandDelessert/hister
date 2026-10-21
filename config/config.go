@@ -67,6 +67,7 @@ type App struct {
 	LogFormat              string `yaml:"log_format" mapstructure:"log_format"`
 	DebugSQL               bool   `yaml:"debug_sql" mapstructure:"debug_sql"`
 	OpenResultsOnNewTab    bool   `yaml:"open_results_on_new_tab" mapstructure:"open_results_on_new_tab"`
+	ShowSuggestions        bool   `yaml:"show_suggestions" mapstructure:"show_suggestions"`
 	RedirectOnNoResults    bool   `yaml:"redirect_on_no_results" mapstructure:"redirect_on_no_results"`
 	DisplayExtractorConfig bool   `yaml:"display_extractor_config" mapstructure:"display_extractor_config"`
 	DisablePreviews        bool   `yaml:"disable_previews" mapstructure:"disable_previews"`
@@ -642,6 +643,7 @@ func CreateDefaultConfig() *Config {
 			SnippetLength:          300,
 			LogLevel:               "info",
 			OpenResultsOnNewTab:    false,
+			ShowSuggestions:        false,
 			RedirectOnNoResults:    true,
 			DisplayExtractorConfig: false,
 		},

@@ -204,6 +204,47 @@ func TestDefaultConfigYAMLOmitsTUIHotkeys(t *testing.T) {
 	}
 }
 
+func TestShowSuggestionsConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		env  string
+		want bool
+	}{
+		{name: "default", want: false},
+		{name: "enabled", raw: "app:\n  show_suggestions: true\n", want: true},
+		{name: "disabled", raw: "app:\n  show_suggestions: false\n"},
+		{name: "environment disables", raw: "app:\n  show_suggestions: true\n", env: "false"},
+		{name: "environment enables", raw: "app:\n  show_suggestions: false\n", env: "true", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env != "" {
+				t.Setenv("HISTER__APP__SHOW_SUGGESTIONS", tc.env)
+			}
+			cfg, err := parseConfig([]byte(tc.raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := yaml.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var exported struct {
+				App map[string]any `yaml:"app"`
+			}
+			if err := yaml.Unmarshal(data, &exported); err != nil {
+				t.Fatal(err)
+			}
+			if got := exported.App["show_suggestions"]; got != tc.want {
+				t.Fatalf("generated app.show_suggestions = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	if _, err := parseConfig([]byte("app:\n  show_suggestions: invalid\n")); err == nil {
+		t.Fatal("invalid app.show_suggestions was accepted")
+	}
+}
+
 func TestServerMaxBatchBodySizeConfig(t *testing.T) {
 	cfg, err := parseConfig([]byte("server:\n  max_batch_body_size: 12\n"))
 	if err != nil {

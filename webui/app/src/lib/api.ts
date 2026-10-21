@@ -10,6 +10,7 @@ export interface AppConfig {
   colorScheme: 'automatic' | 'dark' | 'light';
   searchUrl: string;
   openResultsOnNewTab: boolean;
+  showSuggestions?: boolean;
   hotkeys: Record<string, string>;
   authMode: 'token' | 'user' | 'none';
   authenticated: boolean;

@@ -106,6 +106,7 @@
     subtitle: string;
     searchUrl: string;
     openResultsOnNewTab: boolean;
+    showSuggestions: boolean;
     hotkeys: Record<string, string>;
     semanticEnabled: boolean;
     similarityThreshold: number;
@@ -143,6 +144,7 @@
     subtitle: 'Your own search engine',
     searchUrl: '',
     openResultsOnNewTab: false,
+    showSuggestions: false,
     hotkeys: {},
     semanticEnabled: false,
     similarityThreshold: 0.5,
@@ -208,6 +210,11 @@
   let popupHintTitle = $state('');
   let disablePreviews = $state(false);
   let expandSnippets = $state(localStorage.getItem('hister-expanded-snippets') === 'true');
+  const savedShowSuggestions = localStorage.getItem('hister-show-suggestions');
+  let showSuggestionsOverride = $state<boolean | undefined>(
+    savedShowSuggestions === 'true' ? true : savedShowSuggestions === 'false' ? false : undefined,
+  );
+  const showSuggestions = $derived(showSuggestionsOverride ?? config.showSuggestions);
 
   const previewState = new PreviewState({
     storageKey: 'hister-panel-open',
@@ -281,7 +288,8 @@
     }),
   );
   const querySuggestionsVisible = $derived(
-    query.trim().length > 0 &&
+    showSuggestions &&
+      query.trim().length > 0 &&
       querySuggestionOpen &&
       (querySuggestions.length > 0 || querySuggestionFacetsLoading),
   );
@@ -993,6 +1001,14 @@
     localStorage.setItem('hister-expanded-snippets', String(expanded));
   }
 
+  function setShowSuggestions(enabled: boolean) {
+    showSuggestionsOverride = enabled;
+    querySuggestionOpen = enabled;
+    querySuggestionIndex = 0;
+    querySuggestionKeyboardActive = false;
+    localStorage.setItem('hister-show-suggestions', String(enabled));
+  }
+
   function measureSnippet(node: HTMLElement, result: { state: ResultState; text: string }) {
     let active = true;
     let frame = 0;
@@ -1123,6 +1139,7 @@
   }
 
   function autocompleteQuery(e?: KeyboardEvent, isInputFocus?: boolean) {
+    if (!showSuggestions) return true;
     if (e) e.preventDefault();
     if (isInputFocus && autocomplete && query !== autocomplete) {
       query = autocomplete;
@@ -1484,7 +1501,7 @@
     const context = queryFacetContext;
     const isOpen = querySuggestionOpen;
     const request = ++querySuggestionFacetRequest;
-    if (!context || !isOpen) {
+    if (!showSuggestions || !context || !isOpen) {
       querySuggestionFacetsLoading = false;
       return;
     }
@@ -1604,6 +1621,7 @@
         subtitle: appConfig.subtitle ?? 'Your own search engine',
         searchUrl: appConfig.searchUrl,
         openResultsOnNewTab: appConfig.openResultsOnNewTab,
+        showSuggestions: appConfig.showSuggestions ?? false,
         hotkeys: appConfig.hotkeys,
         semanticEnabled: appConfig.semanticEnabled ?? false,
         similarityThreshold: appConfig.similarityThreshold ?? 0.1,
@@ -1859,7 +1877,7 @@
           bind:value={query}
           type="search"
           placeholder="Search..."
-          aria-autocomplete="list"
+          aria-autocomplete={showSuggestions ? 'list' : 'none'}
           aria-controls={querySuggestionsVisible ? querySuggestionListId : undefined}
           aria-expanded={querySuggestionsVisible}
           aria-haspopup="listbox"
@@ -1921,7 +1939,7 @@
       <QuerySuggestions
         id={querySuggestionListId}
         floating={false}
-        open={querySuggestionOpen}
+        open={querySuggestionsVisible}
         suggestions={querySuggestions}
         activeIndex={querySuggestionKeyboardActive ? querySuggestionIndex : -1}
         loading={querySuggestionFacetsLoading}
@@ -2239,195 +2257,208 @@
                     Web
                   </Button>
                 {/if}
-                {#if hasResults || config.semanticEnabled || (!searchPending && lastResults?.search_duration)}
-                  <DropdownMenu.Root bind:open={actionsDropdownOpen}>
-                    <DropdownMenu.Trigger>
-                      {#snippet child({ props })}
+                <DropdownMenu.Root bind:open={actionsDropdownOpen}>
+                  <DropdownMenu.Trigger>
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Actions"
+                        title="Actions"
+                        class="font-inter {actionsDropdownOpen
+                          ? 'text-hister-indigo'
+                          : 'text-text-brand-muted hover:text-hister-indigo'}"
+                      >
+                        <Ellipsis class="size-4" />
+                      </Button>
+                    {/snippet}
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content
+                    align="end"
+                    class="border-brutal-border bg-card-surface w-80 max-w-[calc(100vw-1rem)] rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
+                  >
+                    <div class="space-y-3">
+                      <label
+                        class="font-inter text-text-brand-secondary flex min-h-8 cursor-pointer items-center gap-2 text-xs"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showSuggestions}
+                          onchange={(event) => setShowSuggestions(event.currentTarget.checked)}
+                          onkeydown={(event) => {
+                            if (event.key !== 'Escape') event.stopPropagation();
+                          }}
+                          class="accent-hister-indigo size-4 cursor-pointer"
+                        />
+                        Show suggestions
+                      </label>
+                      <Separator class="bg-border-brand-muted" />
+                      {#if hasResults && previewState.isDesktop && !previewState.panelOpen && !disablePreviews}
                         <Button
-                          {...props}
                           variant="ghost"
-                          size="icon"
-                          aria-label="Actions"
-                          title="Actions"
-                          class="font-inter {actionsDropdownOpen
-                            ? 'text-hister-indigo'
-                            : 'text-text-brand-muted hover:text-hister-indigo'}"
+                          size="sm"
+                          class="font-inter text-text-brand-secondary hover:text-hister-indigo w-full justify-start gap-2 text-xs"
+                          onclick={() => {
+                            previewState.setPanelOpen(true);
+                            actionsDropdownOpen = false;
+                          }}
+                          onkeydown={(event) => {
+                            if (event.key !== 'Escape') event.stopPropagation();
+                          }}
                         >
-                          <Ellipsis class="size-4" />
+                          <Eye class="size-3" />
+                          Show preview
                         </Button>
-                      {/snippet}
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Content
-                      align="end"
-                      class="border-brutal-border bg-card-surface w-80 max-w-[calc(100vw-1rem)] rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
-                    >
-                      <div class="space-y-3">
-                        {#if hasResults && previewState.isDesktop && !previewState.panelOpen && !disablePreviews}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            class="font-inter text-text-brand-secondary hover:text-hister-indigo w-full justify-start gap-2 text-xs"
-                            onclick={() => {
-                              previewState.setPanelOpen(true);
-                              actionsDropdownOpen = false;
-                            }}
-                            onkeydown={(event) => {
-                              if (event.key !== 'Escape') event.stopPropagation();
-                            }}
+                        <Separator class="bg-border-brand-muted" />
+                      {/if}
+                      {#if config.semanticEnabled}
+                        <div class="space-y-2">
+                          <p
+                            class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
                           >
-                            <Eye class="size-3" />
-                            Show preview
-                          </Button>
-                          <Separator class="bg-border-brand-muted" />
-                        {/if}
-                        {#if config.semanticEnabled}
-                          <div class="space-y-2">
-                            <p
-                              class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                            <Sparkles class="size-3" />
+                            Semantic Search
+                          </p>
+                          {#if !semanticOn}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="font-inter text-hister-indigo border-hister-indigo border-2 text-xs"
+                              onclick={() => (semanticOn = true)}
                             >
-                              <Sparkles class="size-3" />
-                              Semantic Search
-                            </p>
-                            {#if !semanticOn}
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                class="font-inter text-hister-indigo border-hister-indigo border-2 text-xs"
-                                onclick={() => (semanticOn = true)}
-                              >
-                                Enable semantic search
-                              </Button>
-                            {/if}
-                            <label
-                              class="font-inter text-text-brand-secondary flex flex-col gap-1 text-xs"
-                            >
-                              <span
-                                >Similarity threshold: <span class="font-fira text-hister-indigo"
-                                  >{similarityThreshold.toFixed(2)}</span
-                                ></span
-                              >
-                              <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.002"
-                                bind:value={similarityThreshold}
-                                disabled={!semanticOn}
-                                onkeydown={(event) => {
-                                  if (event.key !== 'Escape') event.stopPropagation();
-                                }}
-                                class="accent-hister-indigo w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                              />
-                            </label>
-                            <label
-                              class="font-inter text-text-brand-secondary flex flex-col gap-1 text-xs"
-                            >
-                              <span
-                                >Semantic weight: <span class="font-fira text-hister-indigo"
-                                  >{semanticWeight.toFixed(2)}</span
-                                ></span
-                              >
-                              <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.05"
-                                bind:value={semanticWeight}
-                                disabled={!semanticOn}
-                                onkeydown={(event) => {
-                                  if (event.key !== 'Escape') event.stopPropagation();
-                                }}
-                                class="accent-hister-indigo w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                              />
-                            </label>
-                          </div>
-                          {#if hasResults}<Separator class="bg-border-brand-muted" />{/if}
-                        {/if}
-                        {#if hasResults}
+                              Enable semantic search
+                            </Button>
+                          {/if}
                           <label
-                            class="font-inter text-text-brand-secondary flex min-h-8 cursor-pointer items-center gap-2 text-xs"
+                            class="font-inter text-text-brand-secondary flex flex-col gap-1 text-xs"
                           >
+                            <span
+                              >Similarity threshold: <span class="font-fira text-hister-indigo"
+                                >{similarityThreshold.toFixed(2)}</span
+                              ></span
+                            >
                             <input
-                              type="checkbox"
-                              checked={expandSnippets}
-                              onchange={(event) => setExpandSnippets(event.currentTarget.checked)}
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.002"
+                              bind:value={similarityThreshold}
+                              disabled={!semanticOn}
                               onkeydown={(event) => {
                                 if (event.key !== 'Escape') event.stopPropagation();
                               }}
-                              class="accent-hister-indigo size-4 cursor-pointer"
+                              class="accent-hister-indigo w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                             />
-                            Always expand snippets
                           </label>
+                          <label
+                            class="font-inter text-text-brand-secondary flex flex-col gap-1 text-xs"
+                          >
+                            <span
+                              >Semantic weight: <span class="font-fira text-hister-indigo"
+                                >{semanticWeight.toFixed(2)}</span
+                              ></span
+                            >
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              bind:value={semanticWeight}
+                              disabled={!semanticOn}
+                              onkeydown={(event) => {
+                                if (event.key !== 'Escape') event.stopPropagation();
+                              }}
+                              class="accent-hister-indigo w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                          </label>
+                        </div>
+                        {#if hasResults}<Separator class="bg-border-brand-muted" />{/if}
+                      {/if}
+                      {#if hasResults}
+                        <label
+                          class="font-inter text-text-brand-secondary flex min-h-8 cursor-pointer items-center gap-2 text-xs"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={expandSnippets}
+                            onchange={(event) => setExpandSnippets(event.currentTarget.checked)}
+                            onkeydown={(event) => {
+                              if (event.key !== 'Escape') event.stopPropagation();
+                            }}
+                            class="accent-hister-indigo size-4 cursor-pointer"
+                          />
+                          Always expand snippets
+                        </label>
+                        <Separator class="bg-border-brand-muted" />
+                        <div class="space-y-2">
+                          <p
+                            class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                          >
+                            <Download class="size-3" />
+                            Export Results
+                          </p>
+                          <div class="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
+                              onclick={() =>
+                                exportJSON({ ...lastResults!, documents: accumulatedDocs })}
+                            >
+                              JSON
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
+                              onclick={() =>
+                                exportCSV({ ...lastResults!, documents: accumulatedDocs }, query)}
+                            >
+                              CSV
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
+                              onclick={() =>
+                                exportRSS({ ...lastResults!, documents: accumulatedDocs }, query)}
+                            >
+                              RSS
+                            </Button>
+                          </div>
+                        </div>
+                        {#if config.canWrite}
                           <Separator class="bg-border-brand-muted" />
                           <div class="space-y-2">
                             <p
-                              class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
+                              class="font-inter text-hister-rose flex items-center gap-1.5 text-xs font-semibold"
                             >
-                              <Download class="size-3" />
-                              Export Results
+                              <Trash2 class="size-3" />
+                              Danger Zone
                             </p>
-                            <div class="flex flex-wrap gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
-                                onclick={() =>
-                                  exportJSON({ ...lastResults!, documents: accumulatedDocs })}
-                              >
-                                JSON
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
-                                onclick={() =>
-                                  exportCSV({ ...lastResults!, documents: accumulatedDocs }, query)}
-                              >
-                                CSV
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                class="border-hister-indigo text-hister-indigo hover:bg-hister-indigo/10 h-7 border-[2px] text-xs"
-                                onclick={() =>
-                                  exportRSS({ ...lastResults!, documents: accumulatedDocs }, query)}
-                              >
-                                RSS
-                              </Button>
-                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 h-7 w-full border-[2px] text-xs"
+                              onclick={() => {
+                                showDeleteAllConfirm = true;
+                              }}
+                            >
+                              <Trash2 class="size-3" />
+                              Delete all matching results
+                            </Button>
                           </div>
-                          {#if config.canWrite}
-                            <Separator class="bg-border-brand-muted" />
-                            <div class="space-y-2">
-                              <p
-                                class="font-inter text-hister-rose flex items-center gap-1.5 text-xs font-semibold"
-                              >
-                                <Trash2 class="size-3" />
-                                Danger Zone
-                              </p>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 h-7 w-full border-[2px] text-xs"
-                                onclick={() => {
-                                  showDeleteAllConfirm = true;
-                                }}
-                              >
-                                <Trash2 class="size-3" />
-                                Delete all matching results
-                              </Button>
-                            </div>
-                          {/if}
                         {/if}
-                        {#if !searchPending && lastResults?.search_duration}
-                          <p class="font-inter text-text-brand-muted text-xs">
-                            Search time: {lastResults.search_duration}
-                          </p>
-                        {/if}
-                      </div>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Root>
-                {/if}
+                      {/if}
+                      {#if !searchPending && lastResults?.search_duration}
+                        <p class="font-inter text-text-brand-muted text-xs">
+                          Search time: {lastResults.search_duration}
+                        </p>
+                      {/if}
+                    </div>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
               </div>
             </div>
 
@@ -2723,7 +2754,7 @@
           bind:value={query}
           type="search"
           aria-label="Search your history"
-          aria-autocomplete="list"
+          aria-autocomplete={showSuggestions ? 'list' : 'none'}
           aria-controls={querySuggestionsVisible ? querySuggestionListId : undefined}
           aria-expanded={querySuggestionsVisible}
           aria-haspopup="listbox"

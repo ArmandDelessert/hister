@@ -108,6 +108,13 @@ description: 'Explore every configuration section, option, default value, enviro
       description: 'Opens search results in a new browser tab instead of the current tab.',
     },
     {
+      name: 'show_suggestions',
+      type: 'bool',
+      defaultValue: 'false',
+      scopes: ['server'],
+      description: 'Shows the suggestion area in the results view by default. Change Show suggestions in the results page Actions menu to override this setting. Your choice is saved in the current browser.',
+    },
+    {
       name: 'redirect_on_no_results',
       type: 'bool',
       defaultValue: 'true',

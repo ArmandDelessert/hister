@@ -23,12 +23,22 @@ function browser({
   contentScript = true,
   indexingEnabled = true,
   sourceURL = 'https://example.com/visited?tracking=true',
+  sessionData = {},
+  sessionAvailable = true,
 } = {}) {
   const canonicalURL = 'https://example.com/clean';
   const documents = [];
   const lookups = [];
+  const pdfDocuments = [];
+  const pageMessages = [];
+  const tab = { id: 1, url: sourceURL, title: 'Article' };
+  const timers = new Map();
+  const removedListeners = [];
+  let now = 0;
+  let nextTimer = 0;
   let onMessage;
   let onActivated;
+  let onUpdated;
   let onHeadersReceived;
   const storage = {
     histerURL: 'https://hister.example/',
@@ -37,22 +47,44 @@ function browser({
   };
   const event = { addListener() {} };
   const action = (_, callback) => callback?.();
+  const runtime = {
+    onMessage: { addListener: (fn) => (onMessage = fn) },
+    getURL: (path) => `chrome-extension://hister/${path}`,
+  };
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
   vm.runInNewContext(script, {
     URL,
     URLSearchParams,
     console,
+    btoa,
+    Date: class extends Date {
+      static now() {
+        return now;
+      }
+    },
+    setTimeout: (fn, delay) => {
+      const id = ++nextTimer;
+      timers.set(id, { fn, due: now + delay });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
     chrome: {
-      runtime: {
-        onMessage: { addListener: (fn) => (onMessage = fn) },
-        getURL: (path) => `chrome-extension://hister/${path}`,
-      },
+      runtime,
       tabs: {
-        onRemoved: event,
-        onUpdated: event,
+        onRemoved: { addListener: (fn) => removedListeners.push(fn) },
+        onUpdated: { addListener: (fn) => (onUpdated = fn) },
         onActivated: { addListener: (fn) => (onActivated = fn) },
-        get: async () => ({ id: 1, url: sourceURL }),
+        get: async () => ({ ...tab }),
+        query: async () => [{ ...tab }],
         sendMessage: async (tabId, request, options) => {
           assert.equal(tabId, 1);
+          if (request.action === 'reindex') {
+            pageMessages.push(request);
+            if (!contentScript) runtime.lastError = { message: 'No content script' };
+            options({ status: 'ok', status_code: 201 });
+            delete runtime.lastError;
+            return;
+          }
           assert.equal(request.action, 'getPageURL');
           assert.equal(options.frameId, 0);
           if (!contentScript) throw new Error('No content script');
@@ -61,6 +93,13 @@ function browser({
       },
       storage: {
         onChanged: event,
+        session: sessionAvailable
+          ? {
+              get: async (key) => structuredClone({ [key]: sessionData[key] }),
+              set: async (data) => Object.assign(sessionData, structuredClone(data)),
+              remove: async (key) => delete sessionData[key],
+            }
+          : undefined,
         local: {
           get: async (_, callback) => {
             const data = structuredClone(storage);
@@ -91,10 +130,15 @@ function browser({
         documents.push(JSON.parse(options.body));
         return new Response('', { status: 201 });
       }
+      if (parsed.pathname === '/api/add_pdf') {
+        pdfDocuments.push(JSON.parse(options.body).document);
+        return new Response('', { status: 201 });
+      }
       if (parsed.pathname === '/api/document') {
         lookups.push(parsed.searchParams.get('url'));
         return new Response('', { status: 200 });
       }
+      if (parsed.hostname === 'example.com') return new Response('%PDF-test');
       throw new Error(`Unexpected fetch: ${url}`);
     },
   });
@@ -107,10 +151,42 @@ function browser({
     canonicalURL,
     documents,
     lookups,
+    pdfDocuments,
+    pageMessages,
+    tab,
     message,
     activate: () => onActivated({ tabId: 1 }),
-    respond: (statusCode, url = sourceURL, tabId = 1) =>
-      onHeadersReceived({ tabId, url, statusCode }),
+    respond: (statusCode, url = sourceURL, tabId = 1, contentType = 'text/html') =>
+      onHeadersReceived({
+        tabId,
+        url,
+        statusCode,
+        responseHeaders: [{ name: 'Content-Type', value: contentType }],
+      }),
+    indexCurrent: () => message({ action: 'indexCurrentPage' }),
+    async complete() {
+      await onUpdated(tab.id, { status: 'complete' }, { ...tab });
+      await flush();
+    },
+    async close() {
+      for (const listener of removedListeners) listener(tab.id);
+      await flush();
+    },
+    async advance(ms) {
+      const end = now + ms;
+      let ticks = 0;
+      await flush();
+      while (timers.size) {
+        const [id, timer] = [...timers].sort((a, b) => a[1].due - b[1].due)[0];
+        if (timer.due > end) break;
+        assert.ok(++ticks < 100, 'timer loop must remain bounded');
+        timers.delete(id);
+        now = timer.due;
+        timer.fn();
+        await flush();
+      }
+      now = end;
+    },
     submit: (manual = false) =>
       message({
         pageData: { url: canonicalURL, title: 'Article', text: 'Article text', faviconURL: '' },
@@ -223,4 +299,112 @@ test('popup rule checks include both the visited and canonical URLs', async () =
     });
     assert.equal(response.isSkipped, true);
   }
+});
+
+test('each PDF download in a tab retains its own indexing deadline', async () => {
+  const b = browser();
+  const first = 'https://example.com/download/first';
+  const second = 'https://example.com/download/second';
+  b.respond(200, first, 1, 'application/pdf');
+  await b.advance(1000);
+  b.respond(200, second, 1, 'application/pdf');
+  await b.advance(4000);
+  assert.deepEqual(
+    b.pdfDocuments.map((doc) => doc.url),
+    [first],
+  );
+  await b.advance(1000);
+  assert.deepEqual(
+    b.pdfDocuments.map((doc) => doc.url),
+    [first, second],
+  );
+});
+
+test('committing one PDF preserves another download and indexes the committed title once', async () => {
+  const b = browser({ contentScript: false });
+  const download = 'https://example.com/download';
+  const viewed = 'https://example.com/pdf/viewed';
+  b.respond(200, download, 1, 'application/pdf');
+  b.respond(200, viewed, 1, 'application/pdf');
+  b.tab.url = viewed + '#page=2';
+  b.tab.title = 'Viewed paper';
+  await b.complete();
+  assert.deepEqual(
+    b.pdfDocuments.map((doc) => [doc.url, doc.title]),
+    [[viewed, 'Viewed paper']],
+  );
+  await b.advance(5000);
+  assert.deepEqual(
+    b.pdfDocuments.map((doc) => doc.url),
+    [viewed, download],
+  );
+});
+
+test('duplicate PDF responses submit once and closing a tab cancels all pending downloads', async () => {
+  const b = browser();
+  const first = 'https://example.com/download/first';
+  const second = 'https://example.com/download/second';
+  b.respond(200, first, 1, 'application/pdf');
+  b.respond(200, first, 1, 'application/pdf');
+  await b.advance(5000);
+  assert.equal(b.pdfDocuments.length, 1);
+  b.respond(200, second, 1, 'application/pdf');
+  b.respond(200, 'https://example.com/download/third', 1, 'application/pdf');
+  await b.close();
+  await b.advance(5000);
+  assert.equal(b.pdfDocuments.length, 1);
+});
+
+test('a PDF download does not change manual indexing of the HTML page still displayed', async () => {
+  const b = browser({ indexingEnabled: false });
+  b.respond(200, 'https://example.com/download', 1, 'application/pdf');
+  const result = await b.indexCurrent();
+  assert.equal(result.status_code, 201);
+  assert.equal(b.pageMessages.length, 1);
+  assert.equal(b.pdfDocuments.length, 0);
+});
+
+test('manual extensionless PDF indexing survives a worker restart and ignores fragments', async () => {
+  const sessionData = {};
+  const url = 'https://example.com/pdf/123';
+  const options = { sessionData, sourceURL: url, contentScript: false, indexingEnabled: false };
+  const b = browser(options);
+  b.respond(200, url, 1, 'Application/PDF; charset=binary');
+  assert.equal((await b.indexCurrent()).status_code, 201);
+  const restarted = browser({ ...options, sourceURL: url + '#page=2' });
+  assert.equal((await restarted.indexCurrent()).status_code, 201);
+  assert.equal(restarted.pdfDocuments.length, 1);
+  assert.equal(restarted.pdfDocuments[0].metadata.ignore_skip_rules, true);
+});
+
+test('persisted PDF detection is restricted to its URL and cleared by an HTML response', async () => {
+  const sessionData = {};
+  const url = 'https://example.com/pdf/123';
+  const b = browser({ sessionData, sourceURL: url, indexingEnabled: false });
+  b.respond(200, url, 1, 'application/pdf');
+  const otherPage = browser({ sessionData, indexingEnabled: false });
+  await otherPage.indexCurrent();
+  assert.equal(otherPage.pageMessages.length, 1);
+  assert.equal(otherPage.pdfDocuments.length, 0);
+  b.respond(200, url, 1, 'text/html');
+  const restarted = browser({ sessionData, sourceURL: url, indexingEnabled: false });
+  await restarted.indexCurrent();
+  assert.equal(restarted.pageMessages.length, 1);
+  assert.equal(restarted.pdfDocuments.length, 0);
+});
+
+test('manual PDF detection works without session storage and tab close clears stored detection', async () => {
+  const url = 'https://example.com/pdf/123';
+  const b = browser({ sourceURL: url, contentScript: false, sessionAvailable: false });
+  b.respond(200, url, 1, 'application/pdf');
+  assert.equal((await b.indexCurrent()).status_code, 201);
+
+  const sessionData = {};
+  const closed = browser({ sessionData, sourceURL: url });
+  closed.respond(200, url, 1, 'application/pdf');
+  await closed.close();
+  const reused = browser({ sessionData, sourceURL: url });
+  await reused.indexCurrent();
+  assert.equal(reused.pageMessages.length, 1);
+  assert.equal(reused.pdfDocuments.length, 0);
 });

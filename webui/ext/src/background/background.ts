@@ -203,7 +203,13 @@ chrome.webRequest?.onHeadersReceived.addListener(
     const contentType = details.responseHeaders?.find(
       (h) => h.name.toLowerCase() === 'content-type',
     )?.value;
-    if (details.statusCode !== 200 || !isPDFContentType(contentType)) return;
+    const isPdf = isPDFContentType(contentType);
+    // Track tabs currently showing a PDF so the manual "index this page" path
+    // can recognize content-server PDFs (arxiv /pdf/<id> etc.) without a .pdf
+    // suffix.
+    if (isPdf) pdfTabs.add(details.tabId);
+    else pdfTabs.delete(details.tabId);
+    if (details.statusCode !== 200 || !isPdf) return;
     // Use details.url (the request URL) rather than the tab's current URL:
     // onHeadersReceived fires before the navigation commits, so chrome.tabs
     // would still report the *previous* page and we'd upload that instead of
@@ -438,6 +444,11 @@ function doNotIndexUrl(url: string): boolean {
 const recentPdfIndex = new Map<string, number>();
 const PDF_INDEX_DEDUPE_MS = 30_000;
 
+// Tabs whose last main-frame response was application/pdf. Lets the manual
+// "index this page" command recognize content-server PDFs (arxiv /pdf/<id>,
+// etc.) that have no .pdf suffix.
+const pdfTabs = new Set<number>();
+
 function markPdfIndexed(tabId: number, url: string): boolean {
   const key = `${tabId}:${url}`;
   const last = recentPdfIndex.get(key);
@@ -453,6 +464,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   for (const key of recentPdfIndex.keys()) {
     if (key.startsWith(`${tabId}:`)) recentPdfIndex.delete(key);
   }
+  pdfTabs.delete(tabId);
 });
 
 // Authoritative PDF detection lives in the navigation-status listener above;
@@ -592,7 +604,11 @@ async function indexCurrentTab(): Promise<IndexingResult> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return { error: 'No active tab found' };
 
-  if (tab.url && isPDFUrl(tab.url)) {
+  // Recognize content-server PDFs (arxiv /pdf/<id> etc.) by their observed
+  // Content-Type (pdfTabs) as well as the .pdf suffix, so the manual command
+  // takes the PDF path for them too.
+  const isPdf = pdfTabs.has(tab.id) || (tab.url ? isPDFUrl(tab.url) : false);
+  if (isPdf) {
     return indexPDFTab(tab.id, tab, true);
   }
 

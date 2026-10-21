@@ -196,8 +196,32 @@ chrome.webRequest?.onHeadersReceived.addListener(
   (details) => {
     if (details.tabId < 0) return;
     recordNavigationStatus(details.tabId, details.url, details.statusCode);
+    // PDF detection shares this listener with navigation-status tracking. The
+    // status is keyed by the URL navigated to, not the submitted URL, because
+    // a page can declare a canonical URL; the PDF path uses the same request
+    // URL (details.url), so both stay consistent.
+    const contentType = details.responseHeaders?.find(
+      (h) => h.name.toLowerCase() === 'content-type',
+    )?.value;
+    if (details.statusCode !== 200 || !isPDFContentType(contentType)) return;
+    // Use details.url (the request URL) rather than the tab's current URL:
+    // onHeadersReceived fires before the navigation commits, so chrome.tabs
+    // would still report the *previous* page and we'd upload that instead of
+    // the PDF. Pass the request URL through so both detection and the fetch
+    // in indexPDFTab target the actual PDF.
+    void chrome.tabs.get(details.tabId).then((tab) => {
+      if (!tab?.id) return;
+      if (doNotIndexUrl(details.url) || !markPdfIndexed(tab.id, details.url)) return;
+      // Same pre-commit caveat applies to the title: tab.title is the previous
+      // page's title (or an interstitial like "Preparing to download ..."),
+      // which would corrupt retrieval if indexed. Send the request URL as the
+      // title instead; the real title is not available before the navigation
+      // commits.
+      void indexPDFTab(tab.id, { ...tab, url: details.url, title: details.url });
+    });
   },
   { urls: ['<all_urls>'], types: ['main_frame'] },
+  ['responseHeaders'],
 );
 
 // --- Indexing rules cache ---
@@ -431,36 +455,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// Authoritative PDF detection: observe the top-level document response and
-// index it when the server reports application/pdf. Works for arxiv /pdf/<id>,
-// springer /content/pdf/<id>, and any other content-server PDF regardless of
-// URL heuristics. Requires only "webRequest" (read-only), not webRequestBlocking.
-chrome.webRequest.onHeadersReceived.addListener(
-  (details) => {
-    if (details.tabId < 0 || details.statusCode !== 200) return;
-    const contentType = details.responseHeaders?.find(
-      (h) => h.name.toLowerCase() === 'content-type',
-    )?.value;
-    if (!isPDFContentType(contentType)) return;
-    // Use details.url (the request URL) rather than the tab's current URL:
-    // onHeadersReceived fires before the navigation commits, so chrome.tabs
-    // would still report the *previous* page and we'd upload that instead of
-    // the PDF. Pass the request URL through so both detection and the fetch
-    // in indexPDFTab target the actual PDF.
-    void chrome.tabs.get(details.tabId).then((tab) => {
-      if (!tab?.id) return;
-      if (doNotIndexUrl(details.url) || !markPdfIndexed(tab.id, details.url)) return;
-      // Same pre-commit caveat applies to the title: tab.title is the previous
-      // page's title (or an interstitial like "Preparing to download ..."),
-      // which would corrupt retrieval if indexed. Send the request URL as the
-      // title instead; the real title is not available before the navigation
-      // commits.
-      void indexPDFTab(tab.id, { ...tab, url: details.url, title: details.url });
-    });
-  },
-  { urls: ['<all_urls>'], types: ['main_frame'] },
-  ['responseHeaders'],
-);
+// Authoritative PDF detection lives in the navigation-status listener above;
+// this section keeps the dedup bookkeeping it relies on.
 
 async function indexPDFTab(
   tabId: number,

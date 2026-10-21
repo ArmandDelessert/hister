@@ -196,8 +196,30 @@ chrome.webRequest?.onHeadersReceived.addListener(
   (details) => {
     if (details.tabId < 0) return;
     recordNavigationStatus(details.tabId, details.url, details.statusCode);
+    // PDF detection shares this listener with navigation-status tracking. The
+    // status is keyed by the URL navigated to, not the submitted URL, because
+    // a page can declare a canonical URL; the PDF path uses the same request
+    // URL (details.url), so both stay consistent.
+    const contentType = details.responseHeaders?.find(
+      (h) => h.name.toLowerCase() === 'content-type',
+    )?.value;
+    const isPdf = isPDFContentType(contentType);
+    // Track tabs currently showing a PDF so the manual "index this page" path
+    // can recognize content-server PDFs (arxiv /pdf/<id> etc.) without a .pdf
+    // suffix.
+    if (isPdf) pdfTabs.add(details.tabId);
+    else pdfTabs.delete(details.tabId);
+    if (details.statusCode !== 200 || !isPdf) return;
+    // The response is a PDF, but the navigation has not committed yet (the tab
+    // still points at the previous page) and the browser's PDF viewer derives
+    // the document's real title only once the PDF has loaded. Defer the index
+    // to tabs.onUpdated so we can use that real title; PDFs served as
+    // downloads never commit, so schedulePdfIndex also arms a fallback that
+    // indexes with the request URL as the title rather than miss them.
+    schedulePdfIndex(details.tabId, details.url);
   },
   { urls: ['<all_urls>'], types: ['main_frame'] },
+  ['responseHeaders'],
 );
 
 // --- Indexing rules cache ---
@@ -378,6 +400,12 @@ async function updateTabIcon(tabId: number, url: string): Promise<void> {
 
 // --- PDF tab indexing ---
 
+// The primary signal for "this tab is a PDF" is the actual HTTP Content-Type
+// header reported by the server (observed via webRequest.onHeadersReceived),
+// which handles content-server PDFs whose path has no .pdf extension. isPDFUrl()
+// is retained only as a conservative fallback for the manual "index current
+// page" command, where no network response is being navigated at that moment:
+// it just matches URLs whose path ends in .pdf.
 function isPDFUrl(url: string): boolean {
   try {
     const pathname = new URL(url).pathname.toLowerCase();
@@ -386,6 +414,105 @@ function isPDFUrl(url: string): boolean {
     return false;
   }
 }
+
+// Content-Type value split on ';' so we match "application/pdf; charset=..." too.
+function isPDFContentType(value: string | undefined): boolean {
+  return value !== undefined && value.toLowerCase().split(';')[0].trim() === 'application/pdf';
+}
+
+// Non-pageload schemes we must never try to index.
+function doNotIndexUrl(url: string): boolean {
+  return (
+    url.startsWith('chrome://') ||
+    url.startsWith('about:') ||
+    url.startsWith('moz-extension://') ||
+    url.startsWith('chrome-extension://') ||
+    url.startsWith('file://')
+  );
+}
+
+// Guards against indexing the same PDF tab twice (webRequest fires per HTTP
+// response and tabs.onUpdated may also fire after navigation completes).
+const recentPdfIndex = new Map<string, number>();
+const PDF_INDEX_DEDUPE_MS = 30_000;
+
+// Tabs whose last main-frame response was application/pdf. Lets the manual
+// "index this page" command recognize content-server PDFs (arxiv /pdf/<id>,
+// etc.) that have no .pdf suffix.
+const pdfTabs = new Set<number>();
+
+function markPdfIndexed(tabId: number, url: string): boolean {
+  const key = `${tabId}:${url}`;
+  const last = recentPdfIndex.get(key);
+  const now = Date.now();
+  if (last !== undefined && now - last < PDF_INDEX_DEDUPE_MS) {
+    return false;
+  }
+  recentPdfIndex.set(key, now);
+  return true;
+}
+
+// A PDF was seen in onHeadersReceived, but the navigation has not committed
+// and the PDF viewer has not derived the document title yet. The actual index
+// is deferred to tabs.onUpdated (where tab.title is the real title); PDFs
+// served as downloads never commit, so a fallback timer indexes them with the
+// request URL as the title rather than miss them.
+const pendingPdfIndex = new Map<number, { url: string; timer?: number }>();
+const PDF_INDEX_FALLBACK_MS = 5000;
+
+function schedulePdfIndex(tabId: number, url: string) {
+  if (doNotIndexUrl(url)) return;
+  const existing = pendingPdfIndex.get(tabId);
+  if (existing?.timer !== undefined) clearTimeout(existing.timer);
+  const timer = setTimeout(() => {
+    // No onUpdated 'complete' arrived (the server sent the PDF as an
+    // attachment download, so there is no committed page). Index anyway,
+    // using the request URL as the title.
+    pendingPdfIndex.delete(tabId);
+    void chrome.tabs.get(tabId).then((tab) => {
+      if (!tab?.id) return;
+      if (!markPdfIndexed(tab.id, url)) return;
+      void indexPDFTab(tab.id, { ...tab, url, title: url });
+    });
+  }, PDF_INDEX_FALLBACK_MS);
+  pendingPdfIndex.set(tabId, { url, timer });
+}
+
+// The navigation has committed to `url`, but the PDF viewer sets tab.title to
+// the document's real embedded title only after it has loaded (a little later
+// than the 'complete' event). Poll briefly for that real title, then index;
+// fall back to the request URL as the title if it never appears.
+async function indexCommittedPdf(tabId: number, url: string) {
+  let title = '';
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+    if (!tab) return;
+    if (normalizeNavigationURL(tab.url ?? '') !== normalizeNavigationURL(url)) break;
+    const t = tab.title ?? '';
+    if (t && normalizeNavigationURL(t) !== normalizeNavigationURL(url)) {
+      title = t;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (!markPdfIndexed(tabId, url)) return;
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  if (!tab?.id) return;
+  void indexPDFTab(tab.id, { ...tab, url, title: title || url });
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const key of recentPdfIndex.keys()) {
+    if (key.startsWith(`${tabId}:`)) recentPdfIndex.delete(key);
+  }
+  const pending = pendingPdfIndex.get(tabId);
+  if (pending?.timer !== undefined) clearTimeout(pending.timer);
+  pendingPdfIndex.delete(tabId);
+  pdfTabs.delete(tabId);
+});
+
+// Authoritative PDF detection lives in the navigation-status listener above;
+// this section keeps the dedup bookkeeping it relies on.
 
 async function indexPDFTab(
   tabId: number,
@@ -480,8 +607,15 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url) {
     await updateTabIcon(tabId, tab.url);
-    if (isPDFUrl(tab.url)) {
-      await indexPDFTab(tabId, tab);
+    // Deferred PDF index: the navigation has committed; indexCommittedPdf
+    // waits for the PDF viewer to set tab.title to the real document title
+    // before submitting. (Downloads never commit here; schedulePdfIndex's
+    // fallback timer indexes them with the URL as title.)
+    const pending = pendingPdfIndex.get(tabId);
+    if (pending && normalizeNavigationURL(tab.url) === normalizeNavigationURL(pending.url)) {
+      pendingPdfIndex.delete(tabId);
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+      void indexCommittedPdf(tabId, pending.url);
     }
   }
 });
@@ -522,7 +656,11 @@ async function indexCurrentTab(): Promise<IndexingResult> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return { error: 'No active tab found' };
 
-  if (tab.url && isPDFUrl(tab.url)) {
+  // Recognize content-server PDFs (arxiv /pdf/<id> etc.) by their observed
+  // Content-Type (pdfTabs) as well as the .pdf suffix, so the manual command
+  // takes the PDF path for them too.
+  const isPdf = pdfTabs.has(tab.id) || (tab.url ? isPDFUrl(tab.url) : false);
+  if (isPdf) {
     return indexPDFTab(tab.id, tab, true);
   }
 

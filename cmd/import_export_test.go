@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,6 +30,64 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func TestPDFImportParserProcess(t *testing.T) {
+	if !slices.Contains(os.Args, "--pdf-import-parser-test") {
+		return
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil || string(data) != "%PDF-1.4 client snapshot" {
+		os.Exit(2)
+	}
+	if _, err := fmt.Fprint(os.Stdout, "Text extracted on the import client"); err != nil {
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+func TestImportFileUsesConfiguredPDFParser(t *testing.T) {
+	var received document.Document
+	newExportTestCommand(t, func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/add" {
+			t.Errorf("unexpected request: %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			return nil, err
+		}
+		return jsonHTTPResponse(r, http.StatusCreated, ""), nil
+	})
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Indexer.PDFParser = config.PDFParser{
+		Command: executable,
+		Args:    []string{"-test.run=^TestPDFImportParserProcess$", "--", "--pdf-import-parser-test"},
+		Timeout: 1,
+	}
+	path := filepath.Join(t.TempDir(), "paper.pdf")
+	if err := os.WriteFile(path, []byte("%PDF-1.4 client snapshot"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := &cobra.Command{Use: importFileCmd.Use, Args: importFileCmd.Args, RunE: importFileCmd.RunE}
+	command.Flags().Bool("skip-existing", false, "")
+	command.Flags().Bool("watch", false, "")
+	command.Flags().Bool("global", false, "")
+	command.Flags().String("source", "laptop", "")
+	command.Flags().String("format", "text", "")
+	command.Flags().Int("batch-size", 10, "")
+	command.Flags().String("start-date", "", "")
+	command.Flags().String("end-date", "", "")
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{path})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if received.Text != "Text extracted on the import client" || received.Type != document.RemoteFile || received.Metadata["type"] != "pdf" {
+		t.Fatalf("PDF was not submitted as a prepared snapshot: %#v", received)
+	}
 }
 
 func newExportTestCommand(t *testing.T, transport roundTripFunc) *cobra.Command {
@@ -394,8 +454,12 @@ func TestImportHTMLFileWithoutSourceURLUsesAddEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imported, skipped, errCount := importHTMLFile(
+	importer := newFileImporter(
 		client.New("http://hister.test", client.WithHTTPClient(httpClient), client.WithMaxBatchBodyBytes(40<<20)),
+		config.Indexer{},
+	)
+	imported, skipped, errCount := importer.importHTMLFile(
+		context.Background(),
 		importFileInput{Path: inputFile},
 		"laptop",
 		1<<20,

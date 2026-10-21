@@ -23,6 +23,33 @@ func fileWatchResponse(r *http.Request, status int) *http.Response {
 	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: r}
 }
 
+func TestImportWatchedPDFUsesClientParser(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "paper.pdf")
+	if err := os.WriteFile(path, []byte("%PDF-1.4 client snapshot"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var received document.Document
+	c := client.New("http://hister.test", client.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			return nil, err
+		}
+		return fileWatchResponse(r, http.StatusCreated), nil
+	})}))
+	importer := newFileImporter(c, config.Indexer{
+		PDFParser: config.PDFParser{Command: executable, Args: []string{"-test.run=^TestPDFImportParserProcess$", "--", "--pdf-import-parser-test"}, Timeout: 1},
+	})
+	skipped, err := importer.importWatchedFile(context.Background(), importFileInput{Path: path}, fileWatchOptions{
+		Source: "laptop", MaxFileSize: 1024,
+	}, false)
+	if err != nil || skipped || received.Text != "Text extracted on the import client" || received.Type != document.RemoteFile {
+		t.Fatalf("watch import = (%t, %v), document = %#v", skipped, err, received)
+	}
+}
+
 func waitForWatchValue[T any](t *testing.T, values <-chan T) T {
 	t.Helper()
 	select {
@@ -64,7 +91,7 @@ func TestWatchImportFilesUpdatesExistingAndNewSnapshots(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := watchImportFiles(ctx, c, nil, []*config.Directory{{Path: root, Label: "notes", Filetypes: []string{"txt"}, DeleteOnRemove: true}}, fileWatchOptions{
+		_, err := newFileImporter(c, config.Indexer{}).watchImportFiles(ctx, nil, []*config.Directory{{Path: root, Label: "notes", Filetypes: []string{"txt"}, DeleteOnRemove: true}}, fileWatchOptions{
 			Source: "laptop", MaxFileSize: 1024, SkipExisting: true, RetryDelay: time.Millisecond,
 		})
 		done <- err
@@ -136,7 +163,7 @@ func TestWatchImportFilesRetriesAndCancelsRequests(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				_, err := watchImportFiles(ctx, c, []string{path}, nil, fileWatchOptions{Source: "laptop", MaxFileSize: 1024, RetryDelay: 10 * time.Millisecond})
+				_, err := newFileImporter(c, config.Indexer{}).watchImportFiles(ctx, []string{path}, nil, fileWatchOptions{Source: "laptop", MaxFileSize: 1024, RetryDelay: 10 * time.Millisecond})
 				done <- err
 			}()
 			waitForWatchValue(t, requests)
@@ -196,7 +223,7 @@ func TestImportWatchedFileFormatsAndLimits(t *testing.T) {
 				}
 				return fileWatchResponse(r, http.StatusCreated), nil
 			})}))
-			skipped, err := importWatchedFile(context.Background(), c, importFileInput{Path: path, Label: "directory"}, fileWatchOptions{
+			skipped, err := newFileImporter(c, config.Indexer{}).importWatchedFile(context.Background(), importFileInput{Path: path, Label: "directory"}, fileWatchOptions{
 				Source: "laptop", MaxFileSize: 1024, Label: documentLabelOverride{set: true, value: "override"},
 			}, false)
 			if skipped != tc.skip || !errors.Is(err, tc.err) {

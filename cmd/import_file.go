@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,6 +25,15 @@ type importFileInput struct {
 	Label string
 }
 
+type fileImporter struct {
+	client       *client.Client
+	fileHandlers *indexer.FileHandlers
+}
+
+func newFileImporter(c *client.Client, cfg config.Indexer) *fileImporter {
+	return &fileImporter{client: c, fileHandlers: indexer.NewFileHandlers(cfg)}
+}
+
 type fileImportOptions struct {
 	Source       string
 	MaxFileSize  int64
@@ -34,10 +44,10 @@ type fileImportOptions struct {
 	Label        documentLabelOverride
 }
 
-func importFile(c *client.Client, input importFileInput, opts fileImportOptions) (imported, skipped, errCount int) {
+func (i *fileImporter) importFile(ctx context.Context, input importFileInput, opts fileImportOptions) (imported, skipped, errCount int) {
 	switch strings.ToLower(filepath.Ext(input.Path)) {
 	case ".7z":
-		return importJSONFile(c, input.Path, opts.SkipExisting, opts.StartDate, opts.EndDate, opts.BatchSize, opts.Label)
+		return importJSONFile(i.client, input.Path, opts.SkipExisting, opts.StartDate, opts.EndDate, opts.BatchSize, opts.Label)
 	case ".json":
 		isExport, err := isHisterJSONExport(input.Path)
 		if err != nil {
@@ -45,12 +55,12 @@ func importFile(c *client.Client, input importFileInput, opts fileImportOptions)
 			return 0, 0, 1
 		}
 		if isExport {
-			return importJSONFile(c, input.Path, opts.SkipExisting, opts.StartDate, opts.EndDate, opts.BatchSize, opts.Label)
+			return importJSONFile(i.client, input.Path, opts.SkipExisting, opts.StartDate, opts.EndDate, opts.BatchSize, opts.Label)
 		}
 	case ".html", ".htm":
-		return importHTMLFile(c, input, opts.Source, opts.MaxFileSize, opts.SkipExisting, opts.Label)
+		return i.importHTMLFile(ctx, input, opts.Source, opts.MaxFileSize, opts.SkipExisting, opts.Label)
 	}
-	return importRemoteFilePath(c, input, opts.Source, opts.MaxFileSize, opts.SkipExisting, opts.Label)
+	return i.importRemoteFilePath(ctx, input, opts.Source, opts.MaxFileSize, opts.SkipExisting, opts.Label)
 }
 
 func defaultRemoteFileSource() string {
@@ -193,8 +203,8 @@ func expandImportInputs(args []string, directories []*config.Directory) ([]impor
 	return inputs, nil
 }
 
-func importRemoteFile(
-	c *client.Client,
+func (i *fileImporter) importRemoteFile(
+	ctx context.Context,
 	input importFileInput,
 	content []byte,
 	info os.FileInfo,
@@ -209,7 +219,7 @@ func importRemoteFile(
 		return 0, 0, 1
 	}
 	if skip {
-		exists, err := c.DocumentExists(remoteURL)
+		exists, err := i.client.DocumentExists(remoteURL)
 		if err != nil {
 			log.Warn().Err(err).Str("url", remoteURL).Msg("Failed to check if remote file exists")
 			return 0, 0, 1
@@ -220,12 +230,12 @@ func importRemoteFile(
 		}
 	}
 
-	d, err := prepareRemoteFile(input, content, info, source, maxFileSize, labelOverride)
+	d, err := i.prepareRemoteFile(ctx, input, content, info, source, maxFileSize, labelOverride)
 	if err != nil {
 		log.Warn().Err(fileSnapshotImportError(input.Path, err)).Str("file", input.Path).Msg("Failed to extract file content")
 		return 0, 0, 1
 	}
-	if err := c.AddDocumentJSON(clientDocument(d)); err != nil {
+	if err := i.client.AddDocumentJSON(clientDocument(d)); err != nil {
 		log.Warn().Err(fileSnapshotImportError(input.Path, err)).Str("file", input.Path).Str("url", remoteURL).Msg("Failed to import file snapshot")
 		return 0, 0, 1
 	}
@@ -263,7 +273,7 @@ func fileContentImportError(path string, err error) error {
 	}
 }
 
-func prepareRemoteFile(input importFileInput, content []byte, info os.FileInfo, source string, maxFileSize int64, labelOverride documentLabelOverride) (*document.Document, error) {
+func (i *fileImporter) prepareRemoteFile(ctx context.Context, input importFileInput, content []byte, info os.FileInfo, source string, maxFileSize int64, labelOverride documentLabelOverride) (*document.Document, error) {
 	if info.Size() == 0 {
 		return nil, indexer.ErrEmptyFile
 	}
@@ -284,7 +294,7 @@ func prepareRemoteFile(input importFileInput, content []byte, info os.FileInfo, 
 		Type:    document.RemoteFile,
 		Label:   labelOverride.resolve("", fallbackLabel),
 	}
-	if err := indexer.PrepareFileContent(input.Path, d, content); err != nil {
+	if err := i.fileHandlers.Prepare(ctx, input.Path, d, content); err != nil {
 		return nil, fileContentImportError(input.Path, err)
 	}
 	if d.Text == "" && d.HTML == "" {
@@ -293,8 +303,8 @@ func prepareRemoteFile(input importFileInput, content []byte, info os.FileInfo, 
 	return d, nil
 }
 
-func importRemoteFilePath(
-	c *client.Client,
+func (i *fileImporter) importRemoteFilePath(
+	ctx context.Context,
 	input importFileInput,
 	source string,
 	maxFileSize int64,
@@ -311,5 +321,5 @@ func importRemoteFilePath(
 		log.Warn().Err(err).Str("file", input.Path).Msg("Failed to read file")
 		return 0, 0, 1
 	}
-	return importRemoteFile(c, input, content, info, source, maxFileSize, skip, labelOverride)
+	return i.importRemoteFile(ctx, input, content, info, source, maxFileSize, skip, labelOverride)
 }

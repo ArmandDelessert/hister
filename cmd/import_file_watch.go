@@ -99,7 +99,7 @@ func (inputs *fileWatchInputs) input(path string) (importFileInput, bool) {
 	return importFileInput{}, false
 }
 
-func watchImportFiles(ctx context.Context, c *client.Client, args []string, dirs []*config.Directory, opts fileWatchOptions) (serviceImportStats, error) {
+func (i *fileImporter) watchImportFiles(ctx context.Context, args []string, dirs []*config.Directory, opts fileWatchOptions) (serviceImportStats, error) {
 	inputs, err := newFileWatchInputs(args, dirs)
 	if err != nil {
 		return serviceImportStats{}, err
@@ -146,7 +146,7 @@ func watchImportFiles(ctx context.Context, c *client.Client, args []string, dirs
 		if !ok {
 			return true, nil
 		}
-		return importWatchedFile(ctx, c, input, opts, skip)
+		return i.importWatchedFile(ctx, input, opts, skip)
 	}, opts.RetryDelay)
 	cancel()
 	err = <-watchDone
@@ -158,7 +158,7 @@ func watchImportFiles(ctx context.Context, c *client.Client, args []string, dirs
 
 // importWatchedFile reports skipped inputs separately from failures. It reads
 // only regular files within the size limit and preserves snapshot identities.
-func importWatchedFile(ctx context.Context, c *client.Client, input importFileInput, opts fileWatchOptions, skip bool) (bool, error) {
+func (i *fileImporter) importWatchedFile(ctx context.Context, input importFileInput, opts fileWatchOptions, skip bool) (bool, error) {
 	ext := strings.ToLower(filepath.Ext(input.Path))
 	if ext == ".7z" {
 		log.Warn().Str("file", input.Path).Msg("Watch mode skips export archives")
@@ -203,23 +203,25 @@ func importWatchedFile(ctx context.Context, c *client.Client, input importFileIn
 		}
 	}
 
-	requestCtx, cancel := context.WithTimeout(ctx, serviceImportRequestTimeout)
-	defer cancel()
 	if skip {
 		url, err := remoteFileURL(opts.Source, input.Path)
 		if err != nil {
 			return false, err
 		}
-		exists, err := c.DocumentExistsContext(requestCtx, url)
+		requestCtx, cancel := context.WithTimeout(ctx, serviceImportRequestTimeout)
+		exists, err := i.client.DocumentExistsContext(requestCtx, url)
+		cancel()
 		if err != nil || exists {
 			return exists, err
 		}
 	}
-	d, err := prepareRemoteFile(input, content, info, opts.Source, opts.MaxFileSize, opts.Label)
+	d, err := i.prepareRemoteFile(ctx, input, content, info, opts.Source, opts.MaxFileSize, opts.Label)
 	if err != nil {
 		return false, err
 	}
-	return false, c.AddDocumentJSONContext(requestCtx, clientDocument(d))
+	requestCtx, cancel := context.WithTimeout(ctx, serviceImportRequestTimeout)
+	defer cancel()
+	return false, i.client.AddDocumentJSONContext(requestCtx, clientDocument(d))
 }
 
 type fileImportWork struct {

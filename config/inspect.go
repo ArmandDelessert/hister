@@ -147,7 +147,7 @@ func redactMap(values map[string]any) {
 		if k == "sensitive_content_patterns" {
 			continue
 		}
-		if strings.Contains(k, "secret") || strings.Contains(k, "password") || k == "token" || strings.HasSuffix(k, "_token") || k == "api_key" || k == "authorization" || k == "extra_args" {
+		if strings.Contains(k, "secret") || strings.Contains(k, "password") || k == "token" || strings.HasSuffix(k, "_token") || k == "api_key" || k == "authorization" || k == "extra_args" || k == "args" {
 			if value != nil && value != "" {
 				values[key] = redactedValue
 			}

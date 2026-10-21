@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/asciimoo/hister/server/languages"
@@ -147,6 +148,33 @@ type Indexer struct {
 	MaxFileSize               int64        `yaml:"max_file_size_mb" mapstructure:"max_file_size_mb"`
 	Languages                 []string     `yaml:"languages" mapstructure:"languages"`
 	LanguageDetectionAccuracy string       `yaml:"language_detection_accuracy" mapstructure:"language_detection_accuracy"`
+	PDFParser                 PDFParser    `yaml:"pdf_parser" mapstructure:"pdf_parser"`
+}
+
+// PDFParser selects an optional command that reads PDF bytes from stdin and
+// writes plain UTF-8 text to stdout. An empty Command uses the built-in reader.
+type PDFParser struct {
+	Command string   `yaml:"command" mapstructure:"command"`
+	Args    []string `yaml:"args" mapstructure:"args"`
+	Timeout int      `yaml:"timeout" mapstructure:"timeout"`
+}
+
+func (p PDFParser) Validate() error {
+	if (p.Command != "" && strings.TrimSpace(p.Command) == "") || strings.ContainsRune(p.Command, '\x00') {
+		return errors.New("indexer.pdf_parser.command must name an executable")
+	}
+	if p.Command == "" && len(p.Args) != 0 {
+		return errors.New("indexer.pdf_parser.args requires a command")
+	}
+	for _, arg := range p.Args {
+		if strings.ContainsRune(arg, '\x00') {
+			return errors.New("indexer.pdf_parser.args cannot contain NUL bytes")
+		}
+	}
+	if p.Timeout < 1 || int64(p.Timeout) > int64((1<<63-1)/time.Second) {
+		return errors.New("indexer.pdf_parser.timeout must be a positive number of seconds within the supported duration range")
+	}
+	return nil
 }
 
 const (
@@ -630,6 +658,7 @@ func CreateDefaultConfig() *Config {
 			KeepStopwords:             false,
 			MaxFileSize:               1,
 			LanguageDetectionAccuracy: LanguageDetectionAccuracyLow,
+			PDFParser:                 PDFParser{Timeout: 30},
 		},
 		Crawler: CrawlerConfig{
 			Backend: "http",
@@ -694,6 +723,9 @@ func parseConfig(rawConfig []byte) (*Config, error) {
 }
 
 func (c *Config) validateBasic() error {
+	if err := c.Indexer.PDFParser.Validate(); err != nil {
+		return err
+	}
 	if c.App.SnippetLength < 1 {
 		return errors.New("app.snippet_length must be a positive integer")
 	}

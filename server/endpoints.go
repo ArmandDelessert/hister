@@ -882,7 +882,7 @@ func serveAddPDF(c *webContext) {
 
 	d.UserID = submittedDocumentUserID(c)
 
-	if err := c.Indexer.AddPDF(d, pdfData, indexer.WithRules(c.effectiveRules())); err != nil {
+	if err := c.Indexer.AddPDFContext(c.Request.Context(), d, pdfData, indexer.WithRules(c.effectiveRules())); err != nil {
 		if errors.Is(err, indexer.ErrInvalidLanguage) {
 			http.Error(c.Response, err.Error(), http.StatusBadRequest)
 			return

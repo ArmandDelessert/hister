@@ -356,7 +356,7 @@ func configuredFileLabel(dirs []*config.Directory, path string) string {
 	return dir.Label
 }
 
-func (i *Indexer) prepareLocalFile(path string, info fs.FileInfo, d *document.Document) error {
+func (i *Indexer) prepareLocalFile(ctx context.Context, path string, info fs.FileInfo, d *document.Document) error {
 	if info.Size() == 0 {
 		return ErrEmptyFile
 	}
@@ -371,10 +371,10 @@ func (i *Indexer) prepareLocalFile(path string, info fs.FileInfo, d *document.Do
 
 	d.Updated = info.ModTime().Unix()
 	d.SetTrustedLocalFile()
-	return PrepareFileContent(path, d, content)
+	return i.fileHandlers.Prepare(ctx, path, d, content)
 }
 
-func (i *Indexer) reloadLocalFile(path string, info fs.FileInfo, source *document.Document) (*document.Document, error) {
+func (i *Indexer) reloadLocalFile(ctx context.Context, path string, info fs.FileInfo, source *document.Document) (*document.Document, error) {
 	d := &document.Document{
 		URL:              source.URL,
 		LanguageOverride: source.LanguageOverride,
@@ -386,7 +386,7 @@ func (i *Indexer) reloadLocalFile(path string, info fs.FileInfo, source *documen
 	if source.IgnoreSkipRules() {
 		d.SetIgnoreSkipRules(true)
 	}
-	if err := i.prepareLocalFile(path, info, d); err != nil {
+	if err := i.prepareLocalFile(ctx, path, info, d); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -427,7 +427,7 @@ func (i *Indexer) IndexFile(path string, userID uint) error {
 		UserID: userID,
 		Label:  label,
 	}
-	if err := i.prepareLocalFile(path, info, doc); err != nil {
+	if err := i.prepareLocalFile(context.Background(), path, info, doc); err != nil {
 		return err
 	}
 	return i.AddDocument(doc)

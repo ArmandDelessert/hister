@@ -48,7 +48,7 @@ var configPathCmd = &cobra.Command{
 var configShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Print effective configuration with credentials redacted",
-	Long:  "Print effective main configuration as YAML after applying defaults, environment variables, and global flags. Credentials, header and cookie values, URL credentials and query values, database connection strings, and extractor extra arguments are redacted. Separate rules and TUI configuration are not included.",
+	Long:  "Print effective main configuration as YAML after applying defaults, environment variables, and global flags. Credentials, header and cookie values, URL credentials and query values, database connection strings, and external command arguments are redacted. Separate rules and TUI configuration are not included.",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		c, _, err := inspectConfig()

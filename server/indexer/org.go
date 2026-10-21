@@ -4,6 +4,7 @@ package indexer
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -20,7 +21,7 @@ func (orgFileType) Match(path string) bool {
 	return hasExtension(path, ".org")
 }
 
-func (orgFileType) Prepare(d *document.Document, orgData []byte) error {
+func (orgFileType) Prepare(_ context.Context, d *document.Document, orgData []byte) error {
 	src := strings.TrimSpace(string(orgData))
 	if src == "" {
 		return errors.New("org file empty")
@@ -39,7 +40,7 @@ func (orgFileType) Prepare(d *document.Document, orgData []byte) error {
 // AddOrg renders Org files to HTML, stores it in d.HTML, and stores rendered
 // plain text in d.Text for full-text indexing.
 func (i *Indexer) AddOrg(d *document.Document, orgData []byte) error {
-	if err := (orgFileType{}).Prepare(d, orgData); err != nil {
+	if err := (orgFileType{}).Prepare(context.Background(), d, orgData); err != nil {
 		return err
 	}
 	return i.Add(d)

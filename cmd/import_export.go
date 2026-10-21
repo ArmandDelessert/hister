@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -271,6 +272,7 @@ documents whose "added" timestamp falls within the given date range.`,
 		clientOpts := append([]client.Option{client.WithTimeout(0)}, targetUserIDClientOptions(cmd, global)...)
 		clientOpts = append(clientOpts, documentSubmissionClientOptions(cmd)...)
 		c := newClient(clientOpts...)
+		importer := newFileImporter(c, cfg.Indexer)
 		imported := 0
 		skipped := 0
 		errCount := 0
@@ -282,7 +284,7 @@ documents whose "added" timestamp falls within the given date range.`,
 		if watch {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			stats, err := watchImportFiles(ctx, c, args, cfg.Indexer.Directories, fileWatchOptions{
+			stats, err := importer.watchImportFiles(ctx, args, cfg.Indexer.Directories, fileWatchOptions{
 				Source: normalizedSource, MaxFileSize: maxFileSize, SkipExisting: skip, Label: labelOverride,
 				RetryDelay: 5 * time.Second,
 			})
@@ -293,7 +295,7 @@ documents whose "added" timestamp falls within the given date range.`,
 			return err
 		}
 		for _, input := range inputFiles {
-			i, s, e := importFile(c, input, fileImportOptions{
+			i, s, e := importer.importFile(cmd.Context(), input, fileImportOptions{
 				Source: normalizedSource, MaxFileSize: maxFileSize, SkipExisting: skip,
 				StartDate: dateRange.From, EndDate: dateRange.To, BatchSize: batchSize, Label: labelOverride,
 			})
@@ -577,8 +579,8 @@ func addDocumentBatch(c *client.Client, docs []*document.Document) (imported, er
 // extracting the URL from the HTML or using its file URL as a fallback, and
 // submits it to the running server. It returns the number of documents
 // imported, skipped and failed.
-func importHTMLFile(
-	c *client.Client,
+func (i *fileImporter) importHTMLFile(
+	ctx context.Context,
 	input importFileInput,
 	source string,
 	maxFileSize int64,
@@ -598,7 +600,7 @@ func importHTMLFile(
 			log.Warn().Err(statErr).Str("file", input.Path).Msg("Failed to inspect HTML file")
 			return 0, 0, 1
 		}
-		return importRemoteFile(c, input, data, info, source, maxFileSize, skip, labelOverride)
+		return i.importRemoteFile(ctx, input, data, info, source, maxFileSize, skip, labelOverride)
 	}
 	if err != nil {
 		log.Warn().Err(err).Str("file", input.Path).Msg("Failed to import HTML file, skipping")
@@ -606,7 +608,7 @@ func importHTMLFile(
 	}
 
 	if skip {
-		exists, err := c.DocumentExists(d.URL)
+		exists, err := i.client.DocumentExists(d.URL)
 		if err != nil {
 			log.Warn().Err(err).Str("url", d.URL).Msg("Failed to check if document exists, skipping")
 			return 0, 0, 1
@@ -618,6 +620,6 @@ func importHTMLFile(
 	}
 
 	labelOverride.apply(d, "import")
-	imported, errCount = addDocumentBatch(c, []*document.Document{d})
+	imported, errCount = addDocumentBatch(i.client, []*document.Document{d})
 	return imported, 0, errCount
 }

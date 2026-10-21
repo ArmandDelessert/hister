@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -165,6 +167,64 @@ func TestFullReloadReopensIndexerAndAuthentication(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &saved); status != http.StatusOK || err != nil || saved.HTMLKey != "" {
 		t.Fatalf("indexer did not apply disable_previews: %d %s (%v)", status, body, err)
 	}
+}
+
+func TestReloadPDFParserProcess(t *testing.T) {
+	marker := slices.Index(os.Args, "--pdf-reload-parser-test")
+	if marker < 0 {
+		return
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil || string(data) != "%PDF-1.4 reload fixture" || marker+1 >= len(os.Args) {
+		os.Exit(2)
+	}
+	_, _ = io.WriteString(os.Stdout, os.Args[marker+1])
+	os.Exit(0)
+}
+
+func TestFullReloadChangesPDFParser(t *testing.T) {
+	c, write, request := startRuntimeTestServer(t)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"document": document.Document{URL: "https://example.com/reload.pdf"},
+		"pdf":      base64.StdEncoding.EncodeToString([]byte("%PDF-1.4 reload fixture")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload := func(want int) {
+		t.Helper()
+		if status, body := request(c.Server.BaseURL, "/api/add_pdf", "secret", string(payload)); status != want {
+			t.Fatalf("PDF upload: %d %s, want status %d", status, body, want)
+		}
+	}
+	upload(http.StatusInternalServerError) // The built in parser rejects the fake PDF.
+	for _, text := range []string{"First parser text", "Replacement parser text"} {
+		c.Indexer.PDFParser = config.PDFParser{
+			Command: executable,
+			Args:    []string{"-test.run=^TestReloadPDFParserProcess$", "--", "--pdf-reload-parser-test", text},
+			Timeout: 5,
+		}
+		write()
+		if status, body := request(c.Server.BaseURL, "/api/reload", "secret", ""); status != http.StatusOK {
+			t.Fatalf("reload PDF parser: %d %s", status, body)
+		}
+		upload(http.StatusCreated)
+		status, body := request(c.Server.BaseURL, "/api/document?url=https://example.com/reload.pdf", "secret", "")
+		var saved document.Document
+		if err := json.Unmarshal([]byte(body), &saved); status != http.StatusOK || err != nil || saved.Text != text {
+			t.Fatalf("reloaded parser output: %d %s (%v), want text %q", status, body, err, text)
+		}
+	}
+	c.Indexer.PDFParser = config.PDFParser{Timeout: 30}
+	write()
+	if status, body := request(c.Server.BaseURL, "/api/reload", "secret", ""); status != http.StatusOK {
+		t.Fatalf("restore built in PDF parser: %d %s", status, body)
+	}
+	upload(http.StatusInternalServerError)
 }
 
 func TestFullReloadChangesListenerAndDatabase(t *testing.T) {

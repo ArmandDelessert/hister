@@ -3,6 +3,7 @@
 package indexer
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -20,7 +21,7 @@ func (markdownFileType) Match(path string) bool {
 	return hasExtension(path, ".md", ".markdown")
 }
 
-func (markdownFileType) Prepare(d *document.Document, mdData []byte) error {
+func (markdownFileType) Prepare(_ context.Context, d *document.Document, mdData []byte) error {
 	src := strings.TrimSpace(string(mdData))
 	if src == "" {
 		return errors.New("markdown file is empty")
@@ -35,7 +36,7 @@ func (markdownFileType) Prepare(d *document.Document, mdData []byte) error {
 // AddMarkdown renders mdData to HTML, stores it in d.HTML, and stores rendered
 // plain text in d.Text for full-text indexing.
 func (i *Indexer) AddMarkdown(d *document.Document, mdData []byte) error {
-	if err := (markdownFileType{}).Prepare(d, mdData); err != nil {
+	if err := (markdownFileType{}).Prepare(context.Background(), d, mdData); err != nil {
 		return err
 	}
 	return i.Add(d)

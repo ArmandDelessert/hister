@@ -260,6 +260,24 @@ description: 'Explore every configuration section, option, default value, enviro
       defaultValue: '1',
       description: 'Maximum file size in megabytes to index. Larger files are skipped.',
     },
+    {
+      name: 'pdf_parser.command',
+      type: 'string',
+      defaultValue: '(empty, built in reader)',
+      description: 'Optional PDF parser executable. Reads PDF bytes from standard input and writes plain UTF 8 text to standard output. See File Types for setup and examples.',
+    },
+    {
+      name: 'pdf_parser.args',
+      type: 'string[]',
+      defaultValue: '(none)',
+      description: 'Arguments passed literally to the PDF parser command. Requires pdf_parser.command. Each argument is a separate list entry.',
+    },
+    {
+      name: 'pdf_parser.timeout',
+      type: 'int',
+      defaultValue: '30',
+      description: 'Maximum time in seconds for an external PDF parser command. Must be positive.',
+    },
   ];
 
   const directoryOptions = [
@@ -876,6 +894,8 @@ TUI settings are configured in a separate `tui.yaml` file located in the same di
 ## `indexer` Section
 
 <ConfigReference items={indexerOptions} scopes={['server', 'client']} />
+
+See [External PDF Parser](file-types#external-pdf-parser) to use a command such as `pdftotext`. Environment overrides include `HISTER__INDEXER__PDF_PARSER__COMMAND=pdftotext`, `HISTER__INDEXER__PDF_PARSER__ARGS=-enc,UTF-8,-,-`, and `HISTER__INDEXER__PDF_PARSER__TIMEOUT=30`. Environment arguments are separated by commas; use YAML when an argument contains a comma.
 
 ### Directory Entry
 

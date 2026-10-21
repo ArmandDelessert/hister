@@ -3,6 +3,7 @@
 package indexer
 
 import (
+	"context"
 	"unicode/utf8"
 
 	"github.com/asciimoo/hister/server/document"
@@ -15,7 +16,7 @@ func (htmlFileType) Match(path string) bool {
 	return hasExtension(path, ".html", ".htm")
 }
 
-func (htmlFileType) Prepare(d *document.Document, content []byte) error {
+func (htmlFileType) Prepare(_ context.Context, d *document.Document, content []byte) error {
 	if !utf8.Valid(content) {
 		return ErrBinaryFile
 	}

@@ -98,7 +98,7 @@ still works and prints a migration notice to stderr.
 no file is found. It works even when the file contains invalid YAML. `config show` prints
 effective YAML after applying defaults, environment variables, and global flags. It redacts
 credentials, header and cookie values, URL credentials and query values, PostgreSQL connection
-strings, and extractor extra arguments. Separate `rules.json` and `tui.yaml` files are not included.
+strings, and external command arguments. Separate `rules.json` and `tui.yaml` files are not included.
 
 `config validate` checks main configuration keys and value types, supported settings, hotkeys,
 OAuth, public mode, semantic search settings, and extractor names and options. It exits with

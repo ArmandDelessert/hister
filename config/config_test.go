@@ -5,10 +5,71 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestPDFParserConfiguration(t *testing.T) {
+	readParser := func(cfg *Config) map[string]any {
+		t.Helper()
+		data, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var exported struct {
+			Indexer struct {
+				PDFParser map[string]any `yaml:"pdf_parser"`
+			} `yaml:"indexer"`
+		}
+		if err := yaml.Unmarshal(data, &exported); err != nil {
+			t.Fatal(err)
+		}
+		return exported.Indexer.PDFParser
+	}
+	defaults := readParser(CreateDefaultConfig())
+	if defaults["command"] != "" || defaults["timeout"] != 30 {
+		t.Fatalf("default PDF parser = %v, want an empty command and a 30 second timeout", defaults)
+	}
+	const raw = "indexer:\n  pdf_parser:\n    command: pdftotext\n    args: [-enc, UTF-8, '-', '-']\n    timeout: 15\n"
+	cfg, err := parseConfig([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser := readParser(cfg)
+	if parser["command"] != "pdftotext" || parser["timeout"] != 15 || len(parser["args"].([]any)) != 4 {
+		t.Fatalf("PDF parser config was not loaded: %v", parser)
+	}
+	t.Setenv("HISTER__INDEXER__PDF_PARSER__COMMAND", "/custom/parser")
+	t.Setenv("HISTER__INDEXER__PDF_PARSER__ARGS", "--text,-")
+	t.Setenv("HISTER__INDEXER__PDF_PARSER__TIMEOUT", "20")
+	cfg, err = parseConfig([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser = readParser(cfg)
+	if parser["command"] != "/custom/parser" || parser["timeout"] != 20 || len(parser["args"].([]any)) != 2 {
+		t.Fatalf("environment did not override PDF parser config: %v", parser)
+	}
+}
+
+func TestPDFParserConfigurationRejectsInvalidValues(t *testing.T) {
+	for _, raw := range []string{
+		"command: '   '",
+		"command: ''\n    args: [unused]",
+		"timeout: -1",
+		"timeout: 0",
+		"timeout: 9223372036854775807",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			_, err := parseConfig([]byte("indexer:\n  pdf_parser:\n    " + raw + "\n"))
+			if err == nil || !strings.Contains(err.Error(), "pdf_parser") {
+				t.Fatalf("error = %v, want PDF parser configuration error", err)
+			}
+		})
+	}
+}
 
 func TestAllowAndSkipRules(t *testing.T) {
 	for _, tc := range []struct {

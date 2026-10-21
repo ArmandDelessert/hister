@@ -26,6 +26,28 @@ Watched HTML files use the same extractor chain as browser submissions, includin
 
 The same handlers process snapshots created with `hister import file`. These imports are stored as remote file documents. The client sends prepared text, metadata, and any HTML preview content to the server.
 
+## External PDF Parser
+
+Hister uses its built in PDF reader by default. To replace it with a local command, install Poppler so `pdftotext` is available, then add this to your configuration:
+
+```yaml
+indexer:
+  pdf_parser:
+    command: pdftotext
+    args: ['-enc', 'UTF-8', '-', '-']
+    timeout: 30
+```
+
+In this example, `-enc UTF-8` selects the text encoding. The first `-` reads the PDF from standard input, and the second writes the extracted text to standard output.
+
+The command must read PDF bytes from standard input and write plain UTF 8 text to standard output. It runs directly, with each `args` entry passed literally. Use an executable wrapper script for parsers that need a filename or produce a different output format.
+
+Install the command where parsing runs: on the server for browser uploads and watched directories, and on the client for `hister import file`, including `--watch`. For a container deployment, the command must be installed inside that container. Run `hister reload` or restart the server after changing its configuration. Restart a running `hister import file --watch` command to apply client configuration changes.
+
+`timeout` is a positive number of seconds and defaults to 30. Failed commands, empty text, invalid UTF 8, and output larger than 32 MiB reject the PDF. Hister does not retry with its built in reader. Standard error is discarded because it can contain document text.
+
+Leave `command` empty and `args` empty to restore the built in reader. Previously stored PDFs need to be imported or submitted again; use `hister reindex` for watched local PDFs.
+
 ## Directory Filters
 
 The `filetypes` setting on a watched directory is an extension filter. Use names without the leading dot.

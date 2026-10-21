@@ -70,6 +70,7 @@ type Indexer struct {
 	lowAccuracyDetect bool
 	directories       []*config.Directory
 	maxFileSize       int64
+	fileHandlers      *FileHandlers
 	sensitivePattern  *regexp.Regexp
 	semanticConfig    config.SemanticSearch
 	snippetLength     int
@@ -450,6 +451,7 @@ func New(cfg *config.Config) (*Indexer, error) {
 	idx.userHandling = cfg.App.UserHandling
 	idx.directories = cfg.Indexer.Directories
 	idx.maxFileSize = defaultMaxFileSize
+	idx.fileHandlers = NewFileHandlers(cfg.Indexer)
 	idx.sensitivePattern = sensitivePattern
 	idx.semanticConfig = cfg.SemanticSearch
 	idx.snippetLength = cfg.App.SnippetLength
@@ -515,7 +517,8 @@ func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint 
 	idx.SetName(defaultIndexerName)
 	embedCtx, embedCancel := context.WithCancel(context.Background())
 	i := &Indexer{
-		idx: bleve.NewIndexAlias(idx),
+		fileHandlers: defaultFileHandlers,
+		idx:          bleve.NewIndexAlias(idx),
 		indexers: map[string]bleve.Index{
 			defaultIndexerName: idx,
 		},
@@ -766,6 +769,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	}
 	tmpIdx.directories = dirs
 	tmpIdx.maxFileSize = idx.maxFileSize
+	tmpIdx.fileHandlers = idx.fileHandlers
 	tmpIdx.sensitivePattern = idx.sensitivePattern
 	// Propagate the disablePreviews flag so the temp indexer skips HTML storage too.
 	tmpIdx.disablePreviews = idx.disablePreviews
@@ -864,7 +868,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 					if dir.Label != "" {
 						d.Label = dir.Label
 					}
-					reloaded, err := tmpIdx.reloadLocalFile(filePath, info, d)
+					reloaded, err := tmpIdx.reloadLocalFile(ctx, filePath, info, d)
 					if err != nil {
 						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't prepare local file")
 						continue

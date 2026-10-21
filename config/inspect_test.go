@@ -91,6 +91,7 @@ func TestRedactedConfigHidesCredentialsWithoutMutation(t *testing.T) {
 	c.Crawler.Cookies = []CrawlerCookie{{Name: "session", Value: "cookie-credential"}}
 	c.Crawler.Proxy = "http://proxy-user:proxy-credential@localhost:8080?key=query-credential#fragment-credential"
 	c.SemanticSearch.APIKey = "embedding-credential"
+	c.Indexer.PDFParser.Args = []string{"--password", "pdf-credential"}
 	c.Extractors = map[string]*Extractor{"ytdlp": {Options: map[string]any{"extra_args": []string{"--password", "argument-credential"}, "nested": map[string]any{"api_key": "nested-credential"}}}}
 	values, err := c.Redacted()
 	if err != nil {
@@ -108,5 +109,8 @@ func TestRedactedConfigHidesCredentialsWithoutMutation(t *testing.T) {
 	}
 	if c.App.AccessToken != "access-credential" || c.Crawler.Headers["Authorization"] != "header-credential" || c.Crawler.Cookies[0].Value != "cookie-credential" {
 		t.Fatal("redaction mutated the source configuration")
+	}
+	if c.Indexer.PDFParser.Args[1] != "pdf-credential" {
+		t.Fatal("redaction mutated PDF parser arguments")
 	}
 }

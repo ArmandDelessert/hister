@@ -3,6 +3,7 @@
 package indexer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime/debug"
@@ -21,7 +22,7 @@ func (docxFileType) Match(path string) bool {
 	return hasExtension(path, ".docx")
 }
 
-func (docxFileType) Prepare(d *document.Document, docxData []byte) error {
+func (docxFileType) Prepare(_ context.Context, d *document.Document, docxData []byte) error {
 	text, title, err := extractDocxText(docxData)
 	if err != nil {
 		return fmt.Errorf("docx text extraction: %w", err)
@@ -38,7 +39,7 @@ func (docxFileType) Prepare(d *document.Document, docxData []byte) error {
 }
 
 func (i *Indexer) AddDocx(d *document.Document, docxData []byte) error {
-	if err := (docxFileType{}).Prepare(d, docxData); err != nil {
+	if err := (docxFileType{}).Prepare(context.Background(), d, docxData); err != nil {
 		return err
 	}
 	return i.Add(d)

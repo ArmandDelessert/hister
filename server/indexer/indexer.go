@@ -47,14 +47,10 @@ var Version = 8
 // Indexer owns the search indexes and related document storage for one Hister
 // data directory.
 type Indexer struct {
-	idx               bleve.IndexAlias       // used only for Search()
-	indexers          map[string]bleve.Index // default and language specific indexers
-	indexesMu         sync.RWMutex           // protects idx, indexers, and indexesClosed
-	indexCreationMu   sync.Mutex             // serializes index creation, close, and adoption
-	indexesClosed     bool
-	dir               string
+	indexState
+	indexesMu         sync.RWMutex // protects the Bleve indexes and their replacement
+	indexCreationMu   sync.Mutex   // serializes index creation, close, and replacement
 	data              *dataStore
-	langDetector      document.LanguageDetector
 	reindexInProgress atomic.Bool
 	embedder          *vectorstore.Embedder
 	vectorStore       vectorstore.VectorStore
@@ -65,9 +61,6 @@ type Indexer struct {
 	embeddingWorkers  int
 	disablePreviews   bool
 	userHandling      bool
-	keepStopwords     bool
-	languages         []string
-	lowAccuracyDetect bool
 	directories       []*config.Directory
 	maxFileSize       int64
 	fileHandlers      *FileHandlers
@@ -77,6 +70,19 @@ type Indexer struct {
 	snippetStyles     map[string]string
 	metricsMu         sync.RWMutex
 	metrics           *metrics.Metrics
+}
+
+// indexState contains only the indexes and language settings replaced by a
+// reindex. Services and their lifetime stay with the owning Indexer.
+type indexState struct {
+	idx               bleve.IndexAlias
+	indexers          map[string]bleve.Index
+	indexesClosed     bool
+	dir               string
+	langDetector      document.LanguageDetector
+	keepStopwords     bool
+	languages         []string
+	lowAccuracyDetect bool
 }
 
 // indexOptions carries the settings that decide how indexes are created and
@@ -491,6 +497,22 @@ func New(cfg *config.Config) (*Indexer, error) {
 }
 
 func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint string) (*Indexer, error) {
+	state, err := openIndexState(basePath, opts, embeddingFingerprint)
+	if err != nil {
+		return nil, err
+	}
+	embedCtx, embedCancel := context.WithCancel(context.Background())
+	return &Indexer{
+		indexState:   *state,
+		fileHandlers: defaultFileHandlers,
+		embedCtx:     embedCtx,
+		embedCancel:  embedCancel,
+		data:         newDataStore(filepath.Join(basePath, dataDirName)),
+		maxFileSize:  defaultMaxFileSize,
+	}, nil
+}
+
+func openIndexState(basePath string, opts indexOptions, embeddingFingerprint string) (*indexState, error) {
 	if unsupported := document.UnsupportedLanguages(opts.Languages); len(unsupported) > 0 {
 		return nil, fmt.Errorf("unsupported language(s) in indexer.languages: %s", strings.Join(unsupported, ", "))
 	}
@@ -515,10 +537,8 @@ func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint 
 		created = true
 	}
 	idx.SetName(defaultIndexerName)
-	embedCtx, embedCancel := context.WithCancel(context.Background())
-	i := &Indexer{
-		fileHandlers: defaultFileHandlers,
-		idx:          bleve.NewIndexAlias(idx),
+	i := &indexState{
+		idx: bleve.NewIndexAlias(idx),
 		indexers: map[string]bleve.Index{
 			defaultIndexerName: idx,
 		},
@@ -526,16 +546,11 @@ func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint 
 		keepStopwords:     keepStopwords,
 		languages:         opts.Languages,
 		lowAccuracyDetect: opts.LowAccuracy,
-		embedCtx:          embedCtx,
-		embedCancel:       embedCancel,
-		maintenance:       newMaintenanceRunner(),
-		data:              newDataStore(filepath.Join(basePath, dataDirName)),
-		maxFileSize:       defaultMaxFileSize,
 	}
 	initialized := false
 	defer func() {
 		if !initialized {
-			i.Close()
+			i.close()
 		}
 	}()
 	if !detectLanguages {
@@ -559,10 +574,8 @@ func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint 
 			return nil, err
 		}
 		langIdx.SetName(fn)
-		i.indexesMu.Lock()
 		i.idx.Add(langIdx)
 		i.indexers[fn] = langIdx
-		i.indexesMu.Unlock()
 	}
 	if created {
 		if err := writeIndexMetadata(idx, configuredIndexMetadata(detectLanguages, keepStopwords, embeddingFingerprint)); err != nil {
@@ -577,6 +590,7 @@ func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint 
 }
 
 func (i *Indexer) startMaintenance() {
+	i.maintenance = newMaintenanceRunner()
 	i.maintenance.start(
 		maintenanceTask{
 			name: "updated timestamp backfill",
@@ -763,21 +777,23 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 		return err
 	}
 	defer closeExtraSources()
-	tmpIdx, err := initializeIndexer(tmpBasePath, idx.optionsWith(detectLanguages, keepStopwords), embeddingFingerprint)
+	tmpState, err := openIndexState(tmpBasePath, idx.optionsWith(detectLanguages, keepStopwords), embeddingFingerprint)
 	if err != nil {
 		return err
 	}
-	tmpIdx.directories = dirs
-	tmpIdx.maxFileSize = idx.maxFileSize
-	tmpIdx.fileHandlers = idx.fileHandlers
-	tmpIdx.sensitivePattern = idx.sensitivePattern
-	// Propagate the disablePreviews flag so the temp indexer skips HTML storage too.
-	tmpIdx.disablePreviews = idx.disablePreviews
-	tmpIdx.userHandling = idx.userHandling
-	// The data store is shared between the live and temp indexers so that
-	// content-addressed files written during reindex are immediately usable
-	// after the rename step. No data directory rename is needed.
-	tmpIdx.data = idx.data
+	// The temporary indexer borrows processing services. Only its Bleve indexes
+	// are closed below; document blobs and vectors stay at their original paths.
+	tmpIdx := &Indexer{
+		indexState:       *tmpState,
+		directories:      dirs,
+		maxFileSize:      idx.maxFileSize,
+		fileHandlers:     idx.fileHandlers,
+		sensitivePattern: idx.sensitivePattern,
+		disablePreviews:  idx.disablePreviews,
+		userHandling:     idx.userHandling,
+		data:             idx.data,
+		embedCtx:         idx.embedCtx,
+	}
 	if idx.embeddingQueue != nil {
 		idx.stopEmbeddingQueue()
 		queueStopped = true
@@ -787,28 +803,23 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	// MultiBatch.Add() re-embeds every surviving document.  The vector store is
 	// rebuilt in-place (no temp-dir / rename dance is needed because it is a
 	// separate file from the Bleve indexes).
-	vs := idx.vectorStore
-	embedder := idx.embedder
 	var b *MultiBatch
 	abortReindex := func(err error) error {
 		if b != nil {
 			b.Discard()
 		}
-		// The live indexer still owns the shared vector store when reindexing
-		// aborts. Do not let closing the temporary indexer close that store.
-		tmpIdx.vectorStore = nil
-		tmpIdx.Close()
+		tmpIdx.closeIndexes()
 		if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
 			log.Warn().Err(rerr).Msg("failed to clean up temp index path")
 		}
 		return err
 	}
-	if vs != nil && embedder != nil {
-		if err := vs.Clear(); err != nil {
+	if idx.vectorStore != nil && idx.embedder != nil {
+		if err := idx.vectorStore.Clear(); err != nil {
 			return abortReindex(fmt.Errorf("rebuild vector store before reindex: %w", err))
 		}
-		tmpIdx.vectorStore = vs
-		tmpIdx.embedder = embedder
+		tmpIdx.vectorStore = idx.vectorStore
+		tmpIdx.embedder = idx.embedder
 	}
 	q := query.NewMatchAllQuery()
 	var total uint64
@@ -938,11 +949,9 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 		return abortReindex(fmt.Errorf("store replacement index metadata: %w", err))
 	}
 	closeExtraSources()
-	idx.vectorStore = nil // prevent Close() from closing the store we're still using
-	idx.Close()
+	idx.closeIndexes()
 	oldIndexClosed = true
-	tmpIdx.vectorStore = nil // already referenced by vs; prevent double-close
-	tmpIdx.Close()
+	tmpIdx.closeIndexes()
 	for n := range sourceIndexes {
 		idxPath := filepath.Join(basePath, n)
 		if err := os.RemoveAll(idxPath); err != nil {
@@ -960,28 +969,21 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	if renameError != nil {
 		return errors.New("failed to rename tmp indexes during the reindex, resolve the issue manually")
 	}
-	replacement, err := initializeIndexer(basePath, idx.optionsWith(detectLanguages, keepStopwords), embeddingFingerprint)
+	replacement, err := openIndexState(basePath, idx.optionsWith(detectLanguages, keepStopwords), embeddingFingerprint)
 	if err != nil {
 		return err
 	}
-	replacement.maxFileSize = idx.maxFileSize
-	replacement.userHandling = idx.userHandling
-	replacement.sensitivePattern = idx.sensitivePattern
-	replacement.semanticConfig = idx.semanticConfig
-	idx.adopt(replacement)
-	// Restore settings that are not part of the index state.
-	idx.disablePreviews = tmpIdx.disablePreviews
+	idx.indexCreationMu.Lock()
+	idx.indexesMu.Lock()
+	idx.indexState = *replacement
+	idx.indexesMu.Unlock()
+	idx.indexCreationMu.Unlock()
 	idx.directories = dirs
-	// Restore the vector store and embedder on the replacement indexer.
-	if vs != nil && embedder != nil {
-		idx.vectorStore = vs
-		idx.embedder = embedder
-		if workers > 0 {
-			if err := idx.startEmbeddingQueue(workers); err != nil {
-				return fmt.Errorf("restart embedding queue: %w", err)
-			}
-			queueStopped = false
+	if idx.vectorStore != nil && idx.embedder != nil && workers > 0 {
+		if err := idx.startEmbeddingQueue(workers); err != nil {
+			return fmt.Errorf("restart embedding queue: %w", err)
 		}
+		queueStopped = false
 	}
 	idx.startMaintenance()
 	if err := os.RemoveAll(tmpBasePath); err != nil {
@@ -1671,20 +1673,29 @@ func (i *Indexer) Close() {
 	if i.embedCancel != nil {
 		i.embedCancel()
 	}
-	if i.maintenance != nil {
-		i.maintenance.stop()
-	}
 	if i.vectorStore != nil {
 		if err := i.vectorStore.Close(); err != nil {
 			log.Warn().Err(err).Msg("failed to close vector store")
 		}
 	}
+	i.closeIndexes()
+}
+
+func (i *Indexer) closeIndexes() {
+	if i.maintenance != nil {
+		i.maintenance.stop()
+	}
 	i.indexCreationMu.Lock()
 	i.indexesMu.Lock()
+	i.close()
+	i.indexesMu.Unlock()
+	i.indexCreationMu.Unlock()
+	_ = i.waitForMaintenance()
+}
+
+// close is called before publishing a state or with the owner's index locks held.
+func (i *indexState) close() {
 	if i.indexesClosed {
-		i.indexesMu.Unlock()
-		i.indexCreationMu.Unlock()
-		_ = i.waitForMaintenance()
 		return
 	}
 	i.indexesClosed = true
@@ -1696,40 +1707,6 @@ func (i *Indexer) Close() {
 	if err := i.idx.Close(); err != nil {
 		log.Warn().Err(err).Msg("failed to close index alias")
 	}
-	i.indexesMu.Unlock()
-	i.indexCreationMu.Unlock()
-	_ = i.waitForMaintenance()
-}
-
-func (i *Indexer) adopt(replacement *Indexer) {
-	replacement.indexesMu.RLock()
-	defer replacement.indexesMu.RUnlock()
-	i.indexCreationMu.Lock()
-	defer i.indexCreationMu.Unlock()
-	i.indexesMu.Lock()
-	defer i.indexesMu.Unlock()
-	i.idx = replacement.idx
-	i.indexers = maps.Clone(replacement.indexers)
-	i.indexesClosed = false
-	i.dir = replacement.dir
-	i.data = replacement.data
-	i.langDetector = replacement.langDetector
-	i.embedder = replacement.embedder
-	i.vectorStore = replacement.vectorStore
-	i.embedCtx = replacement.embedCtx
-	i.embedCancel = replacement.embedCancel
-	i.maintenance = replacement.maintenance
-	i.embeddingQueue = replacement.embeddingQueue
-	i.embeddingWorkers = replacement.embeddingWorkers
-	i.disablePreviews = replacement.disablePreviews
-	i.userHandling = replacement.userHandling
-	i.keepStopwords = replacement.keepStopwords
-	i.languages = replacement.languages
-	i.lowAccuracyDetect = replacement.lowAccuracyDetect
-	i.directories = replacement.directories
-	i.maxFileSize = replacement.maxFileSize
-	i.sensitivePattern = replacement.sensitivePattern
-	i.semanticConfig = replacement.semanticConfig
 }
 
 func (i *Indexer) NewMultiBatch() *MultiBatch {

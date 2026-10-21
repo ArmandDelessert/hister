@@ -17,7 +17,8 @@ import (
 )
 
 type metadataVectorStore struct {
-	clearErr error
+	clearErr   error
+	closeCount int
 }
 
 func (*metadataVectorStore) Init() error { return nil }
@@ -32,7 +33,10 @@ func (*metadataVectorStore) Search([]float32, int, float64, uint) ([]vectorstore
 
 func (s *metadataVectorStore) Clear() error { return s.clearErr }
 
-func (*metadataVectorStore) Close() error { return nil }
+func (s *metadataVectorStore) Close() error {
+	s.closeCount++
+	return nil
+}
 
 func requireIndexMetadata(t *testing.T, idx bleve.Index, want indexMetadata) {
 	t.Helper()
@@ -415,5 +419,55 @@ func TestReindexPreservesIndexWhenVectorRebuildFails(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cfg.App.Directory, "reindex")); !os.IsNotExist(err) {
 		t.Fatalf("temporary reindex directory remains after failure: %v", err)
+	}
+}
+
+type reindexCloseHook struct {
+	bleveIndex
+	afterClose func()
+}
+
+func (i reindexCloseHook) Close() error {
+	err := i.bleveIndex.Close()
+	i.afterClose()
+	return err
+}
+
+func TestReindexClosesVectorStoreAfterSwapFailure(t *testing.T) {
+	cfg := testutil.Config(t)
+	idx := newTestIndexer(t, cfg)
+	store := &metadataVectorStore{}
+	idx.vectorStore = store
+	idx.embedder = vectorstore.NewEmbedder(&cfg.SemanticSearch)
+	defer func() {
+		idx.Close()
+		if store.closeCount != 1 {
+			t.Errorf("vector store closed %d times, want once at shutdown", store.closeCount)
+		}
+	}()
+
+	// Make replacement installation fail after the live Bleve indexes close.
+	// The remaining services must still be owned and closed by the indexer.
+	var moveErr error
+	idx.indexesMu.Lock()
+	idx.indexers[defaultIndexerName] = reindexCloseHook{
+		bleveIndex: idx.indexers[defaultIndexerName],
+		afterClose: func() {
+			path := filepath.Join(cfg.App.Directory, "reindex")
+			moveErr = os.Rename(path, path+"-moved")
+		},
+	}
+	idx.indexesMu.Unlock()
+	if err := idx.Reindex(&config.Rules{}, false, false, false, nil); err == nil {
+		t.Fatal("reindex succeeded after replacement indexes disappeared")
+	}
+	if moveErr != nil {
+		t.Fatalf("move replacement indexes: %v", moveErr)
+	}
+	if store.closeCount != 0 {
+		t.Fatal("reindex closed the live vector store")
+	}
+	if idx.reindexInProgress.Load() {
+		t.Fatal("reindex remains in progress after swap failure")
 	}
 }

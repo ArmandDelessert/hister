@@ -5,6 +5,7 @@
 package indexer
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -269,6 +270,98 @@ func TestReindexRebuildsEmbeddingsAfterDimensionChange(t *testing.T) {
 	if fingerprint != cfg.SemanticSearch.EmbeddingFingerprint() {
 		t.Fatal("reindex did not record the updated embedding configuration")
 	}
+	// Rebuilding the Bleve indexes must leave normal asynchronous indexing usable.
+	before := requests.Load()
+	after := &document.Document{URL: "https://example.com/after-reindex", Text: "New content after rebuilding", Processed: true}
+	if err := idx.Add(after); err != nil {
+		t.Fatal(err)
+	}
+	waitForEmbeddingJobs(t, &requests, before+1)
+	results, err = idx.vectorStore.Search([]float32{0.25, 0.75}, 5, 0.9, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, result := range results {
+		if result.DocID == after.ID() {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("document added after reindex has no embeddings")
+	}
+}
+
+type cancelingReindexStore struct {
+	vectorstore.VectorStore
+	cancel context.CancelFunc
+}
+
+func (s cancelingReindexStore) Clear() error {
+	err := s.VectorStore.Clear()
+	s.cancel()
+	return err
+}
+
+func TestReindexRestartsEmbeddingQueueAfterCancellation(t *testing.T) {
+	var requests atomic.Int64
+	server := embeddingTestServer(t, &requests)
+	defer server.Close()
+	cfg := testutil.Config(t)
+	cfg.SemanticSearch.Enable = true
+	cfg.SemanticSearch.EmbeddingEndpoint = server.URL
+	cfg.SemanticSearch.EmbeddingModel = "test"
+	cfg.SemanticSearch.Dimensions = 2
+	cfg.SemanticSearch.MaxEmbeddingConcurrency = 1
+	testutil.InitModelWithConfig(t, cfg)
+	idx := newTestIndexer(t, cfg)
+	defer idx.Close()
+	doc := &document.Document{URL: "https://example.com/canceled-reindex", Text: "Original content", Processed: true}
+	if err := idx.Add(doc); err != nil {
+		t.Fatal(err)
+	}
+	waitForEmbeddingJobs(t, &requests, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	idx.vectorStore = cancelingReindexStore{VectorStore: idx.vectorStore, cancel: cancel}
+	if err := idx.ReindexContext(ctx, &config.Rules{}, false, false, false, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("reindex error = %v, want context.Canceled", err)
+	}
+	if idx.GetByURLAndUser(doc.URL, 0) == nil {
+		t.Fatal("canceled reindex removed the original document")
+	}
+	if idx.reindexInProgress.Load() {
+		t.Fatal("reindex remains in progress after cancellation")
+	}
+	if err := idx.Add(&document.Document{URL: "https://example.com/after-cancellation", Text: "New content", Processed: true}); err != nil {
+		t.Fatal(err)
+	}
+	waitForEmbeddingJobs(t, &requests, 2)
+}
+
+func TestReindexRestartsPreviouslyStoppedEmbeddingQueue(t *testing.T) {
+	var requests atomic.Int64
+	server := embeddingTestServer(t, &requests)
+	defer server.Close()
+	cfg := testutil.Config(t)
+	cfg.SemanticSearch.Enable = true
+	cfg.SemanticSearch.EmbeddingEndpoint = server.URL
+	cfg.SemanticSearch.EmbeddingModel = "test"
+	cfg.SemanticSearch.Dimensions = 2
+	cfg.SemanticSearch.MaxEmbeddingConcurrency = 1
+	testutil.InitModelWithConfig(t, cfg)
+	idx := newTestIndexer(t, cfg)
+	defer idx.Close()
+
+	// A failed queue restart after an aborted reindex can leave workers stopped.
+	idx.stopEmbeddingQueue()
+	if err := idx.Reindex(&config.Rules{}, false, false, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Add(&document.Document{URL: "https://example.com/after-recovery", Text: "New content", Processed: true}); err != nil {
+		t.Fatal(err)
+	}
+	waitForEmbeddingJobs(t, &requests, 1)
 }
 
 func TestEmbeddingQueueReprocessesDocumentChangedWhileActive(t *testing.T) {

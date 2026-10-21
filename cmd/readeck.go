@@ -109,46 +109,11 @@ The global --token flag remains the access token for the destination Hister serv
 	PreRun: func(_ *cobra.Command, _ []string) {
 		initExtractor()
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SilenceUsage = true
-		token := serviceAPIToken(cmd, readeckTokenEnv)
-		if token == "" {
-			return fmt.Errorf("missing Readeck API token; set %s or use --api-token", readeckTokenEnv)
-		}
-
-		runtime, err := newServiceImportRuntime(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := runtime.Close(); err != nil {
-				log.Warn().Err(err).Msg("Readeck content crawler close error")
-			}
-		}()
-
-		source, err := newReadeckClient(args[0], token, nil)
-		if err != nil {
-			return err
-		}
-		updatedAfter, err := latestServiceUpdated(runtime.target, readeckSourceMetadataValue)
-		if err != nil {
-			return fmt.Errorf("failed to find the latest Readeck import: %w", err)
-		}
-		source.updatedAfter = updatedAfter
-
-		stats, err := importReadeck(
-			cmd.Context(),
-			source,
-			runtime.target,
-			runtime.languageDetector,
-			runtime.contentFetcher,
-			runtime.options,
-		)
-		if err != nil {
-			err = fmt.Errorf("import from Readeck failed: %w", err)
-		}
-		return finishImport(cmd, stats, err)
-	},
+	RunE: serviceImportRunE(
+		"Readeck", readeckTokenEnv, "API token",
+		newReadeckClient, importReadeck,
+		func(source *readeckClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
+	),
 }
 
 func newReadeckClient(instanceURL, token string, httpClient *http.Client) (*readeckClient, error) {

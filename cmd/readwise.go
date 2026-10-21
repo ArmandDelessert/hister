@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -78,31 +77,13 @@ The global --token flag remains the access token for the destination Hister serv
 	PreRun: func(_ *cobra.Command, _ []string) {
 		initExtractor()
 	},
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		cmd.SilenceUsage = true
-		token := serviceAPIToken(cmd, readwiseTokenEnv)
-		if token == "" {
-			return fmt.Errorf("missing Readwise API token; set %s or use --api-token", readwiseTokenEnv)
-		}
-		runtime, err := newServiceImportRuntime(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := runtime.Close(); err != nil {
-				log.Warn().Err(err).Msg("Readwise content crawler close error")
-			}
-		}()
-		source, err := newReadwiseClient(token, nil)
-		if err != nil {
-			return err
-		}
-		stats, err := importReadwise(cmd.Context(), source, runtime.target, runtime.languageDetector, runtime.contentFetcher, runtime.options)
-		if err != nil {
-			err = fmt.Errorf("import from Readwise failed: %w", err)
-		}
-		return finishImport(cmd, stats, err)
-	},
+	RunE: serviceImportRunE(
+		"Readwise", readwiseTokenEnv, "API token",
+		func(_ string, token string, httpClient *http.Client) (*readwiseClient, error) {
+			return newReadwiseClient(token, httpClient)
+		}, importReadwise,
+		nil,
+	),
 }
 
 func newReadwiseClient(token string, httpClient *http.Client) (*readwiseClient, error) {

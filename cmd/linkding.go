@@ -71,46 +71,11 @@ The global --token flag remains the access token for the destination Hister serv
 	PreRun: func(_ *cobra.Command, _ []string) {
 		initExtractor()
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SilenceUsage = true
-		token := serviceAPIToken(cmd, linkdingTokenEnv)
-		if token == "" {
-			return fmt.Errorf("missing Linkding API token; set %s or use --api-token", linkdingTokenEnv)
-		}
-
-		runtime, err := newServiceImportRuntime(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := runtime.Close(); err != nil {
-				log.Warn().Err(err).Msg("Linkding content crawler close error")
-			}
-		}()
-
-		source, err := newLinkdingClient(args[0], token, nil)
-		if err != nil {
-			return err
-		}
-		updatedAfter, err := latestServiceUpdated(runtime.target, linkdingSourceMetadataValue)
-		if err != nil {
-			return fmt.Errorf("failed to find the latest Linkding import: %w", err)
-		}
-		source.updatedAfter = updatedAfter
-
-		stats, err := importLinkding(
-			cmd.Context(),
-			source,
-			runtime.target,
-			runtime.languageDetector,
-			runtime.contentFetcher,
-			runtime.options,
-		)
-		if err != nil {
-			err = fmt.Errorf("import from Linkding failed: %w", err)
-		}
-		return finishImport(cmd, stats, err)
-	},
+	RunE: serviceImportRunE(
+		"Linkding", linkdingTokenEnv, "API token",
+		newLinkdingClient, importLinkding,
+		func(source *linkdingClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
+	),
 }
 
 func newLinkdingClient(instanceURL, token string, httpClient *http.Client) (*linkdingClient, error) {

@@ -125,46 +125,11 @@ The global --token flag remains the access token for the destination Hister serv
 	PreRun: func(_ *cobra.Command, _ []string) {
 		initExtractor()
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SilenceUsage = true
-		token := serviceAPIToken(cmd, wallabagTokenEnv)
-		if token == "" {
-			return fmt.Errorf("wallabag API access token is required; set %s or use --api-token", wallabagTokenEnv)
-		}
-		source, err := newWallabagClient(args[0], token, nil)
-		if err != nil {
-			return err
-		}
-
-		runtime, err := newServiceImportRuntime(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := runtime.Close(); err != nil {
-				log.Warn().Err(err).Msg("wallabag content crawler close error")
-			}
-		}()
-
-		updatedAfter, err := latestServiceUpdated(runtime.target, wallabagSourceMetadataValue)
-		if err != nil {
-			return fmt.Errorf("failed to find the latest wallabag import: %w", err)
-		}
-		source.updatedAfter = updatedAfter
-
-		stats, err := importWallabag(
-			cmd.Context(),
-			source,
-			runtime.target,
-			runtime.languageDetector,
-			runtime.contentFetcher,
-			runtime.options,
-		)
-		if err != nil {
-			err = fmt.Errorf("wallabag import failed: %w", err)
-		}
-		return finishImport(cmd, stats, err)
-	},
+	RunE: serviceImportRunE(
+		"wallabag", wallabagTokenEnv, "API access token",
+		newWallabagClient, importWallabag,
+		func(source *wallabagClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
+	),
 }
 
 func newWallabagClient(

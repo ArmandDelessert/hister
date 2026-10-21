@@ -285,6 +285,52 @@ type serviceImportRuntime struct {
 	options          serviceImportOptions
 }
 
+// serviceImportRunE shares the command lifecycle while keeping source protocols
+// in their own clients. A nil setUpdatedAfter selects a full library import.
+func serviceImportRunE[T any](
+	name, tokenEnv, credential string,
+	newSource func(string, string, *http.Client) (T, error),
+	importSource func(context.Context, T, *client.Client, document.LanguageDetector, serviceContentFetcher, serviceImportOptions) (serviceImportStats, error),
+	setUpdatedAfter func(T, int64),
+) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+		token := serviceAPIToken(cmd, tokenEnv)
+		if token == "" {
+			return fmt.Errorf("missing %s %s; set %s or use --api-token", name, credential, tokenEnv)
+		}
+		runtime, err := newServiceImportRuntime(cmd)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := runtime.Close(); err != nil {
+				log.Warn().Err(err).Msg(name + " content crawler close error")
+			}
+		}()
+		var instanceURL string
+		if len(args) > 0 {
+			instanceURL = args[0]
+		}
+		source, err := newSource(instanceURL, token, nil)
+		if err != nil {
+			return err
+		}
+		if setUpdatedAfter != nil {
+			updatedAfter, err := latestServiceUpdated(runtime.target, strings.ToLower(name))
+			if err != nil {
+				return fmt.Errorf("failed to find the latest %s import: %w", name, err)
+			}
+			setUpdatedAfter(source, updatedAfter)
+		}
+		stats, err := importSource(cmd.Context(), source, runtime.target, runtime.languageDetector, runtime.contentFetcher, runtime.options)
+		if err != nil {
+			err = fmt.Errorf("import from %s failed: %w", name, err)
+		}
+		return finishImport(cmd, stats, err)
+	}
+}
+
 func newServiceImportRuntime(cmd *cobra.Command) (*serviceImportRuntime, error) {
 	batchSize, _ := cmd.Flags().GetInt("batch-size")
 	if batchSize < 1 || batchSize > maxImportBatchSize {

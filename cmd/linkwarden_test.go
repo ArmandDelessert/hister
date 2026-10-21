@@ -126,11 +126,11 @@ func TestImportLinkwardenPaginatesAndMapsDocuments(t *testing.T) {
 	})}
 	target := client.New("http://hister.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
 
-	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, linkwardenImportOptions{BatchSize: 2})
+	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (linkwardenImportStats{Imported: 2, Skipped: 1}) {
+	if stats != (serviceImportStats{Imported: 2, Skipped: 1}) {
 		t.Fatalf("stats = %+v, want 2 imported and 1 skipped", stats)
 	}
 	if !reflect.DeepEqual(sourceCursors, []string{"", "42"}) {
@@ -236,12 +236,12 @@ func TestImportLinkwardenDownloadsMissingURLContent(t *testing.T) {
 		target,
 		document.NewNullLanguageDetector(),
 		contentFetcher,
-		linkwardenImportOptions{BatchSize: 10},
+		serviceImportOptions{BatchSize: 10},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (linkwardenImportStats{Imported: 1}) {
+	if stats != (serviceImportStats{Imported: 1}) {
 		t.Fatalf("stats = %+v, want one imported document", stats)
 	}
 	if fetchCalls != 1 {
@@ -296,7 +296,7 @@ func TestLatestLinkwardenUpdatedConfiguresSourceFilter(t *testing.T) {
 		}
 		return jsonHTTPResponse(req, http.StatusOK, fmt.Sprintf(`{"documents":[{"updated":%d}]}`, latestUpdated)), nil
 	})}
-	updatedAfter, err := latestLinkwardenUpdated(client.New("http://hister.example", client.WithHTTPClient(targetHTTPClient)))
+	updatedAfter, err := latestServiceUpdated(client.New("http://hister.example", client.WithHTTPClient(targetHTTPClient)), linkwardenSourceMetadataValue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,14 +344,14 @@ func TestImportLinkwardenSkipsExistingNormalizedURL(t *testing.T) {
 	})}
 	target := client.New("http://hister.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
 
-	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, linkwardenImportOptions{
+	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{
 		BatchSize:    10,
 		SkipExisting: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (linkwardenImportStats{Skipped: 1}) {
+	if stats != (serviceImportStats{Skipped: 1}) {
 		t.Fatalf("stats = %+v, want one skipped document", stats)
 	}
 }
@@ -365,7 +365,7 @@ func TestImportLinkwardenRejectsRepeatedCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := client.New("http://hister.example")
-	_, err = importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, linkwardenImportOptions{BatchSize: 10})
+	_, err = importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 10})
 	if err == nil || !strings.Contains(err.Error(), "repeated pagination cursor 7") {
 		t.Fatalf("import error = %v, want repeated cursor error", err)
 	}
@@ -375,13 +375,13 @@ func TestLinkwardenAPITokenFlagOverridesEnvironment(t *testing.T) {
 	t.Setenv(linkwardenTokenEnv, "environment-token")
 	cmd := &cobra.Command{}
 	cmd.Flags().String("api-token", "", "")
-	if got := linkwardenAPIToken(cmd); got != "environment-token" {
+	if got := serviceAPIToken(cmd, linkwardenTokenEnv); got != "environment-token" {
 		t.Fatalf("API token = %q, want environment token", got)
 	}
 	if err := cmd.Flags().Set("api-token", "flag-token"); err != nil {
 		t.Fatal(err)
 	}
-	if got := linkwardenAPIToken(cmd); got != "flag-token" {
+	if got := serviceAPIToken(cmd, linkwardenTokenEnv); got != "flag-token" {
 		t.Fatalf("API token = %q, want flag token", got)
 	}
 }

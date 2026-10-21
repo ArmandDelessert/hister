@@ -62,12 +62,6 @@ type linkwardenClient struct {
 	updatedAfter int64
 }
 
-type (
-	linkwardenImportOptions  = serviceImportOptions
-	linkwardenImportStats    = serviceImportStats
-	linkwardenContentFetcher = serviceContentFetcher
-)
-
 var importLinkwardenCmd = &cobra.Command{
 	Use:   "linkwarden INSTANCE_URL",
 	Short: "Import bookmarks from Linkwarden",
@@ -83,50 +77,11 @@ The global --token flag remains the access token for the destination Hister serv
 	PreRun: func(_ *cobra.Command, _ []string) {
 		initExtractor()
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SilenceUsage = true
-		token := linkwardenAPIToken(cmd)
-		if token == "" {
-			return fmt.Errorf("missing Linkwarden API token; set %s or use --api-token", linkwardenTokenEnv)
-		}
-
-		runtime, err := newServiceImportRuntime(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := runtime.Close(); err != nil {
-				log.Warn().Err(err).Msg("Linkwarden content crawler close error")
-			}
-		}()
-		source, err := newLinkwardenClient(args[0], token, nil)
-		if err != nil {
-			return err
-		}
-
-		updatedAfter, err := latestLinkwardenUpdated(runtime.target)
-		if err != nil {
-			return fmt.Errorf("failed to find the latest Linkwarden import: %w", err)
-		}
-		source.updatedAfter = updatedAfter
-
-		stats, err := importLinkwarden(
-			cmd.Context(),
-			source,
-			runtime.target,
-			runtime.languageDetector,
-			runtime.contentFetcher,
-			runtime.options,
-		)
-		if err != nil {
-			err = fmt.Errorf("import from Linkwarden failed: %w", err)
-		}
-		return finishImport(cmd, stats, err)
-	},
-}
-
-func linkwardenAPIToken(cmd *cobra.Command) string {
-	return serviceAPIToken(cmd, linkwardenTokenEnv)
+	RunE: serviceImportRunE(
+		"Linkwarden", linkwardenTokenEnv, "API token",
+		newLinkwardenClient, importLinkwarden,
+		func(source *linkwardenClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
+	),
 }
 
 func newLinkwardenClient(instanceURL, token string, httpClient *http.Client) (*linkwardenClient, error) {
@@ -161,18 +116,14 @@ func (c *linkwardenClient) search(ctx context.Context, cursor *int) (*linkwarden
 	return response.Data, nil
 }
 
-func latestLinkwardenUpdated(target *client.Client) (int64, error) {
-	return latestServiceUpdated(target, linkwardenSourceMetadataValue)
-}
-
 func importLinkwarden(
 	ctx context.Context,
 	source *linkwardenClient,
 	target *client.Client,
 	languageDetector document.LanguageDetector,
-	contentFetcher linkwardenContentFetcher,
-	options linkwardenImportOptions,
-) (linkwardenImportStats, error) {
+	contentFetcher serviceContentFetcher,
+	options serviceImportOptions,
+) (serviceImportStats, error) {
 	buffer, err := newServiceImportBuffer(
 		linkwardenSourceMetadataValue,
 		target,
@@ -181,7 +132,7 @@ func importLinkwarden(
 		options,
 	)
 	if err != nil {
-		return linkwardenImportStats{}, err
+		return serviceImportStats{}, err
 	}
 	var cursor *int
 	seenCursors := make(map[int]struct{})

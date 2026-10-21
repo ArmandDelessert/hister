@@ -7,6 +7,165 @@ test.beforeEach(async ({ page }) => {
   await mockAPI(page);
 });
 
+test.describe('shared preview navigation', () => {
+  const documents = [
+    { id: 'document-1', url: original, title: preview.title, added: preview.added },
+    { id: 'document-2', url: original, title: 'Another saved copy', added: preview.added },
+  ];
+  const pages = [
+    { path: '/?q=article', action: 'Preview' },
+    { path: '/history?filter=article', action: 'Preview entry' },
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    await mockAPI(page, { config: { hotkeys: { v: 'view_result_popup' } } });
+    await page.routeWebSocket('**/search', (socket) => {
+      socket.onMessage((message) => {
+        const results = JSON.parse(String(message)).text === 'missing' ? [] : documents;
+        socket.send(JSON.stringify({ documents: results, total: results.length }));
+      });
+    });
+    await page.route('**/api/history?*', (route) => route.fulfill({ json: { documents } }));
+    await page.route('**/api/history/timeline?*', (route) =>
+      route.fulfill({ json: { days: [], older: { key: 'older', to: 0, count: 0 }, months: [] } }),
+    );
+    await page.route('**/api/versions?*', (route) =>
+      route.fulfill({
+        json: [{ id: 7, created_at: '2023-11-14T22:13:20Z', text_diff: '+Old content' }],
+      }),
+    );
+    await page.route('**/api/preview?*', (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      const document = documents.find((item) => item.id === params.get('document_id'))!;
+      return route.fulfill({
+        json: {
+          ...preview,
+          title: document.title,
+          ...(params.get('version') === '7'
+            ? {
+                content: '<p>Archived content</p>',
+                version_id: 7,
+                version_created_at: '2023-11-14T22:13:20Z',
+              }
+            : {}),
+        },
+      });
+    });
+  });
+
+  for (const source of pages) {
+    test(`${source.path} preserves document and version through fullscreen and browser history`, async ({
+      page,
+      isMobile,
+    }) => {
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      await page.goto(source.path);
+      const rows = page.locator('[data-result]');
+      await expect(rows).toHaveCount(2);
+      if (isMobile)
+        await rows
+          .first()
+          .getByRole('link', { name: source.action, exact: true })
+          .or(rows.first().getByRole('button', { name: source.action, exact: true }))
+          .click();
+      await expect(page.getByRole('heading', { name: preview.title, exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Show document details', exact: true }).click();
+      await page.getByRole('button', { name: '1 previous version', exact: true }).click();
+      await page.getByRole('button', { name: 'show this version', exact: true }).click();
+      await expect(page.getByText('Archived content', { exact: true })).toBeVisible();
+      if (!isMobile) {
+        await expect(page).toHaveURL(new RegExp(`${source.path.replace(/[?]/g, '\\?')}$`));
+        await page.getByRole('button', { name: 'Enter fullscreen', exact: true }).click();
+      }
+      const archivedURL = page.url();
+      expect(new URL(archivedURL).pathname).toBe('/preview');
+      expect(new URL(archivedURL).searchParams.get('document_id')).toBe('document-1');
+      expect(new URL(archivedURL).searchParams.get('version')).toBe('7');
+      await expect(page.getByText('Archived content', { exact: true })).toBeVisible();
+
+      await page.goBack();
+      await expect(page).toHaveURL(new URL(source.path, archivedURL).href);
+      await expect(rows).toHaveCount(2);
+      await page.goForward();
+      await expect(page).toHaveURL(archivedURL);
+      await expect(page.getByText('Archived content', { exact: true })).toBeVisible();
+      if (!isMobile) {
+        await page.keyboard.press('v');
+        await expect(page).toHaveURL(new URL(source.path, archivedURL).href);
+        await expect(page.getByText('Archived content', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Enter fullscreen', exact: true }).click();
+        await page.keyboard.press('ArrowDown');
+        await expect(
+          page.getByRole('heading', { name: documents[1].title, exact: true }),
+        ).toBeVisible();
+        await expect(page).toHaveURL(/document_id=document-2/);
+        expect(new URL(page.url()).searchParams.has('version')).toBe(false);
+      }
+      await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+      await expect(page).toHaveURL(new URL(source.path, archivedURL).href);
+      await expect(rows).toHaveCount(2);
+      await expect(page.locator('.preview-panel')).toHaveCount(0);
+      await page.reload();
+      await expect(rows).toHaveCount(2);
+      await expect(page.locator('.preview-panel')).toHaveCount(0);
+      await page.keyboard.press('v');
+      await expect(page.getByRole('heading', { name: preview.title, exact: true })).toBeVisible();
+      if (isMobile) {
+        await page.keyboard.press('v');
+        await expect(page).toHaveURL(new URL(source.path, archivedURL).href);
+        await expect(page.locator('.preview-panel')).toHaveCount(0);
+      } else {
+        await page.keyboard.press('v');
+        await expect(
+          page.getByRole('button', { name: 'Exit fullscreen', exact: true }),
+        ).toBeVisible();
+      }
+      if (source.path.startsWith('/?')) {
+        if (isMobile) await page.keyboard.press('v');
+        await page.getByRole('searchbox').fill('missing');
+        await expect(page).toHaveURL(/\/\?q=missing$/);
+        await expect(rows).toHaveCount(0);
+        await expect(page.locator('.preview-panel')).toHaveCount(0);
+      }
+      expect(errors).toEqual([]);
+    });
+  }
+
+  test('panel width is shared while open preferences stay separate', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Split panels are only available on desktop.');
+    await page.goto(pages[0].path);
+    const separator = page.getByRole('separator', { name: 'Resize preview panel' });
+    const box = (await separator.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 100, box.y + box.height / 2);
+    await page.mouse.up();
+    const width = await page.evaluate(() => localStorage.getItem('hister-panel-width'));
+    expect(Number(width)).toBeLessThan(50);
+    await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+    await page.goto(pages[1].path);
+    await expect(page.locator('.preview-panel')).toBeVisible();
+    const panelStyle = await page.locator('.preview-panel').locator('..').getAttribute('style');
+    expect(Number(panelStyle?.match(/[\d.]+(?=%)/)?.[0])).toBeCloseTo(Number(width), 3);
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(page.locator('.preview-panel')).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator('.preview-panel')).toBeVisible();
+    await page.goto(pages[0].path);
+    await expect(page.locator('[data-result]')).toHaveCount(2);
+    await expect(page.locator('.preview-panel')).toHaveCount(0);
+    await page
+      .locator('[data-result]')
+      .first()
+      .getByRole('link', { name: 'Preview', exact: true })
+      .click();
+    await expect(page.locator('.preview-panel')).toBeVisible();
+    await page.reload();
+    await expect(page.locator('.preview-panel')).toBeVisible();
+  });
+});
+
 test('the compact toolbar keeps filters and sorting visible and secondary actions accessible', async ({
   page,
   isMobile,

@@ -1,12 +1,6 @@
 <script lang="ts">
-  import {
-    buildPreviewUrl,
-    pushPreviewHistory,
-    replacePreviewHistory,
-    withSkipUrl,
-    createResizeHandler,
-  } from '#lib/preview.js';
-  import { onMount, untrack } from 'svelte';
+  import { buildPreviewUrl, PreviewState } from '#lib/preview.svelte.js';
+  import { onMount } from 'svelte';
   import { fetchConfig, apiFetch, getUserId } from '#lib/api.js';
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
@@ -95,30 +89,10 @@
   let openResultsOnNewTab = $state(false);
   let highlightIdx = $state(0);
 
-  // Preview state
-  let isDesktop = $state(false);
-  let panelUrl = $state('');
-  let panelDocumentId = $state('');
-  let panelHintTitle = $state('');
-  let panelViewingVersion = $state<number | null>(null);
-  let panelOpen = $state(
-    typeof localStorage !== 'undefined'
-      ? localStorage.getItem('hister-history-panel-open') !== 'false'
-      : true,
-  );
-  let previewFullscreen = $state(false);
   let disablePreviews = $state(false);
-  const skipUrl = { value: false };
-  let panelWidthPct = $state(parseFloat(localStorage.getItem('hister-panel-width') ?? '') || 50);
-  let splitContainerEl: HTMLDivElement | undefined = $state();
-  const startPanelResize = createResizeHandler({
-    getContainer: () => splitContainerEl,
-    onWidth: (pct) => {
-      panelWidthPct = pct;
-    },
-    onDone: (pct) => {
-      localStorage.setItem('hister-panel-width', String(pct));
-    },
+  const previewState = new PreviewState({
+    storageKey: 'hister-history-panel-open',
+    onReturn: pushHistoryPageHistory,
   });
 
   // --- History state helpers ---
@@ -141,82 +115,17 @@
 
   $effect(() => {
     const currentFilter = filter;
-    if (skipUrl.value || previewFullscreen) return;
+    if (previewState.skipUrl || previewState.fullscreen) return;
     replaceHistoryPageHistory(currentFilter);
-  });
-
-  $effect(() => {
-    const mq = window.matchMedia('(min-width: 1280px)');
-    isDesktop = mq.matches;
-    const handler = (e: MediaQueryListEvent) => {
-      isDesktop = e.matches;
-    };
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
   });
 
   function historyDocumentId(item: HistoryItem): string {
     return typeof item.id === 'string' ? item.id : '';
   }
 
-  function openPreview(url: string, title: string, documentId = '') {
-    if (isDesktop) {
-      if (!panelOpen) {
-        panelOpen = true;
-        localStorage.setItem('hister-history-panel-open', 'true');
-      }
-      panelViewingVersion = null;
-      panelDocumentId = documentId;
-      panelHintTitle = title;
-      panelUrl = url;
-      return;
-    }
-    panelViewingVersion = null;
-    panelDocumentId = documentId;
-    panelUrl = url;
-    panelHintTitle = title;
-    previewFullscreen = true;
-    withSkipUrl(skipUrl, () => pushPreviewHistory(url, title, null, documentId));
-  }
-
-  function enterFullscreen() {
-    previewFullscreen = true;
-    withSkipUrl(skipUrl, () =>
-      pushPreviewHistory(panelUrl, panelHintTitle, panelViewingVersion, panelDocumentId),
-    );
-  }
-
-  function exitFullscreen() {
-    previewFullscreen = false;
-    withSkipUrl(skipUrl, () => pushHistoryPageHistory());
-  }
-
-  function closePanelAndFullscreen() {
-    previewFullscreen = false;
-    panelOpen = false;
-    localStorage.setItem('hister-history-panel-open', 'false');
-    withSkipUrl(skipUrl, () => pushHistoryPageHistory());
-  }
-
   function handlePopState(event: PopStateEvent) {
-    const state = event.state as {
-      type?: string;
-      id?: string;
-      documentId?: string;
-      title?: string;
-      versionId?: number | null;
-    } | null;
-    if (state?.type === 'preview') {
-      panelUrl = state.id || '';
-      panelDocumentId = state.documentId || '';
-      panelHintTitle = state.title || '';
-      panelOpen = true;
-      previewFullscreen = true;
-      panelViewingVersion = state.versionId ?? null;
-      return;
-    }
-    previewFullscreen = false;
-    withSkipUrl(skipUrl, () => {
+    if (previewState.restore(event)) return;
+    previewState.withSkipUrl(() => {
       filter = new URLSearchParams(window.location.search).get('filter') ?? '';
     });
   }
@@ -619,7 +528,7 @@
     if (!items.length) return;
     highlightIdx = (highlightIdx + n + items.length) % items.length;
     const results = document.querySelectorAll('[data-result]');
-    scrollTo(results[highlightIdx]);
+    if (results[highlightIdx]) scrollTo(results[highlightIdx]);
   }
 
   function selectNextResult(e?: KeyboardEvent) {
@@ -651,21 +560,9 @@
     if (e) e.preventDefault();
     const item = items[highlightIdx];
     if (!item) return;
-    if (isDesktop) {
-      if (previewFullscreen) {
-        exitFullscreen();
-      } else if (panelOpen) {
-        enterFullscreen();
-      } else {
-        openPreview(item.url, item.title || item.url, historyDocumentId(item));
-      }
-    } else {
-      if (previewFullscreen) {
-        closePanelAndFullscreen();
-      } else {
-        openPreview(item.url, item.title || item.url, historyDocumentId(item));
-      }
-    }
+    previewState.toggle(() =>
+      previewState.open(item.url, item.title || item.url, historyDocumentId(item)),
+    );
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -708,22 +605,8 @@
   $effect(() => {
     const idx = highlightIdx;
     items;
-    const isFullscreen = previewFullscreen;
-    if (!isDesktop || !items.length || (!panelOpen && !isFullscreen)) return;
     const item = items[idx];
-    if (!item) return;
-    const documentId = historyDocumentId(item);
-    if (untrack(() => panelUrl) === item.url && untrack(() => panelDocumentId) === documentId)
-      return;
-    panelViewingVersion = null;
-    panelDocumentId = documentId;
-    panelHintTitle = item.title || item.url;
-    panelUrl = item.url;
-    if (isFullscreen) {
-      withSkipUrl(skipUrl, () =>
-        replacePreviewHistory(item.url, item.title || item.url, null, documentId),
-      );
-    }
+    if (item) previewState.syncSelection(item.url, item.title || item.url, historyDocumentId(item));
   });
 </script>
 
@@ -797,7 +680,7 @@
 {:else}
   <div class="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
     <!-- Timeline sidebar: hidden on mobile, shown on md+ -->
-    {#if !previewFullscreen}
+    {#if !previewState.fullscreen}
       <ScrollArea
         class="border-brutal-border bg-page-bg hidden w-72 shrink-0 border-r-[3px] md:block"
       >
@@ -909,7 +792,7 @@
     {/if}
 
     <!-- Mobile timeline: horizontal scrollable filter chips -->
-    {#if !previewFullscreen}
+    {#if !previewState.fullscreen}
       <div class="border-brutal-border bg-page-bg shrink-0 border-b-[3px] px-3 py-2 md:hidden">
         <div class="flex items-center gap-2 overflow-x-auto">
           <span class="text-text-brand-muted flex shrink-0 items-center">
@@ -963,8 +846,8 @@
       </div>
     {/if}
 
-    <div class="flex min-h-0 flex-1 overflow-hidden" bind:this={splitContainerEl}>
-      {#if !previewFullscreen}
+    <div class="flex min-h-0 flex-1 overflow-hidden" bind:this={previewState.container}>
+      {#if !previewState.fullscreen}
         <ScrollArea
           orientation="vertical"
           class="min-h-0 max-w-full min-w-0 flex-1 overflow-x-hidden"
@@ -1053,7 +936,7 @@
                             title="Preview"
                             onclick={() => {
                               highlightIdx = flatIdx;
-                              openPreview(
+                              previewState.open(
                                 item.url,
                                 item.title || item.url,
                                 historyDocumentId(item),
@@ -1091,49 +974,39 @@
 
       <!-- Preview panel: fullscreen (both mobile and desktop) or split-pane (desktop only) -->
       {#if !disablePreviews}
-        {#if previewFullscreen}
+        {#if previewState.fullscreen}
           <PreviewPanel
-            url={panelUrl}
-            documentId={panelDocumentId}
-            hintTitle={panelHintTitle}
+            url={previewState.url}
+            documentId={previewState.documentId}
+            hintTitle={previewState.title}
             fullscreen={true}
-            onclose={closePanelAndFullscreen}
-            onfullscreentoggle={isDesktop ? exitFullscreen : undefined}
-            initialViewingVersionId={panelViewingVersion}
-            onviewingversionchange={(id) => {
-              panelViewingVersion = id;
-              withSkipUrl(skipUrl, () =>
-                replacePreviewHistory(panelUrl, panelHintTitle, id, panelDocumentId),
-              );
-            }}
+            onclose={previewState.close}
+            onfullscreentoggle={previewState.isDesktop ? previewState.exitFullscreen : undefined}
+            initialViewingVersionId={previewState.versionId}
+            onviewingversionchange={previewState.setVersion}
           />
-        {:else if panelOpen && isDesktop}
+        {:else if previewState.panelOpen && previewState.isDesktop}
           <!-- Drag handle to resize the split-screen panel -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div
             class="hover:bg-hister-indigo/40 w-1.5 shrink-0 cursor-col-resize bg-transparent transition-colors"
-            onmousedown={startPanelResize}
+            onmousedown={previewState.startResize}
             role="separator"
             aria-label="Resize preview panel"
           ></div>
           <div
-            style="width: min({panelWidthPct}%, max(0px, calc(100% - 28rem))); flex: none;"
+            style="width: min({previewState.widthPct}%, max(0px, calc(100% - 28rem))); flex: none;"
             class="flex min-h-0 overflow-hidden"
           >
             <PreviewPanel
-              url={panelUrl}
-              documentId={panelDocumentId}
-              hintTitle={panelHintTitle}
+              url={previewState.url}
+              documentId={previewState.documentId}
+              hintTitle={previewState.title}
               fullscreen={false}
-              onclose={() => {
-                panelOpen = false;
-                localStorage.setItem('hister-history-panel-open', 'false');
-              }}
-              onfullscreentoggle={enterFullscreen}
-              initialViewingVersionId={panelViewingVersion}
-              onviewingversionchange={(id) => {
-                panelViewingVersion = id;
-              }}
+              onclose={previewState.close}
+              onfullscreentoggle={previewState.enterFullscreen}
+              initialViewingVersionId={previewState.versionId}
+              onviewingversionchange={previewState.setVersion}
             />
           </div>
         {/if}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fetchConfig, apiFetch } from '#lib/api.js';
-  import { buildPreviewUrl } from '#lib/preview.js';
+  import { buildPreviewUrl } from '#lib/preview.svelte.js';
   import { redirectToAuth } from '#lib/auth-navigation.js';
   import { Input } from '@hister/components/ui/input';
   import { Textarea } from '@hister/components/ui/textarea';

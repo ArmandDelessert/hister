@@ -4,7 +4,7 @@
   import { Button } from '@hister/components/ui/button';
   import { ArrowLeft } from '@lucide/svelte';
   import PreviewPanel from '#lib/components/PreviewPanel.svelte';
-  import { replacePreviewHistory } from '#lib/preview.js';
+  import { replacePreviewHistory } from '#lib/preview.svelte.js';
   import { resolve } from '$app/paths';
 
   let docUrl = $state('');

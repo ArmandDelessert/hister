@@ -9,7 +9,7 @@
     buildPreviewUrl,
     getStoredPreviewDetailsOpen,
     setStoredPreviewDetailsOpen,
-  } from '#lib/preview.js';
+  } from '#lib/preview.svelte.js';
   import { formatTimestamp, formatMetaDate } from '#lib/search.js';
   import type {
     DocumentPreviewResponse,

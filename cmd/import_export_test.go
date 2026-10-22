@@ -481,6 +481,83 @@ func TestImportHTMLFileWithoutSourceURLUsesAddEndpoint(t *testing.T) {
 	}
 }
 
+func TestImportFileSizeLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name, content string
+	}{
+		{name: "note.txt", content: "plain text"},
+		{name: "page.html", content: `<html><head><link rel="canonical" href="https://example.com/page"></head><body>Saved page</body></html>`},
+		{name: "snapshot.html", content: `<html><title>Notes</title><body>Saved notes</body></html>`},
+	} {
+		for _, oversized := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/oversized=%t", tc.name, oversized), func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), tc.name)
+				if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				requests := 0
+				c := client.New("http://hister.test", client.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					requests++
+					if r.URL.Path == "/api/batch" {
+						return jsonHTTPResponse(r, http.StatusOK, `{"results":[{"status":201}]}`), nil
+					}
+					return jsonHTTPResponse(r, http.StatusCreated, ""), nil
+				})}), client.WithMaxBatchBodyBytes(40<<20))
+				limit := int64(len(tc.content))
+				if oversized {
+					limit--
+				}
+				imported, skipped, failed := newFileImporter(c, config.Indexer{}).importFile(context.Background(), importFileInput{Path: path}, fileImportOptions{
+					Source: "laptop", MaxFileSize: limit,
+				})
+				if oversized {
+					if imported != 0 || skipped != 0 || failed != 1 || requests != 0 {
+						t.Fatalf("oversized file: imported=%d skipped=%d failed=%d requests=%d", imported, skipped, failed, requests)
+					}
+				} else if imported != 1 || skipped != 0 || failed != 0 || requests != 1 {
+					t.Fatalf("file at size limit: imported=%d skipped=%d failed=%d requests=%d", imported, skipped, failed, requests)
+				}
+			})
+		}
+	}
+}
+
+func TestIsHisterJSONExportBoundsInspection(t *testing.T) {
+	const maxProbe = maxJSONExportLineSize + 2
+	for _, prefix := range []string{"", `[{"text":"`} {
+		t.Run(fmt.Sprintf("prefix=%q", prefix), func(t *testing.T) {
+			reader := io.MultiReader(strings.NewReader(prefix), io.LimitReader(exportProbePadding{}, maxProbe+4096))
+			counted := &countingExportProbe{Reader: reader}
+			if isHisterJSONExportReader(counted) {
+				t.Fatal("incomplete oversized input was recognized as an export")
+			}
+			if counted.bytes > maxProbe {
+				t.Fatalf("inspection read %d bytes, want at most %d", counted.bytes, maxProbe)
+			}
+		})
+	}
+}
+
+type exportProbePadding struct{}
+
+func (exportProbePadding) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = ' '
+	}
+	return len(p), nil
+}
+
+type countingExportProbe struct {
+	io.Reader
+	bytes int
+}
+
+func (r *countingExportProbe) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	r.bytes += n
+	return n, err
+}
+
 func TestExpandImportInputsUsesWatchedDirectoryRules(t *testing.T) {
 	root := t.TempDir()
 	for name, content := range map[string]string{

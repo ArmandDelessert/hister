@@ -25,6 +25,41 @@ type importFileInput struct {
 	Label string
 }
 
+var errImportNotRegularFile = errors.New("input is not a regular file")
+
+func readImportFile(path string, maxFileSize int64) ([]byte, os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, errImportNotRegularFile
+	}
+	if info.Size() > maxFileSize {
+		return nil, nil, fileSnapshotSizeError(info.Size(), maxFileSize)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = file.Close() }()
+	info, err = file.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, errImportNotRegularFile
+	}
+	if info.Size() > maxFileSize {
+		return nil, nil, fileSnapshotSizeError(info.Size(), maxFileSize)
+	}
+	content, err := files.ReadAllBounded(file, maxFileSize)
+	if errors.Is(err, files.ErrFileTooLarge) {
+		return nil, nil, fmt.Errorf("%w: limit from indexer.max_file_size_mb is %d bytes", err, maxFileSize)
+	}
+	return content, info, err
+}
+
 type fileImporter struct {
 	client       *client.Client
 	fileHandlers *indexer.FileHandlers
@@ -311,12 +346,7 @@ func (i *fileImporter) importRemoteFilePath(
 	skip bool,
 	labelOverride documentLabelOverride,
 ) (imported, skipped, errCount int) {
-	info, err := os.Stat(input.Path)
-	if err != nil {
-		log.Warn().Err(err).Str("file", input.Path).Msg("Failed to inspect file")
-		return 0, 0, 1
-	}
-	content, err := os.ReadFile(input.Path)
+	content, info, err := readImportFile(input.Path, maxFileSize)
 	if err != nil {
 		log.Warn().Err(err).Str("file", input.Path).Msg("Failed to read file")
 		return 0, 0, 1

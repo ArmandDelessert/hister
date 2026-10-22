@@ -40,7 +40,7 @@ func (orgFileType) Prepare(_ context.Context, d *document.Document, orgData []by
 // AddOrg renders Org files to HTML, stores it in d.HTML, and stores rendered
 // plain text in d.Text for full-text indexing.
 func (i *Indexer) AddOrg(d *document.Document, orgData []byte) error {
-	if err := (orgFileType{}).Prepare(context.Background(), d, orgData); err != nil {
+	if err := i.fileHandlers.Prepare(context.Background(), "document.org", d, orgData); err != nil {
 		return err
 	}
 	return i.Add(d)

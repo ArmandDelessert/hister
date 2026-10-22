@@ -406,7 +406,9 @@ func isHisterJSONExport(inputFile string) (bool, error) {
 }
 
 func isHisterJSONExportReader(reader io.Reader) bool {
-	decoder := json.NewDecoder(reader)
+	// Export documents already have a line size limit. Inspect at most one
+	// such document plus its opening array delimiter and newline.
+	decoder := json.NewDecoder(io.LimitReader(reader, maxJSONExportLineSize+2))
 	token, err := decoder.Token()
 	if err != nil {
 		return false
@@ -587,7 +589,7 @@ func (i *fileImporter) importHTMLFile(
 	skip bool,
 	labelOverride documentLabelOverride,
 ) (imported, skipped, errCount int) {
-	data, err := os.ReadFile(input.Path)
+	data, info, err := readImportFile(input.Path, maxFileSize)
 	if err != nil {
 		log.Warn().Err(err).Str("file", input.Path).Msg("Failed to read HTML file, skipping")
 		return 0, 0, 1
@@ -595,11 +597,6 @@ func (i *fileImporter) importHTMLFile(
 
 	d, err := document.FromHTML(string(data))
 	if errors.Is(err, document.ErrNoURL) {
-		info, statErr := os.Stat(input.Path)
-		if statErr != nil {
-			log.Warn().Err(statErr).Str("file", input.Path).Msg("Failed to inspect HTML file")
-			return 0, 0, 1
-		}
 		return i.importRemoteFile(ctx, input, data, info, source, maxFileSize, skip, labelOverride)
 	}
 	if err != nil {

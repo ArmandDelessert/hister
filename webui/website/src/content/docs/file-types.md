@@ -75,6 +75,10 @@ Other directory rules still apply:
 | `indexer.max_file_size_mb`   | Files above the configured size limit are skipped.                                        |
 | `sensitive_content_patterns` | Matching files are rejected unless the indexing path explicitly allows sensitive content. |
 
+The file size limit also applies to saved HTML pages with source URLs. Files that grow beyond the limit while being read are rejected.
+
+For watched files and imported snapshots, each extracted text, title, and HTML preview is limited to 32 MiB. Plain text, HTML, Markdown, and Org source files also have a 32 MiB limit. DOCX files may contain at most 64 MiB of uncompressed content in total, including images. These extraction limits still apply when you increase `indexer.max_file_size_mb`.
+
 ## Import Formats
 
 The `hister import file` command accepts these file formats:

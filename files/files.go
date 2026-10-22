@@ -5,7 +5,9 @@ package files
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,32 @@ import (
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/model"
 )
+
+var ErrFileTooLarge = errors.New("file too large")
+
+// ReadAllBounded reads at most limit bytes plus one byte to detect overflow.
+// It returns no partial content when the limit is exceeded or a read fails.
+func ReadAllBounded(reader io.Reader, limit int64) ([]byte, error) {
+	if limit < 0 {
+		return nil, errors.New("read limit must not be negative")
+	}
+	limited := &io.LimitedReader{R: reader, N: limit}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if limited.N == 0 {
+		var extra [1]byte
+		n, err := io.ReadFull(reader, extra[:])
+		if n > 0 {
+			return nil, fmt.Errorf("%w: limit is %d bytes", ErrFileTooLarge, limit)
+		}
+		if err != io.EOF {
+			return nil, err
+		}
+	}
+	return data, nil
+}
 
 func ExpandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {

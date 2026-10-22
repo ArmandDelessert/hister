@@ -305,13 +305,14 @@ func TestIndexFileDirectoryBoundary(t *testing.T) {
 			if tc.link != "" {
 				linkTarget := target
 				path = filepath.Join(root, "linked.txt")
-				if tc.link == "relative" {
+				switch tc.link {
+				case "relative":
 					var err error
 					linkTarget, err = filepath.Rel(root, target)
 					if err != nil {
 						t.Fatal(err)
 					}
-				} else if tc.link == "parent" {
+				case "parent":
 					linkTarget = targetDir
 					path = filepath.Join(root, "linked")
 				}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
@@ -68,7 +67,7 @@ func (i *Indexer) AddPDFContext(ctx context.Context, d *document.Document, pdfDa
 	return i.AddContext(ctx, d, options...)
 }
 
-const maxExternalPDFTextSize = 32 << 20
+const maxExternalPDFTextSize = maxExtractedContentSize
 
 var errPDFOutputTooLarge = errors.New("external PDF parser output exceeds 32 MiB")
 
@@ -137,14 +136,16 @@ func extractPDFText(pdfData []byte) (text string, err error) {
 		return "", fmt.Errorf("open pdf: %w", err)
 	}
 
-	plainText, err := pr.GetPlainText()
-	if err != nil {
-		return "", fmt.Errorf("read pdf text: %w", err)
-	}
-
 	var b strings.Builder
-	if _, err := io.Copy(&b, plainText); err != nil {
-		return "", fmt.Errorf("read pdf text stream: %w", err)
+	for page := 1; page <= pr.NumPage(); page++ {
+		text, err := pr.Page(page).GetPlainText(nil)
+		if err != nil {
+			return "", fmt.Errorf("read pdf page %d: %w", page, err)
+		}
+		if len(text) > maxExtractedContentSize-b.Len() {
+			return "", ErrExtractedContentTooLarge
+		}
+		b.WriteString(text)
 	}
 	return b.String(), nil
 }

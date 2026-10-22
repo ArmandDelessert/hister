@@ -1,12 +1,57 @@
 package files
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"path/filepath"
+	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/testutil"
 )
+
+func TestReadAllBounded(t *testing.T) {
+	for _, tc := range []struct {
+		name, content string
+		limit         int64
+		tooLarge      bool
+	}{
+		{name: "empty", limit: 0},
+		{name: "zero limit", content: "x", limit: 0, tooLarge: true},
+		{name: "below limit", content: "abc", limit: 4},
+		{name: "exact limit", content: "abc", limit: 3},
+		{name: "above limit", content: "abcde", limit: 3, tooLarge: true},
+		{name: "maximum limit", content: "abc", limit: 1<<63 - 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := strings.NewReader(tc.content)
+			data, err := ReadAllBounded(reader, tc.limit)
+			if tc.tooLarge {
+				if !errors.Is(err, ErrFileTooLarge) || data != nil {
+					t.Fatalf("oversized read returned %q, %v", data, err)
+				}
+				if read := len(tc.content) - reader.Len(); int64(read) != tc.limit+1 {
+					t.Fatalf("read %d bytes, want only %d", read, tc.limit+1)
+				}
+			} else if err != nil || string(data) != tc.content {
+				t.Fatalf("read returned %q, %v", data, err)
+			}
+		})
+	}
+	for _, limit := range []int64{3, 4} {
+		t.Run(fmt.Sprintf("read error with limit %d", limit), func(t *testing.T) {
+			want := errors.New("read failure")
+			reader := io.MultiReader(strings.NewReader("abc"), iotest.ErrReader(want))
+			data, err := ReadAllBounded(reader, limit)
+			if !errors.Is(err, want) || data != nil {
+				t.Fatalf("failed read returned %q, %v", data, err)
+			}
+		})
+	}
+}
 
 func TestHasPathPrefix(t *testing.T) {
 	root := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)

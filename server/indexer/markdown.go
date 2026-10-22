@@ -36,7 +36,7 @@ func (markdownFileType) Prepare(_ context.Context, d *document.Document, mdData 
 // AddMarkdown renders mdData to HTML, stores it in d.HTML, and stores rendered
 // plain text in d.Text for full-text indexing.
 func (i *Indexer) AddMarkdown(d *document.Document, mdData []byte) error {
-	if err := (markdownFileType{}).Prepare(context.Background(), d, mdData); err != nil {
+	if err := i.fileHandlers.Prepare(context.Background(), "document.md", d, mdData); err != nil {
 		return err
 	}
 	return i.Add(d)

@@ -2,6 +2,8 @@ package indexer
 
 import (
 	"context"
+	"errors"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,6 +19,10 @@ type fileTypeHandler interface {
 }
 
 var defaultFileHandlers = NewFileHandlers(config.Indexer{})
+
+const maxExtractedContentSize = 32 << 20
+
+var ErrExtractedContentTooLarge = errors.New("extracted content exceeds 32 MiB")
 
 // FileHandlers prepares file contents using independently configured handlers.
 type FileHandlers struct {
@@ -46,7 +52,23 @@ func (h *FileHandlers) Prepare(ctx context.Context, path string, d *document.Doc
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return h.forPath(path).Prepare(ctx, d, content)
+	handler := h.forPath(path)
+	switch handler.(type) {
+	case plainTextFileType, htmlFileType, markdownFileType, orgFileType:
+		if len(content) > maxExtractedContentSize {
+			return ErrExtractedContentTooLarge
+		}
+	}
+	prepared := *d
+	prepared.Metadata = maps.Clone(d.Metadata)
+	if err := handler.Prepare(ctx, &prepared, content); err != nil {
+		return err
+	}
+	if len(prepared.Text) > maxExtractedContentSize || len(prepared.HTML) > maxExtractedContentSize || len(prepared.Title) > maxExtractedContentSize {
+		return ErrExtractedContentTooLarge
+	}
+	*d = prepared
+	return nil
 }
 
 // PrepareFileContent extracts indexable fields with the default handlers.

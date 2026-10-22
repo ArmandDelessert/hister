@@ -164,30 +164,12 @@ func (i *fileImporter) importWatchedFile(ctx context.Context, input importFileIn
 		log.Warn().Str("file", input.Path).Msg("Watch mode skips export archives")
 		return true, nil
 	}
-	info, err := os.Stat(input.Path)
-	if errors.Is(err, os.ErrNotExist) {
+	content, info, err := readImportFile(input.Path, opts.MaxFileSize)
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, errImportNotRegularFile) {
 		return true, nil
 	}
 	if err != nil {
 		return false, err
-	}
-	if !info.Mode().IsRegular() {
-		return true, nil
-	}
-	if info.Size() > opts.MaxFileSize {
-		return false, fileSnapshotSizeError(info.Size(), opts.MaxFileSize)
-	}
-	f, err := os.Open(input.Path)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = f.Close() }()
-	content, err := io.ReadAll(io.LimitReader(f, opts.MaxFileSize+1))
-	if err != nil {
-		return false, err
-	}
-	if int64(len(content)) > opts.MaxFileSize {
-		return false, fileSnapshotSizeError(max(info.Size(), int64(len(content))), opts.MaxFileSize)
 	}
 	if ext == ".json" && isHisterJSONExportReader(bytes.NewReader(content)) {
 		log.Warn().Str("file", input.Path).Msg("Watch mode skips Hister exports")

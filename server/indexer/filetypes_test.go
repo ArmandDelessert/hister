@@ -341,3 +341,73 @@ func TestPrepareFileContentRejectsInvalidContent(t *testing.T) {
 		}
 	})
 }
+
+func TestPrepareFileContentLimitsText(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, content string
+		tooLarge            bool
+	}{
+		{name: "text at limit", path: "large.txt", content: strings.Repeat("x", 32<<20)},
+		{name: "text above limit", path: "large.txt", content: strings.Repeat("x", (32<<20)+1), tooLarge: true},
+		{name: "expanded Markdown", path: "large.md", content: strings.Repeat("&", 7<<20), tooLarge: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &document.Document{Title: "Original title", Text: "Original text", Metadata: map[string]any{"source": "test"}}
+			err := PrepareFileContent(tc.path, d, []byte(tc.content))
+			if tc.tooLarge {
+				if !errors.Is(err, ErrExtractedContentTooLarge) {
+					t.Fatalf("oversized extracted content error = %v", err)
+				}
+				if d.Text != "Original text" || d.Title != "Original title" || d.HTML != "" || len(d.Metadata) != 1 || d.Metadata["source"] != "test" {
+					t.Fatal("failed extraction changed the document")
+				}
+			} else if err != nil || d.Text != tc.content {
+				t.Fatalf("text at limit was rejected or truncated: %v", err)
+			}
+		})
+	}
+}
+
+func TestExtractPDFTextLimitsOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name, text string
+		pages      int
+		tooLarge   bool
+	}{
+		{name: "small", text: "Hello", pages: 2},
+		{name: "at limit", text: strings.Repeat("x", (1<<20)-1), pages: 32},
+		{name: "large", text: strings.Repeat("x", 1<<20), pages: 33, tooLarge: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream := "BT /F1 12 Tf (" + tc.text + ") Tj ET"
+			objects := []string{
+				"<< /Type /Catalog /Pages 2 0 R >>",
+				fmt.Sprintf("<< /Type /Pages /Kids [%s] /Count %d >>", strings.Repeat("3 0 R ", tc.pages), tc.pages),
+				"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+				"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+				fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream),
+			}
+			var data strings.Builder
+			data.WriteString("%PDF-1.4\n")
+			offsets := make([]int, len(objects))
+			for i, object := range objects {
+				offsets[i] = data.Len()
+				fmt.Fprintf(&data, "%d 0 obj\n%s\nendobj\n", i+1, object)
+			}
+			xref := data.Len()
+			fmt.Fprintf(&data, "xref\n0 %d\n0000000000 65535 f \n", len(objects)+1)
+			for _, offset := range offsets {
+				fmt.Fprintf(&data, "%010d 00000 n \n", offset)
+			}
+			fmt.Fprintf(&data, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objects)+1, xref)
+			text, err := extractPDFText([]byte(data.String()))
+			if tc.tooLarge {
+				if err == nil || !strings.Contains(err.Error(), "32 MiB") {
+					t.Fatalf("oversized PDF produced %d text bytes and error %v", len(text), err)
+				}
+			} else if err != nil || text != strings.Repeat("\n"+tc.text, tc.pages) {
+				t.Fatalf("PDF text length = %d, error = %v", len(text), err)
+			}
+		})
+	}
+}

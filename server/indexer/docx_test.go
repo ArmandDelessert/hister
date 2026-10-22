@@ -3,13 +3,72 @@
 package indexer
 
 import (
+	"archive/zip"
 	"bytes"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	docx "github.com/mmonterroca/docxgo/v2"
 	"github.com/mmonterroca/docxgo/v2/domain"
 )
+
+func TestExtractDocxTextLimitsUncompressedContent(t *testing.T) {
+	original := buildDocx(t, []docxTestParagraph{{text: "Document body"}})
+	reader, err := zip.NewReader(bytes.NewReader(original), int64(len(original)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var originalSize int
+	for _, entry := range reader.File {
+		originalSize += int(entry.UncompressedSize64)
+	}
+	for _, tc := range []struct {
+		name     string
+		sizes    []int
+		tooLarge bool
+	}{
+		{name: "at limit", sizes: []int{(64 << 20) - originalSize}},
+		{name: "single entry", sizes: []int{65 << 20}, tooLarge: true},
+		{name: "aggregate", sizes: []int{33 << 20, 33 << 20}, tooLarge: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			writer := zip.NewWriter(&buf)
+			for _, entry := range reader.File {
+				if err := writer.Copy(entry); err != nil {
+					t.Fatal(err)
+				}
+			}
+			chunk := strings.Repeat("x", 1<<20)
+			for i, size := range tc.sizes {
+				entry, err := writer.Create(fmt.Sprintf("extra/%d.bin", i))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for size > 0 {
+					n := min(size, len(chunk))
+					if _, err := io.WriteString(entry, chunk[:n]); err != nil {
+						t.Fatal(err)
+					}
+					size -= n
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			text, _, err := extractDocxText(buf.Bytes())
+			if tc.tooLarge {
+				if err == nil || !strings.Contains(err.Error(), "uncompressed") {
+					t.Fatalf("oversized DOCX returned text %q and error %v", text, err)
+				}
+			} else if err != nil || text != "Document body" {
+				t.Fatalf("DOCX at limit returned text %q and error %v", text, err)
+			}
+		})
+	}
+}
 
 func TestExtractDocxTextUsesStyledTitleAndParagraphs(t *testing.T) {
 	docxData := buildDocx(t, []docxTestParagraph{

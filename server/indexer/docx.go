@@ -3,6 +3,8 @@
 package indexer
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +19,8 @@ import (
 )
 
 type docxFileType struct{}
+
+const maxDOCXUncompressedSize = 64 << 20
 
 func (docxFileType) Match(path string) bool {
 	return hasExtension(path, ".docx")
@@ -39,7 +43,7 @@ func (docxFileType) Prepare(_ context.Context, d *document.Document, docxData []
 }
 
 func (i *Indexer) AddDocx(d *document.Document, docxData []byte) error {
-	if err := (docxFileType{}).Prepare(context.Background(), d, docxData); err != nil {
+	if err := i.fileHandlers.Prepare(context.Background(), "document.docx", d, docxData); err != nil {
 		return err
 	}
 	return i.Add(d)
@@ -53,6 +57,21 @@ func extractDocxText(docxData []byte) (text string, title string, err error) {
 		}
 	}()
 
+	archive, err := zip.NewReader(bytes.NewReader(docxData), int64(len(docxData)))
+	if err != nil {
+		return "", "", fmt.Errorf("open docx archive: %w", err)
+	}
+	// The parser loads every ZIP entry, including media, into memory. Check the
+	// total before handing it the archive; archive/zip also rejects entries that
+	// expand beyond their declared size while the parser reads them.
+	var uncompressed uint64
+	for _, entry := range archive.File {
+		if entry.UncompressedSize64 > maxDOCXUncompressedSize-uncompressed {
+			return "", "", errors.New("docx uncompressed content exceeds 64 MiB")
+		}
+		uncompressed += entry.UncompressedSize64
+	}
+
 	doc, err := docx.OpenDocumentFromBytes(docxData)
 	if err != nil {
 		return "", "", fmt.Errorf("open docx: %w", err)
@@ -60,10 +79,14 @@ func extractDocxText(docxData []byte) (text string, title string, err error) {
 
 	if meta := doc.Metadata(); meta != nil {
 		title = strings.TrimSpace(meta.Title)
+		if len(title) > maxExtractedContentSize {
+			return "", "", ErrExtractedContentTooLarge
+		}
 	}
 
 	paragraphs := doc.Paragraphs()
 	textParts := make([]string, 0, len(paragraphs))
+	textSize := 0
 	for _, p := range paragraphs {
 		paragraphText := strings.TrimSpace(p.Text())
 		if paragraphText == "" {
@@ -72,6 +95,14 @@ func extractDocxText(docxData []byte) (text string, title string, err error) {
 		if title == "" && isDocxTitleParagraph(p) {
 			title = paragraphText
 		}
+		partSize := len(paragraphText)
+		if len(textParts) > 0 {
+			partSize += 2 // Paragraph separator.
+		}
+		if partSize > maxExtractedContentSize-textSize {
+			return "", "", ErrExtractedContentTooLarge
+		}
+		textSize += partSize
 		textParts = append(textParts, paragraphText)
 	}
 	if title == "" && len(textParts) > 0 {

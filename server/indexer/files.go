@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -24,7 +23,7 @@ import (
 var (
 	ErrEmptyFile    = errors.New("empty file")
 	ErrBinaryFile   = errors.New("binary file")
-	ErrFileTooLarge = errors.New("file too large")
+	ErrFileTooLarge = files.ErrFileTooLarge
 )
 
 const defaultMaxFileSize int64 = 1024 * 1024 // 1MB default
@@ -405,8 +404,11 @@ func (i *Indexer) prepareLocalFile(ctx context.Context, path string, file *os.Fi
 		return fmt.Errorf("%w: %d bytes", ErrFileTooLarge, info.Size())
 	}
 
-	content, err := io.ReadAll(file)
+	content, err := files.ReadAllBounded(file, i.maxFileSize)
 	if err != nil {
+		if errors.Is(err, ErrFileTooLarge) {
+			return err
+		}
 		return &document.ReadFileError{Msg: err.Error()}
 	}
 

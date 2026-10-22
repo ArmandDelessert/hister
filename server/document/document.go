@@ -250,8 +250,9 @@ func (d *Document) normalizeWebURL(pu *url.URL) {
 
 func (d *Document) processFile(ld LanguageDetector, sensitivePattern *regexp.Regexp) error {
 	osPath := files.FileURLToPath(d.URL)
-	// Prepared HTML may legitimately have a title but no body text.
-	if d.Text == "" && d.HTML == "" {
+	// Prepared files must not reopen a path that may have been replaced after
+	// reading. Prepared HTML may also have a title but no body text.
+	if !d.trustedLocalFile && d.Text == "" && d.HTML == "" {
 		content, err := os.ReadFile(osPath)
 		if err != nil {
 			return &ReadFileError{

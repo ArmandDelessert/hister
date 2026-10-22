@@ -70,7 +70,10 @@ func FindMatchingDir(dirs []*config.Directory, filePath string) *config.Director
 		if dirs[i] == nil {
 			continue
 		}
-		dirPath := filepath.Clean(ExpandHome(dirs[i].Path))
+		dirPath, err := filepath.Abs(ExpandHome(dirs[i].Path))
+		if err != nil {
+			continue
+		}
 		if HasPathPrefix(filePath, dirPath) {
 			return dirs[i]
 		}
@@ -86,7 +89,10 @@ func DirectoryMatchesPath(dir *config.Directory, filePath string) bool {
 	if dir == nil {
 		return false
 	}
-	root := filepath.Clean(ExpandHome(dir.Path))
+	root, err := filepath.Abs(ExpandHome(dir.Path))
+	if err != nil {
+		return false
+	}
 	filePath = filepath.Clean(filePath)
 	if !HasPathPrefix(filePath, root) || filePath == root {
 		return false

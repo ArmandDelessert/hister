@@ -250,6 +250,7 @@ func TestIndexFileWithUserID(t *testing.T) {
 	testFile2 := testutil.WriteFile(t, testDir, "test2.txt", []byte("sample global document content for indexing test purposes"))
 
 	idxCfg := testutil.Config(t)
+	idxCfg.Indexer.Directories = []*config.Directory{{Path: testDir}}
 	idx := newTestIndexer(t, idxCfg)
 	defer idx.Close()
 
@@ -259,6 +260,151 @@ func TestIndexFileWithUserID(t *testing.T) {
 
 	if err := idx.IndexFile(testFile2, 0); err != nil {
 		t.Fatalf("IndexFile without user ID failed: %v", err)
+	}
+}
+
+func TestIndexFileDirectoryBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		link         string
+		linkedRoot   bool
+		relativeRoot bool
+		outside      bool
+		noRoots      bool
+	}{
+		{name: "regular file"},
+		{name: "relative configured root", relativeRoot: true},
+		{name: "escape under relative root", relativeRoot: true, link: "relative", outside: true},
+		{name: "relative internal link", link: "relative"},
+		{name: "absolute internal link", link: "absolute"},
+		{name: "relative escaping link", link: "relative", outside: true},
+		{name: "absolute escaping link", link: "absolute", outside: true},
+		{name: "escaping parent link", link: "parent", outside: true},
+		{name: "configured symlink root", linkedRoot: true},
+		{name: "internal link under symlink root", linkedRoot: true, link: "absolute"},
+		{name: "escape under symlink root", linkedRoot: true, link: "relative", outside: true},
+		{name: "unconfigured path", outside: true},
+		{name: "no configured roots", noRoots: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "docs")
+			outside := filepath.Join(base, "docs-other")
+			for _, dir := range []string{root, outside} {
+				if err := os.Mkdir(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			const content = "directoryboundarysecret"
+			targetDir := root
+			if tc.outside {
+				targetDir = outside
+			}
+			target := testutil.WriteFile(t, targetDir, "note.txt", []byte(content))
+			path := target
+			if tc.link != "" {
+				linkTarget := target
+				path = filepath.Join(root, "linked.txt")
+				if tc.link == "relative" {
+					var err error
+					linkTarget, err = filepath.Rel(root, target)
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if tc.link == "parent" {
+					linkTarget = targetDir
+					path = filepath.Join(root, "linked")
+				}
+				if err := os.Symlink(linkTarget, path); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
+				}
+				if tc.link == "parent" {
+					path = filepath.Join(path, "note.txt")
+				}
+			}
+			configuredRoot := root
+			if tc.linkedRoot {
+				configuredRoot = filepath.Join(base, "watched")
+				if err := os.Symlink(root, configuredRoot); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
+				}
+				path = filepath.Join(configuredRoot, filepath.Base(path))
+			}
+			cfg := testutil.Config(t)
+			if tc.relativeRoot {
+				t.Chdir(base)
+				configuredRoot = "docs"
+			}
+			cfg.Indexer.Directories = []*config.Directory{{Path: configuredRoot}}
+			if tc.noRoots {
+				cfg.Indexer.Directories = nil
+			}
+			idx := newTestIndexer(t, cfg)
+			t.Cleanup(idx.Close)
+			fileURL := files.PathToFileURL(path)
+			err := idx.IndexFile(path, 0)
+			if tc.outside || tc.noRoots {
+				if !errors.Is(err, ErrFileURLNotAllowed) {
+					t.Errorf("IndexFile error = %v, want ErrFileURLNotAllowed", err)
+				}
+				if idx.GetByURLAndUser(fileURL, 0) != nil {
+					t.Error("file outside the configured directory was indexed")
+				}
+				result, err := idx.Search(&Query{Text: content})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Documents) != 0 {
+					t.Error("file outside the configured directory is searchable")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := idx.GetByURLAndUser(fileURL, 0); got == nil || got.Text != content {
+				t.Fatalf("file identity or content was not preserved: %#v", got)
+			}
+			if err := idx.Reindex(&config.Rules{}, false, false, cfg.Indexer.KeepStopwords, cfg.Indexer.Directories); err != nil {
+				t.Fatal(err)
+			}
+			if got := idx.GetByURLAndUser(fileURL, 0); got == nil || got.Text != content {
+				t.Fatalf("reindex did not preserve file identity and content: %#v", got)
+			}
+		})
+	}
+}
+
+func TestReindexRejectsEscapingFileSymlink(t *testing.T) {
+	root := t.TempDir()
+	path := testutil.WriteFile(t, root, "note.txt", []byte("original file content"))
+	cfg := testutil.Config(t)
+	cfg.Indexer.Directories = []*config.Directory{{Path: root}}
+	idx := newTestIndexer(t, cfg)
+	t.Cleanup(idx.Close)
+	if err := idx.IndexFile(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	const secret = "reindexboundarysecret"
+	target := testutil.WriteFile(t, t.TempDir(), "secret.txt", []byte(secret))
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := idx.Reindex(&config.Rules{}, false, false, cfg.Indexer.KeepStopwords, cfg.Indexer.Directories); err != nil {
+		t.Fatal(err)
+	}
+	if idx.GetByURLAndUser(files.PathToFileURL(path), 0) != nil {
+		t.Error("reindex retained the escaping file")
+	}
+	result, err := idx.Search(&Query{Text: secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Documents) != 0 {
+		t.Error("reindex made content outside the configured directory searchable")
 	}
 }
 
@@ -946,6 +1092,7 @@ func TestIndexFileUsesModificationTimeAsUpdated(t *testing.T) {
 	}
 
 	idxCfg := testutil.Config(t)
+	idxCfg.Indexer.Directories = []*config.Directory{{Path: testDir}}
 	idx := newTestIndexer(t, idxCfg)
 	defer idx.Close()
 

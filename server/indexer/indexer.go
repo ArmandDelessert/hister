@@ -871,15 +871,10 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, directory owner changed")
 						continue
 					}
-					info, err := os.Stat(filePath)
-					if err != nil {
-						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't access file")
-						continue
-					}
 					if dir.Label != "" {
 						d.Label = dir.Label
 					}
-					reloaded, err := tmpIdx.reloadLocalFile(ctx, filePath, info, d)
+					reloaded, err := tmpIdx.reloadLocalFile(ctx, filePath, d)
 					if err != nil {
 						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't prepare local file")
 						continue

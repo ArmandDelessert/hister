@@ -2,9 +2,33 @@ package document
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
+
+	"github.com/asciimoo/hister/files"
 )
+
+func TestProcessPreparedLocalFileDoesNotReadFilesystem(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("replacement content outside the prepared snapshot"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A file can become empty after its size was checked. Processing must use
+	// the prepared snapshot instead of reopening its potentially replaced path.
+	d := &Document{URL: files.PathToFileURL(path)}
+	d.SetTrustedLocalFile()
+	if err := d.Process(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if d.Text != "" {
+		t.Fatalf("processing reread the source file: %q", d.Text)
+	}
+	if d.Type != Local || !d.Processed {
+		t.Fatalf("prepared local file was not processed: %#v", d)
+	}
+}
 
 func TestProcessSubmittedHTMLFileDoesNotReadFilesystem(t *testing.T) {
 	d := &Document{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -356,7 +357,47 @@ func configuredFileLabel(dirs []*config.Directory, path string) string {
 	return dir.Label
 }
 
-func (i *Indexer) prepareLocalFile(ctx context.Context, path string, info fs.FileInfo, d *document.Document) error {
+func (i *Indexer) openLocalFile(path string) (*os.File, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	dir := files.FindMatchingDir(i.directories, absPath)
+	if !files.DirectoryMatchesPath(dir, absPath) {
+		return nil, ErrFileURLNotAllowed
+	}
+	rootPath, err := filepath.Abs(files.ExpandHome(dir.Path))
+	if err != nil {
+		return nil, err
+	}
+	rootPath, err = filepath.EvalSymlinks(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+
+	// Resolve first to retain support for absolute links within the configured
+	// tree. Open through Root so a subsequent symlink replacement cannot escape.
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(rootPath, resolvedPath)
+	if err != nil || !filepath.IsLocal(rel) {
+		return nil, ErrFileURLNotAllowed
+	}
+	return root.Open(rel)
+}
+
+func (i *Indexer) prepareLocalFile(ctx context.Context, path string, file *os.File, d *document.Document) error {
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
 	if info.Size() == 0 {
 		return ErrEmptyFile
 	}
@@ -364,7 +405,7 @@ func (i *Indexer) prepareLocalFile(ctx context.Context, path string, info fs.Fil
 		return fmt.Errorf("%w: %d bytes", ErrFileTooLarge, info.Size())
 	}
 
-	content, err := os.ReadFile(path)
+	content, err := io.ReadAll(file)
 	if err != nil {
 		return &document.ReadFileError{Msg: err.Error()}
 	}
@@ -374,7 +415,13 @@ func (i *Indexer) prepareLocalFile(ctx context.Context, path string, info fs.Fil
 	return i.fileHandlers.Prepare(ctx, path, d, content)
 }
 
-func (i *Indexer) reloadLocalFile(ctx context.Context, path string, info fs.FileInfo, source *document.Document) (*document.Document, error) {
+func (i *Indexer) reloadLocalFile(ctx context.Context, path string, source *document.Document) (*document.Document, error) {
+	file, err := i.openLocalFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
 	d := &document.Document{
 		URL:              source.URL,
 		LanguageOverride: source.LanguageOverride,
@@ -386,14 +433,19 @@ func (i *Indexer) reloadLocalFile(ctx context.Context, path string, info fs.File
 	if source.IgnoreSkipRules() {
 		d.SetIgnoreSkipRules(true)
 	}
-	if err := i.prepareLocalFile(ctx, path, info, d); err != nil {
+	if err := i.prepareLocalFile(ctx, path, file, d); err != nil {
 		return nil, err
 	}
 	return d, nil
 }
 
 func (i *Indexer) IndexFile(path string, userID uint) error {
-	info, err := os.Stat(path)
+	file, err := i.openLocalFile(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
 	if err != nil {
 		return err
 	}
@@ -427,7 +479,7 @@ func (i *Indexer) IndexFile(path string, userID uint) error {
 		UserID: userID,
 		Label:  label,
 	}
-	if err := i.prepareLocalFile(context.Background(), path, info, doc); err != nil {
+	if err := i.prepareLocalFile(context.Background(), path, file, doc); err != nil {
 		return err
 	}
 	return i.AddDocument(doc)

@@ -20,6 +20,8 @@ Hister can index local files from configured directories and from explicit impor
 
 Files that do not match a specialized handler are treated as plain text. Binary files are skipped.
 
+For directories watched by the server, symbolic links are indexed only when their targets remain inside the configured directory. The configured directory itself may be a symbolic link. Run `hister reindex` after upgrading to remove previously indexed files reached through links outside those directories.
+
 Opening a watched local file from search downloads the original file. Use the preview to read its content within Hister.
 
 Watched HTML files use the same extractor chain as browser submissions, including Readability and structured metadata extraction, before language detection. Their original HTML is kept for previews, and their file identity is preserved even when the page contains a canonical URL. Run `hister reindex` after upgrading to extract text and correct language detection for previously indexed local HTML files. Existing remote HTML snapshots must be imported again from the source files.

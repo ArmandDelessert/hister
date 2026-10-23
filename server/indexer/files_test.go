@@ -61,25 +61,26 @@ func TestFileDocumentValidation(t *testing.T) {
 
 func TestAddFunctionsValidateFileDocuments(t *testing.T) {
 	idx := &Indexer{}
-	d := &document.Document{
-		URL:       "file:///not/configured/note.txt",
-		Text:      "submitted content",
-		Processed: true,
-	}
-
-	if err := idx.Add(d); !errors.Is(err, ErrFileURLNotAllowed) {
-		t.Fatalf("Add error = %v, want %v", err, ErrFileURLNotAllowed)
-	}
-	if err := newMultiBatch(idx).Add(d); !errors.Is(err, ErrFileURLNotAllowed) {
-		t.Fatalf("MultiBatch.Add error = %v, want %v", err, ErrFileURLNotAllowed)
+	for _, d := range []*document.Document{
+		{URL: "file:///not/configured/note.txt", Text: "submitted content", Processed: true},
+		{URL: "file:///not/configured/note.txt", Processed: true},
+		{URL: "file:///not/configured/saved.html", HTML: "<html><body></body></html>", Processed: true},
+	} {
+		if err := idx.Add(d); !errors.Is(err, ErrFileURLNotAllowed) {
+			t.Fatalf("Add error = %v, want %v for %#v", err, ErrFileURLNotAllowed, d)
+		}
+		if err := newMultiBatch(idx).Add(d); !errors.Is(err, ErrFileURLNotAllowed) {
+			t.Fatalf("MultiBatch.Add error = %v, want %v for %#v", err, ErrFileURLNotAllowed, d)
+		}
 	}
 }
 
 func TestExtractorExtraDocumentsCannotReadLocalFiles(t *testing.T) {
-	for _, mode := range []string{"single", "direct", "batch"} {
+	for _, mode := range []string{"single", "direct", "batch", "reindex"} {
 		for _, nested := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/nested=%t", mode, nested), func(t *testing.T) {
-				idx := newTestIndexer(t, testutil.Config(t))
+				cfg := testutil.Config(t)
+				idx := newTestIndexer(t, cfg)
 				t.Cleanup(idx.Close)
 				path := filepath.Join(t.TempDir(), "secret.txt")
 				const secret = "extractorfileregressionsecret"
@@ -118,15 +119,25 @@ func TestExtractorExtraDocumentsCannotReadLocalFiles(t *testing.T) {
 					if err == nil {
 						err = batch.Save()
 					}
+				case "reindex":
+					// Store the HTML before extraction, as if an older extractor
+					// did not recognize it. Reindex must validate newly found URLs.
+					payload.Processed = true
+					err = idx.Add(root)
+					if err == nil {
+						err = idx.Reindex(&config.Rules{}, false, cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords, cfg.Indexer.Directories)
+					}
 				}
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(payload.ExtraDocuments) != 2 {
-					t.Fatalf("extracted %d documents, want 2", len(payload.ExtraDocuments))
-				}
-				if extra := payload.ExtraDocuments[0]; extra.Text != "" || extra.IsProcessed() {
-					t.Fatal("unsafe extra document was processed")
+				if mode != "reindex" {
+					if len(payload.ExtraDocuments) != 2 {
+						t.Fatalf("extracted %d documents, want 2", len(payload.ExtraDocuments))
+					}
+					if extra := payload.ExtraDocuments[0]; extra.Text != "" || extra.IsProcessed() {
+						t.Fatal("unsafe extra document was processed")
+					}
 				}
 				if idx.GetByURLAndUser(fileURL, 1) != nil {
 					t.Fatal("local file was indexed")
@@ -695,6 +706,80 @@ func TestReindexReloadsMarkdownFile(t *testing.T) {
 			updated.Unix(),
 			before.AddCount,
 		)
+	}
+}
+
+func TestReindexPreservesFileDocuments(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		filename        string
+		content         string
+		text            string
+		submittedHTML   bool
+		disablePreviews bool
+	}{
+		{name: "Markdown without text", filename: "comment.md", content: "<!-- only a comment -->"},
+		{name: "HTML without text", filename: "empty.html", content: "<html><head><title>Saved page</title></head><body></body></html>"},
+		{name: "Markdown without previews", filename: "comment.md", content: "<!-- only a comment -->", disablePreviews: true},
+		{name: "submitted HTML without text", filename: "saved.html", content: "<html><head><title>Saved page</title></head><body></body></html>", submittedHTML: true},
+		{name: "submitted HTML with text", filename: "saved.html", content: "<html><body><p>Saved content to search later.</p></body></html>", text: "Saved content to search later.", submittedHTML: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, tc.filename)
+			cfg := testutil.Config(t)
+			cfg.App.DisablePreviews = tc.disablePreviews
+			cfg.Indexer.DetectLanguages = false
+			if !tc.submittedHTML {
+				cfg.Indexer.Directories = []*config.Directory{{Path: dir}}
+			}
+			idx := newTestIndexer(t, cfg)
+			defer idx.Close()
+			url := files.PathToFileURL(path)
+			if tc.submittedHTML {
+				// The submitted snapshot belongs to a client. The server must
+				// preserve it without reading the path on its own filesystem.
+				testutil.WriteFile(t, dir, tc.filename, []byte("unrelated server file content"))
+				if err := idx.Add(&document.Document{URL: url, HTML: tc.content}); err != nil {
+					t.Fatalf("add submitted HTML: %v", err)
+				}
+			} else {
+				testutil.WriteFile(t, dir, tc.filename, []byte(tc.content))
+				if err := idx.IndexFile(path, 0); err != nil {
+					t.Fatalf("index file: %v", err)
+				}
+			}
+			before := idx.GetByURLAndUser(url, 0)
+			if before == nil {
+				t.Fatal("file document was not indexed")
+			}
+			if before.Text != tc.text {
+				t.Fatalf("initial extracted text = %q, want %q", before.Text, tc.text)
+			}
+			const otherURL = "https://example.com/other"
+			if err := idx.Add(&document.Document{URL: otherURL, Text: "Another document"}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := idx.Reindex(&config.Rules{}, false, false, cfg.Indexer.KeepStopwords, cfg.Indexer.Directories); err != nil {
+				t.Fatalf("reindex: %v", err)
+			}
+			got := idx.GetByURLAndUser(url, 0)
+			if got == nil {
+				t.Fatal("file document was lost during reindex")
+			}
+			if got.Type != before.Type || got.Text != before.Text || got.HTML != before.HTML || got.Title != before.Title {
+				t.Fatalf("file content changed during reindex: got type=%v title=%q text=%q HTML=%q; want type=%v title=%q text=%q HTML=%q",
+					got.Type, got.Title, got.Text, got.HTML, before.Type, before.Title, before.Text, before.HTML)
+			}
+			if got.Added != before.Added || got.AddCount != before.AddCount {
+				t.Fatalf("file history changed during reindex: added=%d count=%d; want added=%d count=%d",
+					got.Added, got.AddCount, before.Added, before.AddCount)
+			}
+			if other := idx.GetByURLAndUser(otherURL, 0); other == nil || other.Text != "Another document" {
+				t.Fatal("unrelated document was lost during reindex")
+			}
+		})
 	}
 }
 

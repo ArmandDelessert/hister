@@ -900,7 +900,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 						log.Warn().Err(err).Str("Path", d.URL).Msg("Skipping document, can't read file")
 						continue
 					} else {
-						return abortReindex(err)
+						return abortReindex(fmt.Errorf("reindex document %q: %w", d.URL, err))
 					}
 				}
 				documentRules := rules
@@ -928,8 +928,10 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 				} else {
 					d.Updated = origUpdated
 				}
-				if err := b.AddContext(ctx, d, WithRules(documentRules)); err != nil {
-					return abortReindex(err)
+				// Local files have passed directory and ownership checks, and
+				// stored snapshots have been processed without reading their paths.
+				if err := b.addDocumentContext(ctx, d, WithRules(documentRules)); err != nil {
+					return abortReindex(fmt.Errorf("reindex document %q: %w", d.URL, err))
 				}
 			}
 			if err := b.Save(); err != nil {
@@ -1740,6 +1742,12 @@ func (b *MultiBatch) AddContext(ctx context.Context, d *document.Document, optio
 	if err := b.indexer.validateFileDocument(d); err != nil {
 		return err
 	}
+	return b.addDocumentContext(ctx, d, options...)
+}
+
+// addDocumentContext stages a document after its caller has checked its source.
+// Extractor output is still validated separately by addDocument.
+func (b *MultiBatch) addDocumentContext(ctx context.Context, d *document.Document, options ...AddOption) error {
 	return b.indexer.addDocument(ctx, d, b.incrementAddCount, newAddOptions(options), b.recordIndexingMetric, b.applyDocumentWrite)
 }
 

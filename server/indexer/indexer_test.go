@@ -43,6 +43,31 @@ func TestAddContextRejectsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestReindexErrorIdentifiesDocument(t *testing.T) {
+	cfg := testutil.Config(t)
+	idx := newTestIndexer(t, cfg)
+	defer idx.Close()
+
+	// Represent a stored document that no longer passes processing checks.
+	const url = "https:/missing-host"
+	if err := idx.Add(&document.Document{URL: url, Text: "Stored content", Processed: true}); err != nil {
+		t.Fatal(err)
+	}
+	err := idx.Reindex(&config.Rules{}, false, cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords, cfg.Indexer.Directories)
+	if err == nil {
+		t.Fatal("reindex accepted an invalid document URL")
+	}
+	if !strings.Contains(err.Error(), "invalid URL: missing scheme/host") {
+		t.Fatalf("reindex error lost the cause: %v", err)
+	}
+	if !strings.Contains(err.Error(), url) {
+		t.Fatalf("reindex error does not identify the document: %v", err)
+	}
+	if got := idx.GetByURLAndUser(url, 0); got == nil || got.Text != "Stored content" {
+		t.Fatal("failed reindex changed the original document")
+	}
+}
+
 func TestIndexerInstancesAreIndependent(t *testing.T) {
 	first := newTestIndexer(t, testutil.Config(t))
 	defer first.Close()

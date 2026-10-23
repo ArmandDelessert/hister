@@ -8,6 +8,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io"
+	"maps"
 	"net/url"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/files/extract"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/sanitizer"
@@ -186,6 +188,59 @@ func (r *Registry) Extract(d *document.Document) error {
 // ExtractContext runs the extraction chain with caller cancellation.
 func ExtractContext(ctx context.Context, d *document.Document) error {
 	return defaultRegistry.ExtractContext(ctx, d)
+}
+
+// ExtractFile prepares supplied file contents without processing document
+// identity, sensitive content rules, language, or persistence.
+func ExtractFile(ctx context.Context, parser *extract.Extractor, name string, d *document.Document, content []byte) error {
+	return defaultRegistry.ExtractFile(ctx, parser, name, d, content)
+}
+
+// ExtractFile adapts file parser results to a document and uses this registry
+// for saved HTML. Failed extraction leaves the caller's document unchanged.
+func (r *Registry) ExtractFile(ctx context.Context, parser *extract.Extractor, name string, d *document.Document, content []byte) error {
+	result, err := parser.Extract(ctx, name, content)
+	if err != nil {
+		return err
+	}
+	// Only content fields are exposed to HTML extractors. Identity and indexing
+	// flags remain owned by the caller, even if an extractor changes its input.
+	prepared := &document.Document{
+		URL:      d.URL,
+		Title:    d.Title,
+		Text:     result.Text,
+		HTML:     d.HTML,
+		Metadata: maps.Clone(d.Metadata),
+	}
+	switch result.Format {
+	case extract.HTML:
+		prepared.HTML = result.HTML
+		if err := r.ExtractContext(ctx, prepared); err != nil {
+			return err
+		}
+	case extract.Markdown, extract.Org:
+		prepared.Title = result.Title
+		prepared.HTML = result.HTML
+	case extract.DOCX:
+		if prepared.Title == "" {
+			prepared.Title = result.Title
+		}
+	}
+	switch result.Format {
+	case extract.PDF, extract.DOCX, extract.Markdown, extract.Org:
+		prepared.AddMetadata("type", string(result.Format))
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := (extract.Result{Title: prepared.Title, Text: prepared.Text, HTML: prepared.HTML}).CheckSize(); err != nil {
+		return err
+	}
+	d.Title = prepared.Title
+	d.Text = prepared.Text
+	d.HTML = prepared.HTML
+	d.Metadata = prepared.Metadata
+	return nil
 }
 
 // ExtractContext runs this registry's extraction chain with caller

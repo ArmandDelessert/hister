@@ -2,106 +2,46 @@ package indexer
 
 import (
 	"context"
-	"errors"
-	"maps"
-	"path/filepath"
-	"slices"
-	"strings"
-	"unicode/utf8"
 
-	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/files/extract"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor"
 )
 
-type fileTypeHandler interface {
-	Match(path string) bool
-	Prepare(context.Context, *document.Document, []byte) error
+var ErrExtractedContentTooLarge = extract.ErrExtractedContentTooLarge
+
+// AddPDF extracts and indexes a PDF with the configured parser.
+func (i *Indexer) AddPDF(d *document.Document, content []byte, options ...AddOption) error {
+	return i.AddPDFContext(context.Background(), d, content, options...)
 }
 
-var defaultFileHandlers = NewFileHandlers(config.Indexer{})
-
-const maxExtractedContentSize = 32 << 20
-
-var ErrExtractedContentTooLarge = errors.New("extracted content exceeds 32 MiB")
-
-// FileHandlers prepares file contents using independently configured handlers.
-type FileHandlers struct {
-	pdf      *pdfFileType
-	handlers []fileTypeHandler
-}
-
-// NewFileHandlers binds configuration to the handlers once, before use.
-func NewFileHandlers(cfg config.Indexer) *FileHandlers {
-	pdf := &pdfFileType{parser: cfg.PDFParser}
-	pdf.parser.Args = slices.Clone(pdf.parser.Args)
-	return &FileHandlers{
-		pdf: pdf,
-		handlers: []fileTypeHandler{
-			pdf,
-			docxFileType{},
-			markdownFileType{},
-			orgFileType{},
-			htmlFileType{},
-			plainTextFileType{},
-		},
-	}
-}
-
-// Prepare extracts indexable fields without reading or indexing the file.
-func (h *FileHandlers) Prepare(ctx context.Context, path string, d *document.Document, content []byte) error {
-	if err := ctx.Err(); err != nil {
+// AddPDFContext extracts and indexes a PDF with caller cancellation.
+func (i *Indexer) AddPDFContext(ctx context.Context, d *document.Document, content []byte, options ...AddOption) error {
+	if err := extractor.ExtractFile(ctx, i.fileExtractor, "document.pdf", d, content); err != nil {
 		return err
 	}
-	handler := h.forPath(path)
-	switch handler.(type) {
-	case plainTextFileType, htmlFileType, markdownFileType, orgFileType:
-		if len(content) > maxExtractedContentSize {
-			return ErrExtractedContentTooLarge
-		}
-	}
-	prepared := *d
-	prepared.Metadata = maps.Clone(d.Metadata)
-	if err := handler.Prepare(ctx, &prepared, content); err != nil {
+	return i.AddContext(ctx, d, options...)
+}
+
+func (i *Indexer) AddDocx(d *document.Document, content []byte) error {
+	if err := extractor.ExtractFile(context.Background(), i.fileExtractor, "document.docx", d, content); err != nil {
 		return err
 	}
-	if len(prepared.Text) > maxExtractedContentSize || len(prepared.HTML) > maxExtractedContentSize || len(prepared.Title) > maxExtractedContentSize {
-		return ErrExtractedContentTooLarge
+	return i.Add(d)
+}
+
+// AddMarkdown renders Markdown to HTML and text, then indexes the document.
+func (i *Indexer) AddMarkdown(d *document.Document, content []byte) error {
+	if err := extractor.ExtractFile(context.Background(), i.fileExtractor, "document.md", d, content); err != nil {
+		return err
 	}
-	*d = prepared
-	return nil
+	return i.Add(d)
 }
 
-// PrepareFileContent extracts indexable fields with the default handlers.
-// It does not read, identify, or index the document.
-func PrepareFileContent(path string, d *document.Document, content []byte) error {
-	return defaultFileHandlers.Prepare(context.Background(), path, d, content)
-}
-
-func (h *FileHandlers) forPath(path string) fileTypeHandler {
-	for _, handler := range h.handlers {
-		if handler.Match(path) {
-			return handler
-		}
+// AddOrg renders Org to HTML and text, then indexes the document.
+func (i *Indexer) AddOrg(d *document.Document, content []byte) error {
+	if err := extractor.ExtractFile(context.Background(), i.fileExtractor, "document.org", d, content); err != nil {
+		return err
 	}
-	return plainTextFileType{}
-}
-
-type plainTextFileType struct{}
-
-func (plainTextFileType) Match(_ string) bool {
-	return true
-}
-
-func (plainTextFileType) Prepare(_ context.Context, d *document.Document, content []byte) error {
-	if !utf8.Valid(content) {
-		return ErrBinaryFile
-	}
-
-	d.Text = string(content)
-	return nil
-}
-
-func hasExtension(path string, exts ...string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return slices.Contains(exts, ext)
+	return i.Add(d)
 }

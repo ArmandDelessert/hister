@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package indexer
+package extract
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 
 	"github.com/niklasfasching/go-org/org"
 
-	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/sanitizer"
 )
 
@@ -21,7 +20,7 @@ func (orgFileType) Match(path string) bool {
 	return hasExtension(path, ".org")
 }
 
-func (orgFileType) Prepare(_ context.Context, d *document.Document, orgData []byte) error {
+func (orgFileType) Prepare(_ context.Context, d *Result, orgData []byte) error {
 	src := strings.TrimSpace(string(orgData))
 	if src == "" {
 		return errors.New("org file empty")
@@ -33,25 +32,27 @@ func (orgFileType) Prepare(_ context.Context, d *document.Document, orgData []by
 	d.HTML = html
 	d.Text = sanitizer.SanitizeText(d.HTML)
 	d.Title = title
-	d.AddMetadata("type", "org")
+	d.Format = Org
 	return nil
 }
 
-// AddOrg renders Org files to HTML, stores it in d.HTML, and stores rendered
-// plain text in d.Text for full-text indexing.
-func (i *Indexer) AddOrg(d *document.Document, orgData []byte) error {
-	if err := i.fileHandlers.Prepare(context.Background(), "document.org", d, orgData); err != nil {
-		return err
-	}
-	return i.Add(d)
-}
-
 func renderOrg(src []byte) (string, string, error) {
-	doc := org.New().Parse(bytes.NewReader(src), "./")
+	parser := org.New().Silent()
+	var readErr error
+	parser.ReadFile = func(string) ([]byte, error) {
+		readErr = ErrExternalFileReference
+		return nil, readErr
+	}
+	doc := parser.Parse(bytes.NewReader(src), "")
 
-	html, error := doc.Write(org.NewHTMLWriter())
-	if error != nil {
-		return "", "", error
+	html, err := doc.Write(org.NewHTMLWriter())
+	// Includes are resolved during rendering, while setup files are read during
+	// parsing. The library logs read errors and continues, so check both phases.
+	if readErr != nil {
+		return "", "", readErr
+	}
+	if err != nil {
+		return "", "", err
 	}
 	title := doc.Get("TITLE")
 	return html, title, nil

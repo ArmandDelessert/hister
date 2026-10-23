@@ -19,6 +19,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/files"
+	"github.com/asciimoo/hister/files/extract"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/indexer/querybuilder"
@@ -63,7 +64,7 @@ type Indexer struct {
 	userHandling      bool
 	directories       []*config.Directory
 	maxFileSize       int64
-	fileHandlers      *FileHandlers
+	fileExtractor     *extract.Extractor
 	sensitivePattern  *regexp.Regexp
 	semanticConfig    config.SemanticSearch
 	snippetLength     int
@@ -457,7 +458,7 @@ func New(cfg *config.Config) (*Indexer, error) {
 	idx.userHandling = cfg.App.UserHandling
 	idx.directories = cfg.Indexer.Directories
 	idx.maxFileSize = defaultMaxFileSize
-	idx.fileHandlers = NewFileHandlers(cfg.Indexer)
+	idx.fileExtractor = extract.New(cfg.Indexer.PDFParser)
 	idx.sensitivePattern = sensitivePattern
 	idx.semanticConfig = cfg.SemanticSearch
 	idx.snippetLength = cfg.App.SnippetLength
@@ -503,12 +504,12 @@ func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint 
 	}
 	embedCtx, embedCancel := context.WithCancel(context.Background())
 	return &Indexer{
-		indexState:   *state,
-		fileHandlers: defaultFileHandlers,
-		embedCtx:     embedCtx,
-		embedCancel:  embedCancel,
-		data:         newDataStore(filepath.Join(basePath, dataDirName)),
-		maxFileSize:  defaultMaxFileSize,
+		indexState:    *state,
+		fileExtractor: extract.New(config.PDFParser{}),
+		embedCtx:      embedCtx,
+		embedCancel:   embedCancel,
+		data:          newDataStore(filepath.Join(basePath, dataDirName)),
+		maxFileSize:   defaultMaxFileSize,
 	}, nil
 }
 
@@ -787,7 +788,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 		indexState:       *tmpState,
 		directories:      dirs,
 		maxFileSize:      idx.maxFileSize,
-		fileHandlers:     idx.fileHandlers,
+		fileExtractor:    idx.fileExtractor,
 		sensitivePattern: idx.sensitivePattern,
 		disablePreviews:  idx.disablePreviews,
 		userHandling:     idx.userHandling,

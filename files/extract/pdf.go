@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package indexer
+package extract
 
 import (
 	"bytes"
@@ -17,7 +17,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/asciimoo/hister/config"
-	"github.com/asciimoo/hister/server/document"
 
 	"github.com/asciimoo/pdf"
 )
@@ -30,7 +29,7 @@ func (pdfFileType) Match(path string) bool {
 	return strings.EqualFold(filepath.Ext(path), ".pdf")
 }
 
-func (p pdfFileType) Prepare(ctx context.Context, d *document.Document, pdfData []byte) error {
+func (p pdfFileType) Prepare(ctx context.Context, d *Result, pdfData []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -48,26 +47,11 @@ func (p pdfFileType) Prepare(ctx context.Context, d *document.Document, pdfData 
 		return errors.New("pdf contains no extractable text")
 	}
 	d.Text = text
-	d.AddMetadata("type", "pdf")
+	d.Format = PDF
 	return nil
 }
 
-// AddPDF extracts plain text from pdfData, stores it in d.Text, then indexes
-// the document via AddContext. d.URL and d.Type must already be set by the caller.
-// d.Title is set to the last path segment of the URL if it is not already set.
-func (i *Indexer) AddPDF(d *document.Document, pdfData []byte, options ...AddOption) error {
-	return i.AddPDFContext(context.Background(), d, pdfData, options...)
-}
-
-// AddPDFContext extracts and indexes a PDF with the configured parser.
-func (i *Indexer) AddPDFContext(ctx context.Context, d *document.Document, pdfData []byte, options ...AddOption) error {
-	if err := i.fileHandlers.pdf.Prepare(ctx, d, pdfData); err != nil {
-		return err
-	}
-	return i.AddContext(ctx, d, options...)
-}
-
-const maxExternalPDFTextSize = maxExtractedContentSize
+const maxExternalPDFTextSize = MaxContentSize
 
 var errPDFOutputTooLarge = errors.New("external PDF parser output exceeds 32 MiB")
 
@@ -142,7 +126,7 @@ func extractPDFText(pdfData []byte) (text string, err error) {
 		if err != nil {
 			return "", fmt.Errorf("read pdf page %d: %w", page, err)
 		}
-		if len(text) > maxExtractedContentSize-b.Len() {
+		if len(text) > MaxContentSize-b.Len() {
 			return "", ErrExtractedContentTooLarge
 		}
 		b.WriteString(text)

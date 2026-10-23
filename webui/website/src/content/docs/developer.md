@@ -76,6 +76,7 @@ good first issues. Coding agents should also follow the repository
 | `client/`           | HTTP client used by commands                                            |
 | `config/`           | Configuration loading and validation                                    |
 | `files/`            | Watched directory matching and file ownership                           |
+| `files/extract/`    | Parsing supplied file contents without document or index state           |
 | `server/`           | HTTP server, models, indexing, crawling, extraction, and vector storage |
 | `webui/app/`        | Web application embedded in the Go binary                               |
 | `webui/components/` | Shared Svelte components                                                |
@@ -868,6 +869,22 @@ Every tool advertises an `outputSchema`. Tool call results include the required
 `content` field and a `structuredContent` object conforming to that schema.
 Clients should use `structuredContent` and enforce the `untrusted_content`
 trust markers when placing results into model context.
+
+## File Extraction
+
+`files/extract` owns PDF, DOCX, Markdown, Org, HTML, and plain text parsing.
+Construct a parser with `extract.New(cfg.Indexer.PDFParser)` and call
+`Extract(ctx, name, content)`. The name selects a format; parsing uses the
+supplied bytes. Results contain format, title, text, and HTML. Errors return
+an empty result. Parser configuration is copied at construction, and content
+limits apply to every call. Org file references are rejected.
+
+`server/extractor.ExtractFile` adapts these results to a document and runs the
+web extractor registry for saved HTML. It applies content fields only after
+successful extraction and size checks. Both CLI snapshots and server indexing
+use this adapter. File access, directory rules, timestamps, ownership, sensitive
+content checks, language detection, and persistence remain with the callers.
+The parser package has no dependency on documents, the database, or Bleve.
 
 ## Documentation Maintenance
 

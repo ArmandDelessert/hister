@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package indexer
+package extract
 
 import (
 	"archive/zip"
@@ -14,8 +14,6 @@ import (
 	docx "github.com/mmonterroca/docxgo/v2"
 	"github.com/mmonterroca/docxgo/v2/domain"
 	"github.com/rs/zerolog/log"
-
-	"github.com/asciimoo/hister/server/document"
 )
 
 type docxFileType struct{}
@@ -26,7 +24,7 @@ func (docxFileType) Match(path string) bool {
 	return hasExtension(path, ".docx")
 }
 
-func (docxFileType) Prepare(_ context.Context, d *document.Document, docxData []byte) error {
+func (docxFileType) Prepare(_ context.Context, d *Result, docxData []byte) error {
 	text, title, err := extractDocxText(docxData)
 	if err != nil {
 		return fmt.Errorf("docx text extraction: %w", err)
@@ -38,15 +36,8 @@ func (docxFileType) Prepare(_ context.Context, d *document.Document, docxData []
 	if d.Title == "" {
 		d.Title = title
 	}
-	d.AddMetadata("type", "docx")
+	d.Format = DOCX
 	return nil
-}
-
-func (i *Indexer) AddDocx(d *document.Document, docxData []byte) error {
-	if err := i.fileHandlers.Prepare(context.Background(), "document.docx", d, docxData); err != nil {
-		return err
-	}
-	return i.Add(d)
 }
 
 func extractDocxText(docxData []byte) (text string, title string, err error) {
@@ -79,7 +70,7 @@ func extractDocxText(docxData []byte) (text string, title string, err error) {
 
 	if meta := doc.Metadata(); meta != nil {
 		title = strings.TrimSpace(meta.Title)
-		if len(title) > maxExtractedContentSize {
+		if len(title) > MaxContentSize {
 			return "", "", ErrExtractedContentTooLarge
 		}
 	}
@@ -99,7 +90,7 @@ func extractDocxText(docxData []byte) (text string, title string, err error) {
 		if len(textParts) > 0 {
 			partSize += 2 // Paragraph separator.
 		}
-		if partSize > maxExtractedContentSize-textSize {
+		if partSize > MaxContentSize-textSize {
 			return "", "", ErrExtractedContentTooLarge
 		}
 		textSize += partSize

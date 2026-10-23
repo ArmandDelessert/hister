@@ -15,8 +15,9 @@ import (
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/files"
+	"github.com/asciimoo/hister/files/extract"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
 )
 
 func fileWatchResponse(r *http.Request, status int) *http.Response {
@@ -198,13 +199,13 @@ func TestImportWatchedFileFormatsAndLimits(t *testing.T) {
 		{name: "backup.bak", content: `[{"url":"https://example.com","type":0,"processed":true}]`},
 		{name: "backup.txt", content: `[{"url":"https://example.com","type":0,"processed":true}]`},
 		{name: "backup.html", content: `[{"url":"https://example.com","type":0,"processed":true}]`},
-		{name: "large-backup", content: `[{"url":"https://example.com","type":0,"processed":true,"text":"` + strings.Repeat("x", 1025) + `"}]`, err: indexer.ErrFileTooLarge},
+		{name: "large-backup", content: `[{"url":"https://example.com","type":0,"processed":true,"text":"` + strings.Repeat("x", 1025) + `"}]`, err: files.ErrFileTooLarge},
 		{name: "empty-backup", content: "[\n]\n"},
 		{name: "backup.7z", content: "archive", skip: true},
 		{name: "page.html", content: `<html><head><link rel="canonical" href="https://example.com"></head></html>`, skip: true},
-		{name: "large.txt", content: strings.Repeat("x", 1025), err: indexer.ErrFileTooLarge},
-		{name: "empty.txt", err: indexer.ErrEmptyFile},
-		{name: "binary.txt", content: "\xff", err: indexer.ErrBinaryFile},
+		{name: "large.txt", content: strings.Repeat("x", 1025), err: files.ErrFileTooLarge},
+		{name: "empty.txt", err: files.ErrEmptyFile},
+		{name: "binary.txt", content: "\xff", err: extract.ErrBinaryFile},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), tc.name)

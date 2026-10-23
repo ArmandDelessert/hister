@@ -16,13 +16,15 @@ import (
 
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/files"
+	"github.com/asciimoo/hister/files/extract"
 	"github.com/asciimoo/hister/server/document"
+	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/model"
 )
 
 var (
-	ErrEmptyFile    = errors.New("empty file")
-	ErrBinaryFile   = errors.New("binary file")
+	ErrEmptyFile    = files.ErrEmptyFile
+	ErrBinaryFile   = extract.ErrBinaryFile
 	ErrFileTooLarge = files.ErrFileTooLarge
 )
 
@@ -414,7 +416,7 @@ func (i *Indexer) prepareLocalFile(ctx context.Context, path string, file *os.Fi
 
 	d.Updated = info.ModTime().Unix()
 	d.SetTrustedLocalFile()
-	return i.fileHandlers.Prepare(ctx, path, d, content)
+	return extractor.ExtractFile(ctx, i.fileExtractor, path, d, content)
 }
 
 func (i *Indexer) reloadLocalFile(ctx context.Context, path string, source *document.Document) (*document.Document, error) {

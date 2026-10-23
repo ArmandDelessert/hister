@@ -14,8 +14,9 @@ import (
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/files"
+	"github.com/asciimoo/hister/files/extract"
 	"github.com/asciimoo/hister/server/document"
-	"github.com/asciimoo/hister/server/indexer"
+	"github.com/asciimoo/hister/server/extractor"
 
 	"github.com/rs/zerolog/log"
 )
@@ -61,12 +62,12 @@ func readImportFile(path string, maxFileSize int64) ([]byte, os.FileInfo, error)
 }
 
 type fileImporter struct {
-	client       *client.Client
-	fileHandlers *indexer.FileHandlers
+	client        *client.Client
+	fileExtractor *extract.Extractor
 }
 
 func newFileImporter(c *client.Client, cfg config.Indexer) *fileImporter {
-	return &fileImporter{client: c, fileHandlers: indexer.NewFileHandlers(cfg)}
+	return &fileImporter{client: c, fileExtractor: extract.New(cfg.PDFParser)}
 }
 
 type fileImportOptions struct {
@@ -279,7 +280,7 @@ func (i *fileImporter) importRemoteFile(
 
 func fileSnapshotImportError(path string, err error) error {
 	ext := strings.ToLower(filepath.Ext(path))
-	if ext == ".json" || errors.Is(err, indexer.ErrBinaryFile) {
+	if ext == ".json" || errors.Is(err, extract.ErrBinaryFile) {
 		return err
 	}
 	reason := "This file has no extension"
@@ -293,11 +294,11 @@ func fileSnapshotImportError(path string, err error) error {
 
 func fileSnapshotSizeError(size, limit int64) error {
 	return fmt.Errorf("%w: file is %d bytes, limit from indexer.max_file_size_mb is %d bytes",
-		indexer.ErrFileTooLarge, size, limit)
+		files.ErrFileTooLarge, size, limit)
 }
 
 func fileContentImportError(path string, err error) error {
-	if !errors.Is(err, indexer.ErrBinaryFile) {
+	if !errors.Is(err, extract.ErrBinaryFile) {
 		return err
 	}
 	switch strings.ToLower(filepath.Ext(path)) {
@@ -310,7 +311,7 @@ func fileContentImportError(path string, err error) error {
 
 func (i *fileImporter) prepareRemoteFile(ctx context.Context, input importFileInput, content []byte, info os.FileInfo, source string, maxFileSize int64, labelOverride documentLabelOverride) (*document.Document, error) {
 	if info.Size() == 0 {
-		return nil, indexer.ErrEmptyFile
+		return nil, files.ErrEmptyFile
 	}
 	if maxFileSize > 0 && (info.Size() > maxFileSize || int64(len(content)) > maxFileSize) {
 		return nil, fileSnapshotSizeError(max(info.Size(), int64(len(content))), maxFileSize)
@@ -329,7 +330,7 @@ func (i *fileImporter) prepareRemoteFile(ctx context.Context, input importFileIn
 		Type:    document.RemoteFile,
 		Label:   labelOverride.resolve("", fallbackLabel),
 	}
-	if err := i.fileHandlers.Prepare(ctx, input.Path, d, content); err != nil {
+	if err := extractor.ExtractFile(ctx, i.fileExtractor, input.Path, d, content); err != nil {
 		return nil, fileContentImportError(input.Path, err)
 	}
 	if d.Text == "" && d.HTML == "" {

@@ -18,7 +18,10 @@ import (
 	"github.com/asciimoo/hister/server/model"
 )
 
-var ErrFileTooLarge = errors.New("file too large")
+var (
+	ErrEmptyFile    = errors.New("empty file")
+	ErrFileTooLarge = errors.New("file too large")
+)
 
 // ReadAllBounded reads at most limit bytes plus one byte to detect overflow.
 // It returns no partial content when the limit is exceeded or a read fails.

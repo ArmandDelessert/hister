@@ -20,6 +20,8 @@ Hister can index local files from configured directories and from explicit impor
 
 Files that do not match a specialized handler are treated as plain text. Binary files are skipped.
 
+Org files that read other files through `#+INCLUDE` or `#+SETUPFILE` are rejected. Include the needed content directly in the Org file before indexing it.
+
 For directories watched by the server, symbolic links are indexed only when their targets remain inside the configured directory. The configured directory itself may be a symbolic link. Run `hister reindex` after upgrading to remove previously indexed files reached through links outside those directories.
 
 Opening a watched local file from search downloads the original file. Use the preview to read its content within Hister.

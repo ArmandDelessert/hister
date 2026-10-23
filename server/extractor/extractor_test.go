@@ -3,10 +3,12 @@ package extractor
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/files/extract"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor/sdk"
 )
@@ -83,6 +85,109 @@ func useExtractors(t *testing.T, replacements ...Extractor) *Registry {
 		t.Fatal(err)
 	}
 	return registry
+}
+
+func TestExtractFilePreservesDocumentState(t *testing.T) {
+	for _, tc := range []struct {
+		name, content, title, text, html, metadataType string
+	}{
+		{name: "notes.txt", content: "Plain body", title: "Existing title", text: "Plain body"},
+		{name: "notes.md", content: "# Markdown title\n\nMarkdown body", title: "Markdown title", text: "Markdown body", html: "<h1", metadataType: "markdown"},
+		{name: "notes.org", content: "#+TITLE: Org title\n\n* Heading\n\nOrg body", title: "Org title", text: "Org body", html: "<h2", metadataType: "org"},
+		{name: "page.html", content: "<html><head><title>Saved page</title></head><body><p>Saved body</p></body></html>", title: "Saved page", text: "Saved body", html: "<p>Saved body</p>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &document.Document{
+				URL:      "remote-file://client/notes",
+				Type:     document.RemoteFile,
+				UserID:   42,
+				Label:    "notes",
+				Added:    123,
+				Updated:  456,
+				Title:    "Existing title",
+				Metadata: map[string]any{"source": "test"},
+			}
+			before := *d
+			registry := NewDefaultRegistry()
+			if err := registry.ExtractFile(context.Background(), extract.New(config.PDFParser{}), tc.name, d, []byte(tc.content)); err != nil {
+				t.Fatal(err)
+			}
+			if d.Title != tc.title || !strings.Contains(d.Text, tc.text) || !strings.Contains(d.HTML, tc.html) {
+				t.Fatalf("unexpected content: %#v", d)
+			}
+			if d.Metadata["source"] != "test" || (tc.metadataType != "" && d.Metadata["type"] != tc.metadataType) {
+				t.Fatalf("unexpected metadata: %#v", d.Metadata)
+			}
+			if len(before.Metadata) != 1 {
+				t.Fatal("extraction mutated the original metadata map")
+			}
+			d.Title, d.Text, d.HTML, d.Metadata = before.Title, before.Text, before.HTML, before.Metadata
+			if !reflect.DeepEqual(*d, before) {
+				t.Fatalf("extraction changed document state: %#v", d)
+			}
+		})
+	}
+}
+
+func TestExtractFileHTMLBoundary(t *testing.T) {
+	for _, outcome := range []string{"success", "failure", "oversized", "canceled"} {
+		t.Run(outcome, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			failure := errors.New("HTML extraction failed")
+			d := &document.Document{
+				URL:      "remote-file://client/page.html",
+				Type:     document.RemoteFile,
+				UserID:   42,
+				Title:    "Original title",
+				Text:     "Original text",
+				HTML:     "Original HTML",
+				Metadata: map[string]any{"source": "test"},
+			}
+			before := *d
+			registry := useExtractors(t, &contextStubExtractor{
+				stubExtractor: &stubExtractor{name: "html", capabilities: sdk.Capabilities{Extract: true}},
+				extractContext: func(gotCtx context.Context, prepared *document.Document) sdk.ExtractResult {
+					if gotCtx != ctx || prepared.URL != before.URL || prepared.HTML != "<p>Supplied HTML</p>" {
+						t.Fatal("HTML extraction did not receive caller context and source")
+					}
+					prepared.URL = "https://rewritten.example"
+					prepared.UserID = 1234
+					prepared.Processed = true
+					prepared.SkipSensitiveCheck = true
+					prepared.SkipIndexing = true
+					prepared.ExtraDocuments = []*document.Document{{URL: "file:///private"}}
+					prepared.Title = "Extracted title"
+					prepared.Text = "Extracted text"
+					prepared.AddMetadata("extracted", true)
+					switch outcome {
+					case "failure":
+						return sdk.AbortExtraction(failure)
+					case "oversized":
+						prepared.Text = strings.Repeat("x", (32<<20)+1)
+					case "canceled":
+						cancel()
+					}
+					return sdk.Extracted()
+				},
+			})
+			err := registry.ExtractFile(ctx, extract.New(config.PDFParser{}), "page.html", d, []byte("<p>Supplied HTML</p>"))
+			if outcome == "success" {
+				if err != nil || d.Title != "Extracted title" || d.Text != "Extracted text" || d.HTML != "<p>Supplied HTML</p>" || d.Metadata["extracted"] != true {
+					t.Fatalf("document = %#v, error = %v", d, err)
+				}
+				d.Title, d.Text, d.HTML, d.Metadata = before.Title, before.Text, before.HTML, before.Metadata
+			} else {
+				want := map[string]error{"failure": failure, "oversized": extract.ErrExtractedContentTooLarge, "canceled": context.Canceled}[outcome]
+				if !errors.Is(err, want) {
+					t.Fatalf("error = %v, want %v", err, want)
+				}
+			}
+			if !reflect.DeepEqual(*d, before) || len(before.Metadata) != 1 {
+				t.Fatalf("extraction crossed the document state boundary: %#v", d)
+			}
+		})
+	}
 }
 
 func TestReadabilityPreviewSanitizesMetaRefresh(t *testing.T) {

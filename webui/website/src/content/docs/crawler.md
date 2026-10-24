@@ -334,6 +334,9 @@ The request related flags are:
 For all backend options and configuration examples, see the
 [Crawler Configuration](configuration#crawler-backend-options) reference.
 
+Favicon and `robots.txt` downloads are limited to 8 MiB after decompression. Oversized favicons
+are omitted. Oversized `robots.txt` files cause URLs on that site to be skipped.
+
 For example, route a crawl through a local SOCKS5 proxy:
 
 ```bash

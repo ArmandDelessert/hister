@@ -26,6 +26,8 @@ import (
 // The JSON name is retained for compatibility with existing clients and exports.
 const MetadataIgnoreSkipRules = "ignore_skip_rules"
 
+const maxFaviconResponseSize = 8 * 1024 * 1024 // 8 MiB in bytes.
+
 type Document struct {
 	DocumentID string         `json:"id,omitempty"`
 	URL        string         `json:"url"`
@@ -114,9 +116,15 @@ func (d *Document) DownloadFavicon(userAgent string) error {
 		return fmt.Errorf("invalid status code (%d)", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	if resp.ContentLength > maxFaviconResponseSize {
+		return fmt.Errorf("favicon response exceeds the %d MiB limit", maxFaviconResponseSize/(1024*1024))
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFaviconResponseSize+1))
 	if err != nil {
 		return err
+	}
+	if len(data) > maxFaviconResponseSize {
+		return fmt.Errorf("favicon response exceeds the %d MiB limit", maxFaviconResponseSize/(1024*1024))
 	}
 
 	d.Favicon = fmt.Sprintf("data:%s;base64,%s", resp.Header.Get("Content-Type"), base64.StdEncoding.EncodeToString(data))

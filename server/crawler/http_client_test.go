@@ -26,19 +26,19 @@ func (f httpTestTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return f(req)
 }
 
-type trackedHTMLBody struct {
+type trackedResponseBody struct {
 	io.Reader
 	read   int
 	closed bool
 }
 
-func (b *trackedHTMLBody) Read(p []byte) (int, error) {
+func (b *trackedResponseBody) Read(p []byte) (int, error) {
 	n, err := b.Reader.Read(p)
 	b.read += n
 	return n, err
 }
 
-func (b *trackedHTMLBody) Close() error {
+func (b *trackedResponseBody) Close() error {
 	b.closed = true
 	return nil
 }
@@ -59,7 +59,7 @@ func TestHTTPFetcherBoundsBodyReads(t *testing.T) {
 		{name: "declared overflow", body: html + "x", contentLength: limit + 1, wantRead: 0, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := &trackedHTMLBody{Reader: strings.NewReader(tc.body)}
+			body := &trackedResponseBody{Reader: strings.NewReader(tc.body)}
 			fetcher, err := newHTTPFetcher(&config.CrawlerConfig{})
 			if err != nil {
 				t.Fatal(err)
@@ -136,6 +136,86 @@ func TestHTTPFetcherRejectsOversizedHTML(t *testing.T) {
 				t.Errorf("oversized response returned partial document: URL=%q, bytes=%d, links=%d", finalURL, len(content), len(links))
 			}
 		})
+	}
+}
+
+func TestRobotsCacheBoundsDownloads(t *testing.T) {
+	const limit = 8 * 1024 * 1024
+	const rules = "User-agent: *\nDisallow: /private\nAllow: /public\n"
+	content := rules + "#" + strings.Repeat("x", limit-len(rules)-2) + "\n"
+	for _, tc := range []struct {
+		name          string
+		body          string
+		contentLength int64
+		status        int
+		wantRead      int
+		allowPublic   bool
+		allowPrivate  bool
+	}{
+		{name: "exact limit", body: content, contentLength: limit, status: http.StatusOK, wantRead: limit, allowPublic: true},
+		{name: "streamed overflow", body: content + strings.Repeat("# extra\n", 1024), contentLength: -1, status: http.StatusOK, wantRead: limit + 1},
+		{name: "declared overflow", body: content + "#", contentLength: limit + 1, status: http.StatusOK},
+		{name: "missing robots", body: content + "#", contentLength: limit + 1, status: http.StatusNotFound, allowPublic: true, allowPrivate: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedResponseBody{Reader: strings.NewReader(tc.body)}
+			requests := 0
+			cache := NewRobotsCache("Hister")
+			cache.client.Transport = httpTestTransport(func(req *http.Request) (*http.Response, error) {
+				requests++
+				if req.URL.Path != "/robots.txt" || req.Header.Get("User-Agent") != "Hister" {
+					t.Errorf("unexpected robots request: %s, agent=%q", req.URL, req.Header.Get("User-Agent"))
+				}
+				return &http.Response{
+					StatusCode:    tc.status,
+					Header:        http.Header{"Content-Type": {"text/plain"}},
+					Body:          body,
+					ContentLength: tc.contentLength,
+					Request:       req,
+				}, nil
+			})
+			for _, check := range []struct {
+				path string
+				want bool
+			}{{"/public", tc.allowPublic}, {"/private", tc.allowPrivate}, {"/public", tc.allowPublic}} {
+				if got := cache.Allowed(t.Context(), "https://example.com"+check.path); got != check.want {
+					t.Errorf("Allowed(%q) = %v, want %v", check.path, got, check.want)
+				}
+			}
+			if body.read != tc.wantRead || !body.closed {
+				t.Errorf("robots response read %d bytes and closed=%v, want %d bytes and closed", body.read, body.closed, tc.wantRead)
+			}
+			if requests != 1 {
+				t.Errorf("robots requests = %d, want cached result", requests)
+			}
+		})
+	}
+}
+
+func TestRobotsCacheLimitsDecompressedResponse(t *testing.T) {
+	const limit = 8 * 1024 * 1024
+	const rules = "User-agent: *\nAllow: /\n#"
+	content := rules + strings.Repeat("x", limit+1-len(rules))
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	if _, err := io.WriteString(zw, content); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", strconv.Itoa(compressed.Len()))
+		if _, err := w.Write(compressed.Bytes()); err != nil {
+			return
+		}
+	}))
+	defer server.Close()
+	cache := NewRobotsCache("Hister")
+	defer cache.client.CloseIdleConnections()
+	if cache.Allowed(t.Context(), server.URL+"/public") {
+		t.Fatal("oversized decompressed robots.txt allowed crawling")
 	}
 }
 

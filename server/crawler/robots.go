@@ -15,6 +15,8 @@ import (
 	"github.com/temoto/robotstxt"
 )
 
+const maxRobotsResponseSize = 8 * 1024 * 1024 // 8 MiB in bytes.
+
 // RobotsCache fetches and caches robots.txt files in memory for the lifetime
 // of a crawl. It is safe for concurrent use.
 type RobotsCache struct {
@@ -51,7 +53,7 @@ func NewRobotsCacheWithProxy(userAgent, proxy string) (*RobotsCache, error) {
 // Allowed reports whether the given URL is allowed to be fetched according
 // to the site's robots.txt. If the robots.txt cannot be fetched it is treated
 // as permissive (all URLs allowed) to avoid blocking legitimate crawls due to
-// transient network errors.
+// transient network errors. Oversized files block the origin for this crawl.
 func (r *RobotsCache) Allowed(ctx context.Context, rawURL string) bool {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -79,6 +81,7 @@ func (r *RobotsCache) Allowed(ctx context.Context, rawURL string) bool {
 
 // fetch retrieves and parses robots.txt for the given origin (scheme://host).
 // Returns nil when the file is unavailable or unparseable (allow-all).
+// Oversized files produce a disallow-all policy instead of partial rules.
 func (r *RobotsCache) fetch(ctx context.Context, origin string) *robotstxt.RobotsData {
 	robotsURL := origin + "/robots.txt"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL, nil)
@@ -105,10 +108,17 @@ func (r *RobotsCache) fetch(ctx context.Context, origin string) *robotstxt.Robot
 		return nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Debug().Err(err).Str("url", robotsURL).Msg("robots: failed to read body")
-		return nil
+	var body []byte
+	if resp.ContentLength <= maxRobotsResponseSize {
+		body, err = io.ReadAll(io.LimitReader(resp.Body, maxRobotsResponseSize+1))
+		if err != nil {
+			log.Debug().Err(err).Str("url", robotsURL).Msg("robots: failed to read body")
+			return nil
+		}
+	}
+	if resp.ContentLength > maxRobotsResponseSize || len(body) > maxRobotsResponseSize {
+		log.Warn().Str("url", robotsURL).Int("limit_bytes", maxRobotsResponseSize).Msg("robots: response too large, skipping this site")
+		body = []byte("User-agent: *\nDisallow: /\n")
 	}
 
 	data, err := robotstxt.FromBytes(body)

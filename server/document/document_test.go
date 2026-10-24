@@ -1,14 +1,143 @@
 package document
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/asciimoo/hister/files"
 )
+
+type faviconTestTransport func(*http.Request) (*http.Response, error)
+
+func (f faviconTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type trackedFaviconBody struct {
+	io.Reader
+	read   int
+	closed bool
+}
+
+func (b *trackedFaviconBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.read += n
+	return n, err
+}
+
+func (b *trackedFaviconBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestDownloadFaviconBoundsBodyReads(t *testing.T) {
+	const limit = 8 * 1024 * 1024
+	for _, tc := range []struct {
+		name          string
+		contentLength int64
+		wantRead      int
+	}{
+		{name: "declared overflow", contentLength: limit + 1},
+		{name: "streamed overflow", contentLength: -1, wantRead: limit + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedFaviconBody{Reader: strings.NewReader(strings.Repeat("x", limit+8192))}
+			previousTransport := http.DefaultTransport
+			t.Cleanup(func() { http.DefaultTransport = previousTransport })
+			http.DefaultTransport = faviconTestTransport(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path != "/favicon.ico" || req.Header.Get("User-Agent") != "Hister" {
+					t.Errorf("unexpected favicon request: %s, agent=%q", req.URL, req.Header.Get("User-Agent"))
+				}
+				return &http.Response{
+					StatusCode:    http.StatusOK,
+					Header:        http.Header{"Content-Type": {"image/png"}},
+					Body:          body,
+					ContentLength: tc.contentLength,
+					Request:       req,
+				}, nil
+			})
+			d := &Document{URL: "https://example.com/page", Favicon: "previous favicon"}
+			if err := d.DownloadFavicon("Hister"); err == nil || d.Favicon != "previous favicon" {
+				t.Fatalf("oversized favicon was not rejected: %v", err)
+			}
+			if body.read != tc.wantRead || !body.closed {
+				t.Errorf("favicon response read %d bytes and closed=%v, want %d bytes and closed", body.read, body.closed, tc.wantRead)
+			}
+		})
+	}
+}
+
+func TestDownloadFaviconLimitsResponseSize(t *testing.T) {
+	const limit = 8 * 1024 * 1024
+	body := bytes.Repeat([]byte("x"), limit+1)
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	if _, err := zw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		data := body
+		switch r.URL.Path {
+		case "/exact":
+			data = data[:limit]
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		case "/known":
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		case "/chunked":
+			w.(http.Flusher).Flush()
+		case "/gzip":
+			data = compressed.Bytes()
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		}
+		// The client can close an oversized response before the write completes.
+		if _, err := w.Write(data); err != nil {
+			return
+		}
+	}))
+	defer server.Close()
+	for _, path := range []string{"/exact", "/known", "/chunked", "/gzip"} {
+		t.Run(path, func(t *testing.T) {
+			d := &Document{URL: server.URL, faviconURL: server.URL + path, Favicon: "previous favicon"}
+			err := d.DownloadFavicon("Hister")
+			if path != "/exact" {
+				if err == nil || !strings.Contains(err.Error(), "8 MiB") {
+					t.Errorf("oversized favicon error = %v, want size limit error", err)
+				}
+				if d.Favicon != "previous favicon" {
+					t.Error("oversized favicon replaced the previous value")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, ok := strings.CutPrefix(d.Favicon, "data:image/png;base64,")
+			if !ok {
+				t.Fatal("favicon lost its content type or data URL encoding")
+			}
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil || !bytes.Equal(decoded, body[:limit]) {
+				t.Fatalf("favicon at the limit was truncated or corrupted: %v", err)
+			}
+		})
+	}
+}
 
 func TestProcessPreparedLocalFileDoesNotReadFilesystem(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "note.txt")

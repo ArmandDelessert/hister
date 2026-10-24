@@ -762,7 +762,7 @@ func finishBrowserImportJob(cmd *cobra.Command, job *browserImportJob) {
 	}
 	validator.SetVisited(int(done + failed))
 
-	if err := crawlAndIndex(cmd.Context(), job.id, job.startURL, cr, validator, job.label, clientOpts...); err != nil {
+	if err := crawlAndIndex(cmd.Context(), job.startURL, cr, validator, job.label, clientOpts...); err != nil {
 		log.Fatal().Err(err).Msg("Browser import crawl failed")
 	}
 }

@@ -134,6 +134,9 @@ On resume, Hister restores the saved starting URL, traversal rules, label, and U
 left with `in_progress` status is moved back to `pending`. URLs already marked `done`, `failed`, or
 `skipped` are not fetched again. Pending URLs continue in their original queue order.
 
+URLs are marked `done` only after Hister accepts their document submission. An interruption
+before completion is recorded can cause the last page to be submitted again on resume.
+
 A process stopped abruptly can leave the job status as `running`. This does not mean its queue was
 lost. Use `hister crawl show NAME` to check the queue counts, then resume it normally.
 

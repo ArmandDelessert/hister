@@ -176,30 +176,6 @@ func insertCrawlURLs(db *gorm.DB, jobID string, urls []string, depth int) error 
 	return db.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(records, 500).Error
 }
 
-// MarkDoneAndEnqueueLinks marks a crawl URL as done and inserts all discovered
-// child URLs in a single transaction, minimising the number of SQLite commits.
-func MarkDoneAndEnqueueLinks(id uint, jobID string, links []string, depth int) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&CrawlURL{}).Where("id = ?", id).
-			Updates(map[string]any{"status": CrawlURLDone, "error": "", "error_code": 0}).Error; err != nil {
-			return err
-		}
-		if len(links) == 0 {
-			return nil
-		}
-		records := make([]CrawlURL, 0, len(links))
-		for _, u := range links {
-			records = append(records, CrawlURL{
-				JobID:  jobID,
-				URL:    u,
-				Depth:  depth,
-				Status: CrawlURLPending,
-			})
-		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(records, 500).Error
-	})
-}
-
 // pending state (used for redirect targets that have been fetched indirectly).
 func InsertCrawlURLDone(jobID, rawURL string, depth int) error {
 	// Update if already present, otherwise insert as done.

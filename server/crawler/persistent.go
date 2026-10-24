@@ -4,6 +4,7 @@ package crawler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -15,21 +16,20 @@ import (
 	"github.com/asciimoo/hister/server/model"
 )
 
-// persistentCrawler wraps a fetcher with DB-backed BFS so crawl jobs can be
-// interrupted and resumed.
-type persistentCrawler struct {
+// PersistentCrawler persists traversal and document processing outcomes so
+// interrupted jobs can resume without skipping unacknowledged documents.
+type PersistentCrawler struct {
 	fetcher        fetcher
 	cfg            *config.CrawlerConfig
 	jobID          string
 	robots         *RobotsCache // nil means robots.txt enforcement is disabled
 	skipURLChecker SkipURLChecker
-	err            error
 }
 
-// NewPersistent creates a Crawler that persists its state to the database.
+// NewPersistent creates a crawler that persists its state to the database.
 // jobID is used as the primary key for the crawl job.
 // Pass a non-nil RobotsCache to enforce robots.txt rules; pass nil to disable.
-func NewPersistent(cfg *config.CrawlerConfig, jobID string, robots *RobotsCache, opts ...Option) (Crawler, error) {
+func NewPersistent(cfg *config.CrawlerConfig, jobID string, robots *RobotsCache, opts ...Option) (*PersistentCrawler, error) {
 	o := applyOptions(opts...)
 	var f fetcher
 	var err error
@@ -44,36 +44,31 @@ func NewPersistent(cfg *config.CrawlerConfig, jobID string, robots *RobotsCache,
 	if err != nil {
 		return nil, fmt.Errorf("%s backend: %w", crawlerBackendName(cfg), err)
 	}
-	return &persistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots, skipURLChecker: o.skipURLChecker}, nil
+	return &PersistentCrawler{fetcher: f, cfg: cfg, jobID: jobID, robots: robots, skipURLChecker: o.skipURLChecker}, nil
 }
 
 // Crawl starts (or resumes) the persistent crawl job identified by jobID.
+// It calls process synchronously for each fetched document and marks its source
+// URL done only after process succeeds. Processing failures are recorded against
+// the source URL and crawling continues. Cancellation leaves unfinished work
+// available for resume. A process crash can cause a successful submission to be
+// retried if its completion was not yet recorded.
 // startURL and v are only used when creating a new job; on resume the stored
 // start URL and validator rules take precedence (the caller is responsible for
 // passing the correct v with a pre-seeded visited counter).
-func (c *persistentCrawler) Crawl(ctx context.Context, startURL string, v *Validator) (<-chan *document.Document, error) {
-	ch := make(chan *document.Document)
-	go func() {
-		defer close(ch)
-		c.err = c.persistentBFS(ctx, startURL, v, ch)
-		if c.err != nil {
-			log.Error().Err(c.err).Str("job_id", c.jobID).Msg("persistent crawl failed")
-		}
-	}()
-	return ch, nil
-}
-
-// Err returns the background crawl error after the document channel closes.
-func (c *persistentCrawler) Err() error {
-	return c.err
+func (c *PersistentCrawler) Crawl(ctx context.Context, startURL string, v *Validator, process func(*document.Document) error) error {
+	if process == nil {
+		return errors.New("persistent crawl requires a document processor")
+	}
+	return c.persistentBFS(ctx, startURL, v, process)
 }
 
 // Close releases resources held by the underlying fetcher backend.
-func (c *persistentCrawler) Close() error {
+func (c *PersistentCrawler) Close() error {
 	return c.fetcher.close()
 }
 
-func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, v *Validator, ch chan<- *document.Document) error {
+func (c *PersistentCrawler) persistentBFS(ctx context.Context, startURL string, v *Validator, process func(*document.Document) error) error {
 	// Restore any URLs that were left in_progress from a previous run.
 	if err := model.ResetInProgressCrawlURLs(c.jobID); err != nil {
 		return fmt.Errorf("reset in_progress URLs: %w", err)
@@ -175,7 +170,49 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 			continue
 		}
 
-		// Handle redirects: insert the final URL as done so it won't be fetched again.
+		finalParsed, err := url.Parse(finalURL)
+		if err != nil {
+			finalParsed = parsedURL
+		}
+		finalParsed.Fragment = ""
+		var resolved []string
+		if !v.Rules().NoDepth {
+			for _, link := range links {
+				abs, err := resolveURL(finalParsed, link)
+				if err == nil && abs != "" {
+					resolved = append(resolved, abs)
+				}
+			}
+		}
+		// Save discovered links before submission. If the server accepts this
+		// page but completion cannot be recorded, resume may skip it as already
+		// indexed; its children must still be available in the queue.
+		if err := model.BulkInsertCrawlURLs(c.jobID, resolved, cur.Depth+1); err != nil {
+			return fmt.Errorf("enqueue discovered links: %w", err)
+		}
+
+		processErr := process(&document.Document{URL: finalURL, HTML: htmlContent})
+		if processErr != nil {
+			if ctx.Err() != nil {
+				if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLPending, ""); err != nil {
+					return fmt.Errorf("requeue interrupted submission: %w", err)
+				}
+				return model.UpdateCrawlJobStatus(c.jobID, model.CrawlJobInterrupted)
+			}
+			errCode := 0
+			if httpErr, ok := errors.AsType[interface {
+				error
+				HTTPStatusCode() int
+			}](processErr); ok {
+				errCode = httpErr.HTTPStatusCode()
+			}
+			if err := model.MarkCrawlURLFailed(c.jobID, cur.URL, errCode, processErr.Error()); err != nil {
+				return fmt.Errorf("record document processing failure: %w", err)
+			}
+			continue
+		}
+
+		// A redirect target is complete only after its document is accepted.
 		if finalURL != cur.URL {
 			finalParsedURL, fErr := url.Parse(finalURL)
 			if fErr == nil {
@@ -187,42 +224,8 @@ func (c *persistentCrawler) persistentBFS(ctx context.Context, startURL string, 
 			}
 		}
 
-		if v.Rules().NoDepth {
-			if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLDone, ""); err != nil {
-				return fmt.Errorf("failed to mark URL done: %w", err)
-			}
-		} else {
-			// Resolve all discovered links first, then enqueue them together with
-			// the mark-done update in a single transaction.
-			finalParsed, err := url.Parse(finalURL)
-			if err != nil {
-				finalParsed = parsedURL
-			}
-			finalParsed.Fragment = ""
-
-			resolved := make([]string, 0, len(links))
-			for _, link := range links {
-				abs, err := resolveURL(finalParsed, link)
-				if err != nil || abs == "" {
-					continue
-				}
-				resolved = append(resolved, abs)
-			}
-
-			if err := model.MarkDoneAndEnqueueLinks(cur.ID, c.jobID, resolved, cur.Depth+1); err != nil {
-				return fmt.Errorf("failed to mark URL done and enqueue links: %w", err)
-			}
-		}
-
-		doc := &document.Document{
-			URL:  finalURL,
-			HTML: htmlContent,
-		}
-
-		select {
-		case ch <- doc:
-		case <-ctx.Done():
-			return model.UpdateCrawlJobStatus(c.jobID, model.CrawlJobInterrupted)
+		if err := model.UpdateCrawlURLStatus(cur.ID, model.CrawlURLDone, ""); err != nil {
+			return fmt.Errorf("failed to mark URL done: %w", err)
 		}
 	}
 

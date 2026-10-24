@@ -11,6 +11,7 @@ import (
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/server/crawler"
+	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/model"
 
@@ -378,7 +379,7 @@ func runPersistentIndexJob(
 		}
 	}()
 
-	return crawlAndIndex(ctx, jobID, startURL, cr, validator, label, clientOpts...)
+	return crawlAndIndex(ctx, startURL, cr, validator, label, clientOpts...)
 }
 
 func init() {
@@ -439,22 +440,14 @@ func indexURL(ctx context.Context, cr crawler.Crawler, u string, label string, c
 	return nil
 }
 
-func crawlAndIndex(ctx context.Context, jobID string, startURL string, cr crawler.Crawler, v *crawler.Validator, label string, clientOpts ...client.Option) error {
-	ch, err := cr.Crawl(ctx, startURL, v)
-	if err != nil {
-		return err
-	}
+func crawlAndIndex(ctx context.Context, startURL string, cr *crawler.PersistentCrawler, v *crawler.Validator, label string, clientOpts ...client.Option) error {
 	c := newClient(clientOpts...)
 	var failed int64
-	var runErr error
-	for doc := range ch {
-		// Processing can normalize the URL. Keep the queue URL for failure records.
-		rawURL, _, _ := strings.Cut(doc.URL, "#")
+	runErr := cr.Crawl(ctx, startURL, v, func(doc *document.Document) error {
 		if err := doc.ProcessContext(ctx, nil, extractor.ExtractContext); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to process crawled document")
 			failed++
-			runErr = errors.Join(runErr, markPersistentIndexFailure(jobID, rawURL, err))
-			continue
+			return err
 		}
 		if doc.Favicon == "" {
 			if err := doc.DownloadFavicon(UserAgent); err != nil {
@@ -462,34 +455,18 @@ func crawlAndIndex(ctx context.Context, jobID string, startURL string, cr crawle
 			}
 		}
 		doc.Label = label
-		if err := c.AddDocumentJSON(clientDocument(doc)); err != nil {
+		if err := c.AddDocumentJSONContext(ctx, clientDocument(doc)); err != nil {
 			log.Warn().Err(err).Str("url", doc.URL).Msg("failed to index crawled document")
 			failed++
-			runErr = errors.Join(runErr, markPersistentIndexFailure(jobID, rawURL, err))
+			return err
 		}
-	}
-	if reporter, ok := cr.(crawler.ErrorReporter); ok {
-		runErr = errors.Join(runErr, reporter.Err())
-	}
+		return nil
+	})
 	if runErr = errors.Join(runErr, ctx.Err()); runErr != nil {
 		return runErr
 	}
 	if failed > 0 {
 		return &partialFailure{count: failed}
-	}
-	return nil
-}
-
-func markPersistentIndexFailure(jobID, rawURL string, err error) error {
-	if jobID == "" || rawURL == "" || err == nil {
-		return nil
-	}
-	errCode := 0
-	if httpErr, ok := errors.AsType[*client.HTTPError](err); ok {
-		errCode = httpErr.StatusCode
-	}
-	if dbErr := model.MarkCrawlURLFailed(jobID, rawURL, errCode, err.Error()); dbErr != nil {
-		return fmt.Errorf("record indexing failure for %s: %w", rawURL, dbErr)
 	}
 	return nil
 }

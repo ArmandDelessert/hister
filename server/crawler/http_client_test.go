@@ -3,17 +3,141 @@
 package crawler
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/asciimoo/hister/config"
 )
+
+type httpTestTransport func(*http.Request) (*http.Response, error)
+
+func (f httpTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type trackedHTMLBody struct {
+	io.Reader
+	read   int
+	closed bool
+}
+
+func (b *trackedHTMLBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.read += n
+	return n, err
+}
+
+func (b *trackedHTMLBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestHTTPFetcherBoundsBodyReads(t *testing.T) {
+	const limit = 32 << 20
+	const lastLink = `<a href="/last">Last link</a>`
+	html := strings.Repeat(" ", limit-len(lastLink)) + lastLink
+	for _, tc := range []struct {
+		name          string
+		body          string
+		contentLength int64
+		wantRead      int
+		wantErr       bool
+	}{
+		{name: "exact limit", body: html, contentLength: limit, wantRead: limit},
+		{name: "streamed overflow", body: html + strings.Repeat("x", 8192), contentLength: -1, wantRead: limit + 1, wantErr: true},
+		{name: "declared overflow", body: html + "x", contentLength: limit + 1, wantRead: 0, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedHTMLBody{Reader: strings.NewReader(tc.body)}
+			fetcher, err := newHTTPFetcher(&config.CrawlerConfig{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fetcher.client.Transport = httpTestTransport(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode:    http.StatusOK,
+					Header:        http.Header{"Content-Type": {"text/html"}},
+					Body:          body,
+					ContentLength: tc.contentLength,
+					Request:       req,
+				}, nil
+			})
+			const url = "https://example.com/page"
+			finalURL, content, links, err := fetcher.fetchPage(t.Context(), url)
+			if body.read != tc.wantRead || !body.closed {
+				t.Errorf("response read %d bytes and closed=%v, want %d bytes and closed", body.read, body.closed, tc.wantRead)
+			}
+			if tc.wantErr {
+				if err == nil || finalURL != "" || content != "" || len(links) != 0 {
+					t.Fatalf("oversized response was not rejected: err=%v, URL=%q, bytes=%d, links=%d", err, finalURL, len(content), len(links))
+				}
+				return
+			}
+			if err != nil || finalURL != url || content != html || !slices.Equal(links, []string{"/last"}) {
+				t.Fatalf("HTML at the limit was rejected or truncated: err=%v, URL=%q, bytes=%d, links=%v", err, finalURL, len(content), links)
+			}
+		})
+	}
+}
+
+func TestHTTPFetcherRejectsOversizedHTML(t *testing.T) {
+	// The limit applies to decoded HTML, including bodies without Content-Length.
+	body := bytes.Repeat([]byte("x"), (32<<20)+1)
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	if _, err := zw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		data := body
+		switch r.URL.Path {
+		case "/known":
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		case "/chunked":
+			w.(http.Flusher).Flush()
+		case "/gzip":
+			data = compressed.Bytes()
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		}
+		// Closing an oversized response can interrupt the server's write.
+		if _, err := w.Write(data); err != nil {
+			return
+		}
+	}))
+	defer server.Close()
+	for _, path := range []string{"/known", "/chunked", "/gzip"} {
+		t.Run(path, func(t *testing.T) {
+			fetcher, err := newHTTPFetcher(&config.CrawlerConfig{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer fetcher.client.CloseIdleConnections()
+			finalURL, content, links, err := fetcher.fetchPage(t.Context(), server.URL+path)
+			if err == nil || !strings.Contains(err.Error(), "32 MiB") {
+				t.Errorf("oversized HTML error = %v, want size limit error", err)
+			}
+			if finalURL != "" || content != "" || len(links) != 0 {
+				t.Errorf("oversized response returned partial document: URL=%q, bytes=%d, links=%d", finalURL, len(content), len(links))
+			}
+		})
+	}
+}
 
 func TestHTTPClientRequestSettings(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

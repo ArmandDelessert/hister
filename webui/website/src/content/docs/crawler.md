@@ -258,6 +258,9 @@ settings on the server does not start a browser or change how the extension capt
 | `chromedp` | Chrome or Chromium installed where `hister index` runs.   | Hister launches and controls a local browser using CDP.   |
 | `bidi`     | Start Firefox before running `hister index`.              | Hister connects to its WebDriver BiDi WebSocket endpoint. |
 
+The HTTP backend accepts HTML responses up to 32 MiB after automatic decompression. Larger
+responses fail without indexing partial content. Persistent jobs record those URLs as failed.
+
 ### Chrome or Chromium
 
 Install Chrome or Chromium on the machine running the indexing command. Hister starts the

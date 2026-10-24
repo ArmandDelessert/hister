@@ -14,6 +14,9 @@ import (
 	"github.com/asciimoo/hister/config"
 )
 
+// Match the extracted content allowance while bounding downloads before parsing.
+const maxHTMLResponseSize = 32 * 1024 * 1024 // 32 MiB in bytes.
+
 type httpFetcher struct {
 	client *HTTPClient
 }
@@ -49,9 +52,15 @@ func (f *httpFetcher) fetchPage(ctx context.Context, rawURL string) (string, str
 		return "", "", nil, fmt.Errorf("not an HTML response: %s", ct)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	if resp.ContentLength > maxHTMLResponseSize {
+		return "", "", nil, fmt.Errorf("HTML response exceeds the %d MiB limit", maxHTMLResponseSize>>20)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxHTMLResponseSize+1))
 	if err != nil {
 		return "", "", nil, err
+	}
+	if len(body) > maxHTMLResponseSize {
+		return "", "", nil, fmt.Errorf("HTML response exceeds the %d MiB limit", maxHTMLResponseSize>>20)
 	}
 
 	htmlContent := string(body)

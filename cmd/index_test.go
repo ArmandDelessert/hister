@@ -37,7 +37,9 @@ func TestPersistentIndexWaitsForSubmission(t *testing.T) {
 		switch r.URL.Path {
 		case "/page":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><head><title>Pending submission</title></head><body><p>This document must be accepted before the crawl is done.</p></body></html>`)
+			if _, err := fmt.Fprint(w, `<html><head><title>Pending submission</title></head><body><p>This document must be accepted before the crawl is done.</p></body></html>`); err != nil {
+				t.Error(err)
+			}
 		case "/api/add":
 			submitted.Store(true)
 			stats, err := model.GetCrawlJobStats(jobID)
@@ -88,7 +90,9 @@ func TestPersistentIndexResumesInterruptedSubmission(t *testing.T) {
 			http.Redirect(w, r, "/page", http.StatusFound)
 		case "/page":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><head><title>Resumable page</title></head><body><p>Retry this document after an interrupted submission.</p></body></html>`)
+			if _, err := fmt.Fprint(w, `<html><head><title>Resumable page</title></head><body><p>Retry this document after an interrupted submission.</p></body></html>`); err != nil {
+				t.Error(err)
+			}
 		case "/api/add":
 			if attempts.Add(1) == 1 {
 				cancel()
@@ -148,10 +152,14 @@ func TestPersistentIndexRecordsRedirectFailureAndContinues(t *testing.T) {
 			http.Redirect(w, r, "/page?utm_source=test", http.StatusFound)
 		case "/page":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><head><title>Rejected page</title></head><body><p>Its child must still be crawled.</p><a href="/child#section">Child</a></body></html>`)
+			if _, err := fmt.Fprint(w, `<html><head><title>Rejected page</title></head><body><p>Its child must still be crawled.</p><a href="/child#section">Child</a></body></html>`); err != nil {
+				t.Error(err)
+			}
 		case "/child":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><head><title>Accepted child</title></head><body><p>This child should still be indexed after its parent fails.</p></body></html>`)
+			if _, err := fmt.Fprint(w, `<html><head><title>Accepted child</title></head><body><p>This child should still be indexed after its parent fails.</p></body></html>`); err != nil {
+				t.Error(err)
+			}
 		case "/api/add":
 			attempts.Add(1)
 			var doc document.Document
@@ -212,7 +220,9 @@ func TestPersistentIndexRetainsSourceWhenLinkQueueFails(t *testing.T) {
 		switch r.URL.Path {
 		case "/page", "/child":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><head><title>Rejected document</title></head><body><p>Preserve its discovered links.</p><a href="/child">Child</a></body></html>`)
+			if _, err := fmt.Fprint(w, `<html><head><title>Rejected document</title></head><body><p>Preserve its discovered links.</p><a href="/child">Child</a></body></html>`); err != nil {
+				t.Error(err)
+			}
 		case "/api/add":
 			http.Error(w, "index unavailable", http.StatusServiceUnavailable)
 		default:
@@ -264,10 +274,14 @@ func TestPersistentIndexResumesAfterAcceptedSubmission(t *testing.T) {
 		switch r.URL.Path {
 		case "/page":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><head><title>Accepted parent</title></head><body><p>Preserve this page's links after submission.</p><a href="/child">Child</a></body></html>`)
+			if _, err := fmt.Fprint(w, `<html><head><title>Accepted parent</title></head><body><p>Preserve this page's links after submission.</p><a href="/child">Child</a></body></html>`); err != nil {
+				t.Error(err)
+			}
 		case "/child":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><head><title>Child</title></head><body><p>The child must be discovered on resume.</p></body></html>`)
+			if _, err := fmt.Fprint(w, `<html><head><title>Child</title></head><body><p>The child must be discovered on resume.</p></body></html>`); err != nil {
+				t.Error(err)
+			}
 		case "/api/document":
 			if accepted.Load() == 0 || !strings.HasSuffix(r.URL.Query().Get("url"), "/page") {
 				w.WriteHeader(http.StatusNotFound)

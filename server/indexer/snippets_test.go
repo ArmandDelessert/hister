@@ -157,3 +157,55 @@ func TestSemanticSnippetLength(t *testing.T) {
 		})
 	}
 }
+
+func TestSemanticContentFlags(t *testing.T) {
+	var requests atomic.Int64
+	server := embeddingTestServer(t, &requests)
+	defer server.Close()
+	idx := newTestIndexer(t, snippetConfig(t, 80))
+	defer idx.Close()
+	body := strings.Repeat("Full document text. ", 100)
+	fullHTML := "<html><body>" + body + "</body></html>"
+	doc := &document.Document{
+		URL: "https://example.com/semantic", Title: "Semantic result",
+		Text: body, HTML: fullHTML, Processed: true,
+	}
+	if err := idx.Add(doc); err != nil {
+		t.Fatal(err)
+	}
+	const chunk = "The relevant passage."
+	idx.embedder = vectorstore.NewEmbedder(&config.SemanticSearch{
+		EmbeddingEndpoint: server.URL, EmbeddingModel: "test", Dimensions: 2,
+	})
+	idx.vectorStore = &snippetVectorStore{results: []vectorstore.Result{{DocID: doc.ID(), ChunkText: chunk, Similarity: 0.9}}}
+	for _, includeHTML := range []bool{false, true} {
+		for _, includeText := range []bool{false, true} {
+			t.Run(fmt.Sprintf("html=%t/text=%t", includeHTML, includeText), func(t *testing.T) {
+				res, err := idx.Search(&Query{
+					Text: "unmatched", SemanticEnabled: true, IncludeHTML: includeHTML, IncludeText: includeText,
+				})
+				if err != nil || len(res.SemanticHits) != 1 || res.SemanticHits[0].Document == nil {
+					t.Fatalf("semantic search = %+v, %v", res, err)
+				}
+				hit := res.SemanticHits[0]
+				wantHTML := ""
+				if includeHTML {
+					wantHTML = fullHTML
+				}
+				if hit.Document.HTML != wantHTML {
+					t.Errorf("HTML length = %d, want %d", len(hit.Document.HTML), len(wantHTML))
+				}
+				wantText := string([]rune(body)[:80]) + "…"
+				if includeText {
+					wantText = body
+				}
+				if hit.Document.Text != wantText {
+					t.Errorf("text length = %d, want %d", len(hit.Document.Text), len(wantText))
+				}
+				if hit.MatchedChunk != chunk || hit.Similarity != 0.9 || hit.Document.URL != doc.URL || hit.Document.Title != doc.Title {
+					t.Errorf("semantic result metadata changed: %+v", hit)
+				}
+			})
+		}
+	}
+}

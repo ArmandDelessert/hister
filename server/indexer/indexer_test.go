@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1092,6 +1093,75 @@ func TestSearchReturnsKeywordResultsAfterQueryEmbeddingTimeout(t *testing.T) {
 	}
 	if !result.SemanticEnabled {
 		t.Fatal("search did not attempt semantic embedding")
+	}
+}
+
+func TestSemanticDateFilters(t *testing.T) {
+	var requests atomic.Int64
+	server := embeddingTestServer(t, &requests)
+	defer server.Close()
+	idx := newTestIndexer(t, snippetConfig(t, 80))
+	defer idx.Close()
+	store := &snippetVectorStore{}
+	for _, updated := range []int64{100, 200, 300} {
+		for _, title := range []string{"keyword", "semantic"} {
+			doc := &document.Document{
+				URL: fmt.Sprintf("https://example.com/%s/%d", title, updated), Title: title,
+				Text: "Document content", Added: 50, Updated: updated, Processed: true,
+			}
+			if err := idx.Add(doc); err != nil {
+				t.Fatal(err)
+			}
+			store.results = append(store.results, vectorstore.Result{DocID: doc.ID(), ChunkText: "content", Similarity: 1})
+		}
+	}
+	idx.embedder = vectorstore.NewEmbedder(&config.SemanticSearch{
+		EmbeddingEndpoint: server.URL, EmbeddingModel: "test", Dimensions: 2,
+	})
+	idx.vectorStore = store
+	for _, tc := range []struct {
+		name     string
+		from, to int64
+		want     []int64
+	}{
+		{"unfiltered", 0, 0, []int64{100, 200, 300}},
+		{"from inclusive", 200, 0, []int64{200, 300}},
+		{"to inclusive", 0, 200, []int64{100, 200}},
+		{"range", 150, 250, []int64{200}},
+		{"exact timestamp", 200, 200, []int64{200}},
+		{"future from only", 1893456000, 0, nil},
+		{"future", 1893456000, 1893542400, nil},
+		{"before documents", 0, 99, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := idx.Search(&Query{Text: "keyword", SemanticEnabled: true, DateFrom: tc.from, DateTo: tc.to})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var keywordDates, semanticDates []int64
+			for _, doc := range res.Documents {
+				keywordDates = append(keywordDates, doc.Updated)
+			}
+			for _, hit := range res.SemanticHits {
+				if hit.Document != nil {
+					semanticDates = append(semanticDates, hit.Document.Updated)
+				}
+			}
+			slices.Sort(keywordDates)
+			slices.Sort(semanticDates)
+			if !slices.Equal(keywordDates, tc.want) {
+				t.Errorf("keyword dates = %v, want %v", keywordDates, tc.want)
+			}
+			if !slices.Equal(semanticDates, tc.want) {
+				t.Errorf("semantic dates = %v, want %v", semanticDates, tc.want)
+			}
+			if want := 2 * len(tc.want); len(res.SemanticHits) != want {
+				t.Errorf("semantic hit count = %d, want %d", len(res.SemanticHits), want)
+			}
+			if want := uint64(2 * len(tc.want)); res.Total != want {
+				t.Errorf("total = %d, want %d", res.Total, want)
+			}
+		})
 	}
 }
 

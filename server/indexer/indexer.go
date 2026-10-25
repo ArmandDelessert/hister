@@ -2099,11 +2099,16 @@ func (i *Indexer) search(semanticConfig config.SemanticSearch, q *Query) (*Resul
 						Similarity:   dh.similarity,
 						MatchedChunk: truncateText(dh.chunkText, i.snippetLength),
 					}
-					// For semantic-only hits, populate the document with a truncated text preview.
-					d := i.getByDocID(docID, resultIncludeText|resultIncludeHTML)
+					// Load text for the preview, and HTML only when requested.
+					d := i.getByDocID(docID, include|resultIncludeText)
 					if d != nil {
+						if (q.DateFrom != 0 && d.Updated < q.DateFrom) || (q.DateTo != 0 && d.Updated > q.DateTo) {
+							continue
+						}
 						if _, inKeyword := keywordURLs[d.URL]; !inKeyword {
-							d.Text = truncateText(d.Text, i.snippetLength)
+							if !q.IncludeText {
+								d.Text = truncateText(d.Text, i.snippetLength)
+							}
 							hit.Document = d
 						}
 					}

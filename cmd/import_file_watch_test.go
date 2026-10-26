@@ -40,8 +40,9 @@ func TestImportWatchedPDFUsesClientParser(t *testing.T) {
 		}
 		return fileWatchResponse(r, http.StatusCreated), nil
 	})}))
+	// Allow for the race detector's one second shutdown delay in the helper process.
 	importer := newFileImporter(c, config.Indexer{
-		PDFParser: config.PDFParser{Command: executable, Args: []string{"-test.run=^TestPDFImportParserProcess$", "--", "--pdf-import-parser-test"}, Timeout: 1},
+		PDFParser: config.PDFParser{Command: executable, Args: []string{"-test.run=^TestPDFImportParserProcess$", "--", "--pdf-import-parser-test"}, Timeout: 10},
 	})
 	skipped, err := importer.importWatchedFile(context.Background(), importFileInput{Path: path}, fileWatchOptions{
 		Source: "laptop", MaxFileSize: 1024,

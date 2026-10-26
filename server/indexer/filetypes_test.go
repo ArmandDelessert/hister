@@ -69,10 +69,15 @@ func externalPDFTestConfig(t *testing.T, mode string) *config.Config {
 	}
 	cfg := testutil.Config(t)
 	cfg.Indexer.DetectLanguages = false
+	// Allow for the race detector's one second shutdown delay in the helper process.
+	timeout := 10
+	if mode == "timeout" {
+		timeout = 1
+	}
 	data, err := yaml.Marshal(map[string]any{"indexer": map[string]any{"pdf_parser": map[string]any{
 		"command": executable,
 		"args":    []string{"-test.run=^TestPDFParserProcess$", "--", "--pdf-parser-test", mode, "literal ; $(echo unsafe)"},
-		"timeout": 1,
+		"timeout": timeout,
 	}}})
 	if err != nil {
 		t.Fatal(err)

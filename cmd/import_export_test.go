@@ -78,10 +78,11 @@ func TestImportFileUsesConfiguredPDFParser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Allow for the race detector's one second shutdown delay in the helper process.
 	cfg.Indexer.PDFParser = config.PDFParser{
 		Command: executable,
 		Args:    []string{"-test.run=^TestPDFImportParserProcess$", "--", "--pdf-import-parser-test"},
-		Timeout: 1,
+		Timeout: 10,
 	}
 	path := filepath.Join(t.TempDir(), "paper.pdf")
 	if err := os.WriteFile(path, []byte("%PDF-1.4 client snapshot"), 0o600); err != nil {

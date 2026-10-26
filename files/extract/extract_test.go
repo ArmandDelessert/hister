@@ -135,7 +135,8 @@ func TestConfiguredExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.PDFParser{Command: executable, Args: []string{"-test.run=^TestPDFParserProcess$", "--", "--pdf-parser-test", "success", "literal ; $(echo unsafe)"}, Timeout: 1}
+	// Allow for the race detector's one second shutdown delay in the helper process.
+	cfg := config.PDFParser{Command: executable, Args: []string{"-test.run=^TestPDFParserProcess$", "--", "--pdf-parser-test", "success", "literal ; $(echo unsafe)"}, Timeout: 10}
 	parser := New(cfg)
 	cfg.Args[len(cfg.Args)-1] = "changed after construction"
 	other := New(cfg)

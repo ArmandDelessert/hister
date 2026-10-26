@@ -76,7 +76,7 @@ good first issues. Coding agents should also follow the repository
 | `client/`           | HTTP client used by commands                                            |
 | `config/`           | Configuration loading and validation                                    |
 | `files/`            | Watched directory matching and file ownership                           |
-| `files/extract/`    | Parsing supplied file contents without document or index state           |
+| `files/extract/`    | Parsing supplied file contents without document or index state          |
 | `server/`           | HTTP server, models, indexing, crawling, extraction, and vector storage |
 | `webui/app/`        | Web application embedded in the Go binary                               |
 | `webui/components/` | Shared Svelte components                                                |

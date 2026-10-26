@@ -17,7 +17,7 @@ The `hister import` command collects related import tools under one command. Eve
 | Command                                     | Source                                      | Default label             |
 | ------------------------------------------- | ------------------------------------------- | ------------------------- |
 | `hister import file [INPUT...]`             | Exports, saved pages, and file snapshots    | `import` or watched label |
-| `hister import zim ARCHIVE`                 | Kiwix ZIM archives                         | `kiwix`                  |
+| `hister import zim ARCHIVE`                 | Kiwix ZIM archives                          | `kiwix`                   |
 | `hister import sitemap FILE_OR_URL`         | Pages listed in XML sitemaps                | `sitemap`                 |
 | `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                   | `browser`                 |
 | `hister import browser history`             | Browser history with `--browser` and `--db` | `browser`                 |

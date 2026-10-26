@@ -28,6 +28,23 @@ import (
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
+func TestImportZIMCommandRegistered(t *testing.T) {
+	command, _, err := rootCmd.Find([]string{"import", "zim"})
+	if err != nil || command.Name() != "zim" {
+		t.Fatalf("ZIM import command unavailable: command=%s, error=%v", command.Name(), err)
+	}
+	for _, name := range []string{"base-url", "skip-existing", "allow-sensitive"} {
+		if command.Flags().Lookup(name) == nil {
+			t.Errorf("ZIM import is missing --%s", name)
+		}
+	}
+	for _, name := range []string{"url-map", "collection", "python"} {
+		if command.Flags().Lookup(name) != nil {
+			t.Errorf("obsolete --%s flag is still registered", name)
+		}
+	}
+}
+
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }

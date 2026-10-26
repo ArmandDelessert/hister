@@ -280,6 +280,7 @@ func init() {
 	crawlCmd.AddCommand(crawlDeleteCmd)
 	companionCmd.AddCommand(companionQutebrowserCmd)
 	importCmd.AddCommand(importFileCmd)
+	importCmd.AddCommand(importZIMCmd)
 	importCmd.AddCommand(importSitemapCmd)
 	importCmd.AddCommand(importBrowserCmd)
 	importBrowserCmd.AddCommand(importBrowserHistoryCmd)

@@ -17,6 +17,7 @@ The `hister import` command collects related import tools under one command. Eve
 | Command                                     | Source                                      | Default label             |
 | ------------------------------------------- | ------------------------------------------- | ------------------------- |
 | `hister import file [INPUT...]`             | Exports, saved pages, and file snapshots    | `import` or watched label |
+| `hister import zim ARCHIVE`                 | Kiwix ZIM archives                         | `kiwix`                  |
 | `hister import sitemap FILE_OR_URL`         | Pages listed in XML sitemaps                | `sitemap`                 |
 | `hister import browser [BROWSER] [DB_PATH]` | Browser history databases                   | `browser`                 |
 | `hister import browser history`             | Browser history with `--browser` and `--db` | `browser`                 |
@@ -136,6 +137,32 @@ The following options apply to file imports:
 Running the command again replaces documents with the same source and absolute path. `--watch` synchronizes file changes while active; source removals always retain the indexed snapshots.
 
 The destination account and the `--global` or `--user-id` flags determine ownership. The `user` value on a watched directory is not resolved by this client side import.
+
+## Importing Kiwix Archives
+
+Import HTML articles and plain text from downloaded `.zim` collections:
+
+```bash
+hister import zim collection.zim --label reference
+```
+
+ZIM support is included in Hister. Use a complete `.zim` file; combine split archives before importing. Large archives can require substantial memory, even when individual articles are small.
+
+Hister reads original page URLs and resolves relative addresses when enough source information is available. Relative article links use their target pages' original URLs. Links whose destinations remain unknown are disabled.
+
+**Every document without an identifiable original URL is skipped with a warning.** Warnings include the archive entry path and remain visible with JSON output or a restrictive log level. These documents count as skipped in the import summary.
+
+If archive paths match the original website paths, you can supply a fallback base URL:
+
+```bash
+hister import zim collection.zim --base-url https://example.org/docs/
+```
+
+Page URLs take priority over this fallback. The base must be an absolute HTTP or HTTPS URL without credentials, a query, or a fragment.
+
+Reimporting the same URLs updates existing documents; `--skip-existing` keeps them. The usual import label, ownership, batch size, date, rule, sensitive content, and output options apply. Date filters use the archive publication date. `indexer.max_file_size_mb` limits each article, up to 32 MiB. Read or submission errors are reported and cause an unsuccessful exit after the remaining entries are processed.
+
+Images, scripts, other assets, and redirect entries are not imported as documents. Saved previews do not reproduce embedded assets. Collections that require JavaScript rendering or media transcription may have little searchable text.
 
 ## Importing Sitemaps
 

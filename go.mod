@@ -38,6 +38,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
+	github.com/stazelabs/gozim v0.1.1-0.20260309223645-3cee05ef5c11
 	github.com/temoto/robotstxt v1.1.2
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0

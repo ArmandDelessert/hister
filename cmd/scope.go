@@ -70,6 +70,7 @@ func configureCommandScopes() {
 	setCommandScope(companionQutebrowserCmd, executionScopeRemote, "client-timeout")
 
 	setCommandScope(importFileCmd, executionScopeHybrid)
+	setCommandScope(importZIMCmd, executionScopeHybrid)
 	setCommandScope(importSitemapCmd, executionScopeHybrid, "client-timeout")
 	setCommandScope(importRaindropCmd, executionScopeHybrid)
 	setCommandScope(importBrowserCmd, executionScopeHybrid, "client-timeout")

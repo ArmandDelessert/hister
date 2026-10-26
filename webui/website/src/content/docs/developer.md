@@ -143,6 +143,18 @@ changes. CI rejects focused browser tests such as `test.only` and runs one brows
 worker. Failed browser runs upload an `app-browser-failures` artifact containing
 the HTML report, traces, and screenshots, retained for seven days.
 
+## ZIM Import Development
+
+`cmd/zim.go` implements `hister import zim` with the pure Go [stazelabs/gozim](https://github.com/stazelabs/gozim) reader, pinned in `go.mod`. It supports uncompressed, XZ, and Zstd content without an external executable. The importer checks header and pointer table bounds before opening the archive, disables memory mapping, and caches one cluster. It reads selected metadata and uses error returning directory lookups so damaged entries cannot silently disappear.
+
+The reader decompresses complete clusters before checking individual article sizes. Its limits are 4 GiB of encoded cluster data and 1 GiB of decoded compressed data; the article limit is not a total memory limit. This is a newer library than libzim, so verify real archives and malformed input tests before changing the pin.
+
+URL discovery reads canonical, Open Graph, and Twitter metadata, or absolute entry URLs. Relative metadata uses the HTML base or another known page URL; `--base-url` provides an optional fallback. Entries without a URL produce a warning and increment the skipped count. Collection names are not used to infer origins.
+
+The importer makes two passes. The first retains entry indices, source URLs, and redirect targets; the second prepares documents and rewrites relative article links through that lookup. This handles forward links and archive paths that differ from website paths without retaining all HTML in memory. Redirect traversal is bounded, unresolved links are disabled, and page URL metadata remains absolute after removing HTML base elements. Normal authenticated submission and server extraction handle the prepared documents. Importer metadata retains only `source` and a nonempty `zim_collection`. The archive publication date is stored in `Added`; entry paths remain local to link resolution and warnings.
+
+`go test ./cmd -run TestZIM` always runs integration tests against the checked in archives in `cmd/testdata/zim`. These fixtures were generated from the test articles with libzim 3.13.1. The legacy fixture converts the article namespace and cluster compression to XZ and was verified with libzim. Tests also cover operation with an empty executable path and malformed file offsets. Set `HISTER_ZIM_LEGACY_FIXTURE` to `data/withns/small.zim` from the [official ZIM testing suite](https://github.com/openzim/zim-testing-suite) for an additional compatibility check.
+
 ## HTTP API Development
 
 The running server publishes its generated API documentation at `/api`. API

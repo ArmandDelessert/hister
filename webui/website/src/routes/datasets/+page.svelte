@@ -1,8 +1,11 @@
 <script lang="ts">
+  import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
+  import BookOpen from '@lucide/svelte/icons/book-open';
   import Download from '@lucide/svelte/icons/download';
   import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
   import Search from '@lucide/svelte/icons/search';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+  import Terminal from '@lucide/svelte/icons/terminal';
   import X from '@lucide/svelte/icons/x';
   import Seo from '#lib/Seo.svelte';
   import { focusTrap } from '#lib/focus-trap.js';
@@ -142,7 +145,7 @@
   path="/datasets"
 />
 
-<div class="max-w-screen-l mx-auto px-6 py-12 md:mx-0 md:px-12">
+<div class="px-6 py-12 md:px-12">
   <!-- Page header -->
   <div class="mb-10">
     <h1
@@ -350,10 +353,62 @@
       </div>
 
       <!-- Cards grid -->
-      {#if filtered.length > 0}
-        <ul
-          class="m-0 grid list-none [grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr))] gap-6 p-0"
+      <ul
+        class="m-0 grid list-none [grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr))] gap-6 p-0"
+      >
+        <li
+          aria-labelledby="kiwix-heading"
+          class="border-brutal-border bg-brutal-card shadow-brutal mx-auto flex w-full max-w-3xl min-w-0 flex-col border-[3px]"
         >
+          <div class="bg-hister-cyan/5 flex flex-1 flex-col justify-between gap-5 p-5">
+            <div class="flex min-w-0 items-start gap-3">
+              <div
+                class="border-brutal-border bg-hister-cyan flex size-10 shrink-0 items-center justify-center border-[2px] text-white"
+              >
+                <BookOpen size={21} aria-hidden="true" />
+              </div>
+              <div class="min-w-0">
+                <h2
+                  id="kiwix-heading"
+                  class="font-space text-lg leading-tight font-extrabold text-(--text-primary)"
+                >
+                  Explore Kiwix
+                </h2>
+                <p class="font-inter mt-1 text-sm leading-relaxed text-(--text-secondary)">
+                  An external dataset library offering Wikipedia, reference works, and educational
+                  collections. Download ZIM archives from Kiwix, then import them into Hister.
+                </p>
+              </div>
+            </div>
+            <a
+              href="https://browse.library.kiwix.org/#lang=eng"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-space border-brutal-border brutal-press bg-hister-cyan inline-flex shrink-0 items-center justify-center gap-2 self-start border-[2px] px-3 py-2 text-xs font-bold tracking-[0.5px] text-white uppercase no-underline"
+            >
+              Browse Kiwix
+              <ArrowUpRight size={16} aria-hidden="true" />
+              <span class="sr-only">(opens in a new tab)</span>
+            </a>
+          </div>
+          <div
+            class="border-brutal-border flex min-w-0 flex-col gap-2 border-t-[2px] bg-[#2b2b2b] px-5 py-3 text-white"
+          >
+            <div class="flex min-w-0 items-center gap-2">
+              <Terminal size={16} aria-hidden="true" class="shrink-0 text-white/60" />
+              <code
+                class="font-fira min-w-0 text-xs leading-6 break-words select-all sm:text-[13px]"
+                >hister import zim <span class="text-[#b9d8ce]">collection.zim</span></code
+              >
+            </div>
+            <a
+              href="/docs/import#importing-kiwix-archives"
+              class="font-space shrink-0 self-start text-xs leading-6 font-semibold text-white/80 underline underline-offset-4 hover:text-white"
+              >ZIM import guide</a
+            >
+          </div>
+        </li>
+        {#if filtered.length > 0}
           {#each filtered as dataset (dataset.slug)}
             <li
               class="border-brutal-border brutal-press-card bg-brutal-card flex flex-col border-[3px]"
@@ -439,22 +494,22 @@
               </div>
             </li>
           {/each}
-        </ul>
-      {:else}
-        <div
-          class="border-brutal-border bg-brutal-card flex flex-col items-center gap-4 border-[3px] px-6 py-16 text-center"
-        >
-          <p class="font-space text-lg font-bold text-(--text-secondary) uppercase">
-            No datasets match your filters.
-          </p>
-          <button
-            onclick={clearFilters}
-            class="font-space border-brutal-border cursor-pointer border-[2px] px-5 py-2 text-[12px] font-semibold tracking-[1px] text-(--text-primary) uppercase transition-colors hover:bg-(--text-primary) hover:text-white"
+        {:else}
+          <li
+            class="border-brutal-border bg-brutal-card flex flex-col items-center justify-center gap-4 border-[3px] px-6 py-16 text-center"
           >
-            Clear filters
-          </button>
-        </div>
-      {/if}
+            <p class="font-space text-lg font-bold text-(--text-secondary) uppercase">
+              No datasets match your filters.
+            </p>
+            <button
+              onclick={clearFilters}
+              class="font-space border-brutal-border cursor-pointer border-[2px] px-5 py-2 text-[12px] font-semibold tracking-[1px] text-(--text-primary) uppercase transition-colors hover:bg-(--text-primary) hover:text-white"
+            >
+              Clear filters
+            </button>
+          </li>
+        {/if}
+      </ul>
     </div>
   </div>
 </div>

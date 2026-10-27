@@ -13,10 +13,6 @@
 @source '../../components/src';
 @import './content.css';
 
-html {
-  scroll-behavior: smooth;
-}
-
 body {
   font-family: 'Inter', sans-serif;
   font-size: 1rem;
@@ -30,10 +26,4 @@ summary:focus-visible,
 [role='button']:focus-visible {
   outline: 3px solid var(--hister-indigo);
   outline-offset: 3px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
 }

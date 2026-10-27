@@ -11,10 +11,7 @@
 
     const hash = window.location.hash;
     if (hash) {
-      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      document.querySelector(hash)?.scrollIntoView({
-        behavior: reduceMotion ? 'auto' : 'smooth',
-      });
+      document.querySelector(hash)?.scrollIntoView();
     }
   });
 </script>

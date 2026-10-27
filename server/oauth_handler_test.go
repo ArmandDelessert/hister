@@ -17,7 +17,165 @@ import (
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
+
+	"gopkg.in/yaml.v3"
 )
+
+func TestOAuthAdminGroupsSync(t *testing.T) {
+	cfg, handler := newOAuthTestServer(t)
+	entry := cfg.Server.OAuth["oidc"]
+	if err := yaml.Unmarshal([]byte("admin_groups: [hister-admins]\n"), entry); err != nil {
+		t.Fatal(err)
+	}
+	var userInfo atomic.Value
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			_, _ = fmt.Fprint(w, `{"access_token":"token"}`)
+		} else {
+			_, _ = fmt.Fprint(w, userInfo.Load().(string))
+		}
+	}))
+	t.Cleanup(provider.Close)
+	entry.TokenURL = provider.URL + "/token"
+	entry.UserInfoURL = provider.URL + "/userinfo"
+	var cookies []*http.Cookie
+	var userID uint
+	for _, step := range []struct {
+		groups   string
+		admin    bool
+		revision uint64
+	}{
+		{`,"groups":["users"]`, false, 1},
+		{`,"groups":["users","hister-admins"]`, true, 2},
+		{`,"groups":["hister-admins"]`, true, 2},
+		{`,"groups":["users"]`, false, 3},
+		{`,"groups":["hister-admins"]`, true, 4},
+		{"", false, 5},
+	} {
+		userInfo.Store(`{"email":"alice@example.com"` + step.groups + `}`)
+		cookie, query := startOAuthLogin(t, handler, nil)
+		rec := oauthCallback(handler, cookie, url.Values{"provider": {"oidc"}, "state": {query.Get("state")}, "code": {"code"}})
+		if rec.Code != http.StatusFound {
+			t.Fatalf("login status = %d: %s", rec.Code, rec.Body.String())
+		}
+		cookies = append(cookies, responseSessionCookie(t, rec))
+		user, err := model.GetUserByOAuthID("oidc-alice@example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if userID != 0 && user.ID != userID {
+			t.Fatal("login created a different account")
+		}
+		userID = user.ID
+		if user.IsAdmin != step.admin || user.Revision != step.revision {
+			t.Fatalf("groups %s: admin = %v, revision = %d; want %v, %d", step.groups, user.IsAdmin, user.Revision, step.admin, step.revision)
+		}
+		wantStatus := http.StatusForbidden
+		if step.admin {
+			wantStatus = http.StatusOK
+		}
+		// Both existing browser sessions and API tokens must use the new role.
+		for _, existing := range cookies {
+			req := httptest.NewRequest(http.MethodGet, "/hister/api/users", nil)
+			req.AddCookie(existing)
+			result := httptest.NewRecorder()
+			handler.ServeHTTP(result, req)
+			if result.Code != wantStatus {
+				t.Fatalf("session admin access = %d, want %d", result.Code, wantStatus)
+			}
+		}
+		result := testutil.ServeHTTP(t, handler, http.MethodGet, "/hister/api/users", nil, map[string]string{"Authorization": "Bearer " + user.Token})
+		if result.Code != wantStatus {
+			t.Fatalf("token admin access = %d, want %d", result.Code, wantStatus)
+		}
+	}
+}
+
+func TestOAuthAdminGroupClaims(t *testing.T) {
+	for _, tc := range []struct {
+		name, settings, claims string
+		existingAdmin, admin   bool
+		invalid, discovery     bool
+	}{
+		{name: "new administrator", settings: "admin_groups: [operators, hister-admins]\n", claims: `,"groups":["hister-admins"]`, admin: true},
+		{name: "custom claim", settings: "admin_groups: [hister-admins]\ngroups_claim: roles\n", claims: `,"roles":["hister-admins"]`, admin: true},
+		{name: "discovery preserves mapping", settings: "admin_groups: [hister-admins]\ngroups_claim: roles\n", claims: `,"roles":["hister-admins"]`, admin: true, discovery: true},
+		{name: "discovery cannot grant access", settings: "admin_groups: [hister-admins]\ngroups_claim: roles\n", claims: `,"groups":["intruders"]`, discovery: true},
+		{name: "literal dotted claim", settings: "admin_groups: [hister-admins]\ngroups_claim: app.roles\n", claims: `,"app.roles":["hister-admins"],"app":{"roles":[]}`, admin: true},
+		{name: "URI claim", settings: "admin_groups: [hister-admins]\ngroups_claim: https://example.com/roles\n", claims: `,"https://example.com/roles":["hister-admins"]`, admin: true},
+		{name: "no fallback to groups", settings: "admin_groups: [hister-admins]\ngroups_claim: roles\n", claims: `,"groups":["hister-admins"]`, existingAdmin: true},
+		{name: "exact matching", settings: "admin_groups: [hister-admins]\n", claims: `,"groups":["HISTER-ADMINS","hister-admins-extra"," hister-admins","/hister-admins"]`, existingAdmin: true},
+		{name: "empty groups", settings: "admin_groups: [hister-admins]\n", claims: `,"groups":[]`, existingAdmin: true},
+		{name: "null groups", settings: "admin_groups: [hister-admins]\n", claims: `,"groups":null`, existingAdmin: true},
+		{name: "mapping disabled", claims: `,"groups":["hister-admins"]`},
+		{name: "preserve manual administrator", claims: `,"groups":123`, existingAdmin: true, admin: true},
+		{name: "string groups", settings: "admin_groups: [hister-admins]\n", claims: `,"groups":"hister-admins"`, invalid: true},
+		{name: "object groups", settings: "admin_groups: [hister-admins]\n", claims: `,"groups":{"hister-admins":true}`, invalid: true},
+		{name: "mixed groups", settings: "admin_groups: [hister-admins]\n", claims: `,"groups":["hister-admins",123]`, invalid: true},
+		{name: "null group member", settings: "admin_groups: [hister-admins]\n", claims: `,"groups":["hister-admins",null]`, invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, handler := newOAuthTestServer(t)
+			entry := cfg.Server.OAuth["oidc"]
+			if err := yaml.Unmarshal([]byte(tc.settings), entry); err != nil {
+				t.Fatal(err)
+			}
+			if tc.existingAdmin {
+				user, err := model.CreateOAuthUser("alice", "oidc-alice@example.com")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := model.ToggleAdmin(user.Username); err != nil {
+					t.Fatal(err)
+				}
+			}
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/discovery":
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"authorization_endpoint": entry.AuthURL, "token_endpoint": entry.TokenURL,
+						"userinfo_endpoint": entry.UserInfoURL, "scopes_supported": []string{"openid"},
+						"response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code"},
+						"AdminGroups": []string{"intruders"}, "admin_groups": []string{"intruders"},
+						"GroupsClaim": "groups", "groups_claim": "groups",
+					})
+				case "/token":
+					_, _ = fmt.Fprint(w, `{"access_token":"token"}`)
+				default:
+					_, _ = fmt.Fprint(w, `{"email":"alice@example.com"`+tc.claims+`}`)
+				}
+			}))
+			t.Cleanup(provider.Close)
+			entry.TokenURL = provider.URL + "/token"
+			entry.UserInfoURL = provider.URL + "/userinfo"
+			if tc.discovery {
+				entry.ConfigurationURL = provider.URL + "/discovery"
+			}
+			cookie, query := startOAuthLogin(t, handler, nil)
+			rec := oauthCallback(handler, cookie, url.Values{"provider": {"oidc"}, "state": {query.Get("state")}, "code": {"code"}})
+			if tc.invalid {
+				if rec.Code != http.StatusInternalServerError {
+					t.Fatalf("invalid groups login status = %d", rec.Code)
+				}
+				if _, err := model.GetUserByOAuthID("oidc-alice@example.com"); err != model.ErrUserNotFound {
+					t.Fatalf("invalid groups created an account: %v", err)
+				}
+				assertOAuthFlowConsumed(t, cookie)
+				return
+			}
+			if rec.Code != http.StatusFound {
+				t.Fatalf("login status = %d: %s", rec.Code, rec.Body.String())
+			}
+			user, err := model.GetUserByOAuthID("oidc-alice@example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if user.IsAdmin != tc.admin {
+				t.Fatalf("admin = %v, want %v", user.IsAdmin, tc.admin)
+			}
+		})
+	}
+}
 
 func newOAuthTestServer(t *testing.T) (*config.Config, http.Handler) {
 	t.Helper()

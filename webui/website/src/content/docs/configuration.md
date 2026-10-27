@@ -392,6 +392,20 @@ description: 'Explore every configuration section, option, default value, enviro
       description: 'OIDC only. UserInfo claim used to match a Hister account, such as sub. Empty uses email for compatibility. See OIDC Account Identity before changing this for existing accounts.',
     },
     {
+      name: 'admin_groups',
+      type: '[]string',
+      defaultValue: '[]',
+      requirement: 'Optional',
+      description: 'OIDC only. Membership in any listed group grants administrator access. When configured, each OIDC login also removes administrator access from nonmembers.',
+    },
+    {
+      name: 'groups_claim',
+      type: 'string',
+      defaultValue: 'groups',
+      requirement: 'Optional',
+      description: 'OIDC only. Exact UserInfo claim name containing group memberships. Used when admin_groups is configured. Empty uses groups.',
+    },
+    {
       name: 'disable_pkce',
       type: 'bool',
       defaultValue: 'false',
@@ -1153,6 +1167,30 @@ The selected claim must be a nonempty JSON string containing more than whitespac
 Omitting `identity_claim`, leaving it empty, or setting it to `email` preserves existing `oidc-<email>` account links. Other claims use `oidc:<escaped claim name>:<claim value>`, for example `oidc:sub:abc123`. The claim name uses URL query escaping. This separates identities from different claims and from legacy email identities.
 
 Before switching an existing deployment, back up the database and explicitly relink each affected user's `o_auth_id` to the new identity using a verified mapping from the provider. Hister does not automatically link accounts by matching email addresses or usernames. Without relinking, a successful login with the new claim creates a separate account, and the old account retains its documents and history. Changing the issuer also requires a verified mapping because subjects are unique only within an issuer.
+
+### OIDC Administrator Groups
+
+Set `admin_groups` to manage administrator access through your identity provider:
+
+```yaml
+server:
+  oauth:
+    oidc:
+      client_id: 'hister'
+      client_secret: 'your-client-secret'
+      configuration_url: 'https://accounts.example.com/.well-known/openid-configuration'
+      scopes: ['groups'] # Only if your provider requires this scope.
+      admin_groups: ['hister-admins']
+      groups_claim: 'groups'
+```
+
+Configure your provider to include group memberships in its UserInfo response as a list of strings. Membership in any configured group grants administrator access. Names match exactly and are case sensitive. Use groups controlled by your identity provider's administrators. If the claim has another name, set `groups_claim` to that exact name; dots do not select nested fields. Groups available only in an ID token are not used.
+
+Each successful OIDC login synchronizes the user's role. Missing, null, or empty groups remove administrator access, including from the last administrator. Invalid group values prevent login. Manual role changes are replaced at the next OIDC login. Keep a local administrator account if you need access independent of the provider.
+
+Group changes take effect at the next OIDC login, then apply to the user's existing sessions and API token. Hister does not check group membership between logins. Omitting `admin_groups` or leaving it empty preserves manually managed roles. Local accounts and other OAuth providers are unaffected.
+
+Environment equivalents are `HISTER__SERVER__OAUTH__OIDC__ADMIN_GROUPS=hister-admins,operators` and `HISTER__SERVER__OAUTH__OIDC__GROUPS_CLAIM=groups`.
 
 ### PKCE and Compatibility
 

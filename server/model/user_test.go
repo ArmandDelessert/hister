@@ -147,6 +147,33 @@ func TestUserRevisionsTrackAdministrativeChanges(t *testing.T) {
 	}
 }
 
+func TestSyncOAuthAdminAccountScope(t *testing.T) {
+	testutil.InitModel(t)
+	admin, err := model.CreateUser("admin", "password123", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := model.CreateOAuthUser("alice", "oidc-alice@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, identity := range []string{"", "missing", "alice", "admin"} {
+		if _, err := model.SyncOAuthAdmin(identity, false); !errors.Is(err, model.ErrUserNotFound) {
+			t.Fatalf("unlinked identity %q: %v", identity, err)
+		}
+	}
+	if current, err := model.GetUserByID(admin.ID); err != nil || !current.IsAdmin || current.Revision != admin.Revision {
+		t.Fatalf("unlinked identity changed the local administrator: %+v, %v", current, err)
+	}
+	if _, err := model.SyncOAuthAdmin(user.OAuthID, true); err != nil {
+		t.Fatal(err)
+	}
+	no := false
+	if _, err := model.UpdateUser(admin.ID, user.ID, user.Revision, model.UserChanges{IsAdmin: &no}); !errors.Is(err, model.ErrStaleUserRevision) {
+		t.Fatalf("stale administrative update overwrote synchronized role: %v", err)
+	}
+}
+
 func TestConcurrentUserUpdates(t *testing.T) {
 	// A real database and multiple connections exercise database locking, rather
 	// than hiding a race behind an in-memory database with one connection.

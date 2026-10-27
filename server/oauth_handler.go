@@ -81,6 +81,8 @@ func serveOAuthRedirect(c *webContext) {
 		TokenURL:      entry.TokenURL,
 		UserInfoURL:   entry.UserInfoURL,
 		IdentityClaim: entry.IdentityClaim,
+		AdminGroups:   entry.AdminGroups,
+		GroupsClaim:   entry.GroupsClaim,
 	})
 	if !ok {
 		http.Error(c.Response, "oauth provider not available", http.StatusBadRequest)
@@ -180,6 +182,8 @@ func serveOAuthCallback(c *webContext) {
 		TokenURL:      entry.TokenURL,
 		UserInfoURL:   entry.UserInfoURL,
 		IdentityClaim: entry.IdentityClaim,
+		AdminGroups:   entry.AdminGroups,
+		GroupsClaim:   entry.GroupsClaim,
 	})
 	if !ok {
 		serve500(c)
@@ -229,6 +233,14 @@ func serveOAuthCallback(c *webContext) {
 		}
 		if err != nil {
 			log.Error().Err(err).Str("provider", providerName).Msg("oauth: failed to create user")
+			serve500(c)
+			return
+		}
+	}
+	if userInfo.IsAdmin != nil {
+		user, err = model.SyncOAuthAdmin(userInfo.UID, *userInfo.IsAdmin)
+		if err != nil {
+			log.Error().Err(err).Str("provider", providerName).Msg("oauth: failed to synchronize administrator privileges")
 			serve500(c)
 			return
 		}

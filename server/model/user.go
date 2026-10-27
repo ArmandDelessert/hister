@@ -408,6 +408,37 @@ func CreateOAuthUser(username, oauthID string) (*User, error) {
 	return u, DB.Create(u).Error
 }
 
+// SyncOAuthAdmin applies the role from an authenticated provider identity.
+// Unlike local administrative updates, this may demote the last administrator:
+// the identity provider owns the role and can grant it again on the next login.
+func SyncOAuthAdmin(oauthID string, isAdmin bool) (*User, error) {
+	if oauthID == "" {
+		return nil, ErrUserNotFound
+	}
+	var user User
+	err := userTransaction(func(tx *gorm.DB) error {
+		if err := tx.Where("o_auth_id = ?", oauthID).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrUserNotFound
+			}
+			return err
+		}
+		if user.IsAdmin == isAdmin {
+			return nil
+		}
+		if err := tx.Model(&user).Updates(map[string]any{
+			"is_admin": isAdmin, "revision": gorm.Expr("revision + 1"),
+		}).Error; err != nil {
+			return err
+		}
+		return tx.First(&user, user.ID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // CreateProxyUser creates an account for reverse-proxy authentication.
 // Like CreateOAuthUser it leaves Password empty so password authentication
 // stays disabled: AuthenticateUser rejects users with no stored password,

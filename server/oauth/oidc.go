@@ -28,8 +28,10 @@ type OIDCOAuth struct {
 	UserInfoURL string       `json:"userinfo_endpoint"`
 	Client      *http.Client `json:"-"`
 
-	// IdentityClaim is local configuration and must not be set by discovery.
-	IdentityClaim string `json:"-"`
+	// Identity and role mapping are local configuration, never set by discovery.
+	IdentityClaim string   `json:"-"`
+	AdminGroups   []string `json:"-"`
+	GroupsClaim   string   `json:"-"`
 
 	Scopes       []ScopeValue   `json:"scopes_supported"`
 	ResponseType []ResponseType `json:"response_types_supported"`
@@ -210,11 +212,32 @@ func (o *OIDCOAuth) GetUserInfo(ctx context.Context, response TokenResponse) (*U
 		uid = "oidc:" + url.QueryEscape(claim) + ":" + id
 	}
 
-	return &UserInfoResponse{
+	info := &UserInfoResponse{
 		UID:      uid,
 		Email:    email,
 		Username: username,
-	}, nil
+	}
+	if len(o.AdminGroups) > 0 {
+		isAdmin := false
+		groupClaim := cmp.Or(o.GroupsClaim, "groups")
+		if raw, ok := claims[groupClaim]; ok {
+			var groups []any
+			if err := json.Unmarshal(raw, &groups); err != nil {
+				return nil, fmt.Errorf("oidc: UserInfo claim %q must be an array of strings", groupClaim)
+			}
+			for _, value := range groups {
+				group, ok := value.(string)
+				if !ok {
+					return nil, fmt.Errorf("oidc: UserInfo claim %q must be an array of strings", groupClaim)
+				}
+				if slices.Contains(o.AdminGroups, group) {
+					isAdmin = true
+				}
+			}
+		}
+		info.IsAdmin = &isAdmin
+	}
+	return info, nil
 }
 
 // oidcClaims preserves exact claim names and types, including custom claims.

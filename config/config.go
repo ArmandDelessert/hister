@@ -129,6 +129,10 @@ type OAuthEntry struct {
 
 	// IdentityClaim selects the OIDC UserInfo claim used to match accounts. Empty means email.
 	IdentityClaim string `yaml:"identity_claim" mapstructure:"identity_claim"`
+	// AdminGroups enables authoritative OIDC administrator synchronization at login.
+	AdminGroups []string `yaml:"admin_groups" mapstructure:"admin_groups"`
+	// GroupsClaim selects an exact OIDC UserInfo claim name. Empty means groups.
+	GroupsClaim string `yaml:"groups_claim" mapstructure:"groups_claim"`
 }
 
 type Directory struct {
@@ -862,6 +866,17 @@ func (c *Config) validateOAuth() error {
 			}
 			if strings.ContainsFunc(entry.IdentityClaim, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 				return fmt.Errorf("oauth provider %q: identity_claim must not contain whitespace or control characters", name)
+			}
+		}
+		if name != "oidc" && (len(entry.AdminGroups) > 0 || entry.GroupsClaim != "") {
+			return fmt.Errorf("oauth provider %q: admin_groups and groups_claim are only supported for oidc", name)
+		}
+		if strings.ContainsFunc(entry.GroupsClaim, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			return fmt.Errorf("oauth provider %q: groups_claim must not contain whitespace or control characters", name)
+		}
+		for _, group := range entry.AdminGroups {
+			if strings.TrimSpace(group) == "" || strings.ContainsFunc(group, unicode.IsControl) {
+				return fmt.Errorf("oauth provider %q: admin_groups must contain nonblank names without control characters", name)
 			}
 		}
 		if name == "oidc" && entry.ConfigurationURL == "" && entry.AuthURL == "" {

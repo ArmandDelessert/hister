@@ -88,6 +88,8 @@ type (
 		UID      string
 		Email    string
 		Username string
+		// IsAdmin is nil when the provider does not manage administrator privileges.
+		IsAdmin *bool
 	}
 )
 
@@ -160,12 +162,14 @@ type Provider interface {
 	GetScope() (ScopeName, ScopeValue)
 }
 
-// ProviderConfig holds endpoint overrides and OIDC identity selection.
+// ProviderConfig holds endpoint overrides and OIDC identity and role mapping.
 type ProviderConfig struct {
 	AuthURL       string
 	TokenURL      string
 	UserInfoURL   string
 	IdentityClaim string
+	AdminGroups   []string
+	GroupsClaim   string
 }
 
 // NewProvider creates a fresh provider instance for the given provider name.
@@ -189,6 +193,8 @@ func NewProvider(name string, cfg ProviderConfig) (Provider, bool) {
 			TokenURL:      cfg.TokenURL,
 			UserInfoURL:   cfg.UserInfoURL,
 			IdentityClaim: cfg.IdentityClaim,
+			AdminGroups:   cfg.AdminGroups,
+			GroupsClaim:   cfg.GroupsClaim,
 		}, true
 	}
 	return nil, false

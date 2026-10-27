@@ -203,30 +203,6 @@ var updateUserCmd = &cobra.Command{
 	},
 }
 
-var (
-	createUserAliasCmd = deprecatedUserCommand(createUserCmd)
-	deleteUserAliasCmd = deprecatedUserCommand(deleteUserCmd)
-	showUserAliasCmd   = deprecatedUserCommand(showUserCmd)
-	updateUserAliasCmd = deprecatedUserCommand(updateUserCmd)
-)
-
-func deprecatedUserCommand(command *cobra.Command) *cobra.Command {
-	name := command.Name() + "-user"
-	replacement := "hister user " + command.Name()
-	return &cobra.Command{
-		Use:    name + " USERNAME",
-		Short:  "Deprecated alias for user " + command.Name(),
-		Long:   "Deprecated: use " + replacement + " instead.\n\n" + command.Long,
-		Hidden: true,
-		Args:   command.Args,
-		// Keep migration notices on stderr so existing scripts retain their output.
-		PreRun: func(cmd *cobra.Command, _ []string) {
-			cmd.PrintErrln("Command " + name + " is deprecated; use " + replacement + " instead.")
-		},
-		RunE: command.RunE,
-	}
-}
-
 func promptConfirmedPassword(passwordPrompt, confirmationPrompt string) (string, error) {
 	password, err := promptPassword(passwordPrompt)
 	if err != nil {

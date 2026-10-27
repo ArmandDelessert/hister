@@ -696,8 +696,7 @@ hister config create ~/.config/hister/config.yml
 
 Omit the filename to print YAML to standard output. Existing files are never overwritten.
 Config creation works even when the current configuration is missing or invalid, and does not
-initialize runtime data. The old `hister create-config` command remains a deprecated alias and
-prints its migration notice to standard error.
+initialize runtime data.
 
 Or use your platform's recommended location:
 

@@ -91,8 +91,7 @@ user mode. See [Reloading a Running Server](configuration#reloading-a-running-se
 and limitations.
 
 `config create [FILENAME]` writes default configuration to a new file, or prints YAML when no
-filename is given. It refuses to overwrite existing files. The deprecated `create-config` alias
-still works and prints a migration notice to stderr.
+filename is given. It refuses to overwrite existing files.
 
 `config path` prints the absolute path of the selected main config file, or `(defaults)` when
 no file is found. It works even when the file contains invalid YAML. `config show` prints

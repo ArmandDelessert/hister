@@ -133,21 +133,6 @@ var configCreateCmd = &cobra.Command{
 	RunE:  runConfigCreate,
 }
 
-var createConfigCmd = &cobra.Command{
-	Use:              "create-config [FILENAME]",
-	Short:            "Deprecated alias for config create",
-	Long:             "Deprecated: use hister config create [FILENAME]. Write default configuration to FILENAME, or print it to standard output when no filename is given.",
-	Hidden:           true,
-	Args:             cobra.MaximumNArgs(1),
-	PersistentPreRun: skipRuntimeInitialization,
-	// Cobra's Deprecated field writes through the output writer, which can
-	// contaminate redirected YAML. Keep the notice on stderr explicitly.
-	PreRun: func(cmd *cobra.Command, _ []string) {
-		cmd.PrintErrln("Command create-config is deprecated; use hister config create instead.")
-	},
-	RunE: runConfigCreate,
-}
-
 func runConfigCreate(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
 	content, err := yaml.Marshal(config.CreateDefaultConfig())

@@ -32,7 +32,6 @@ var scopedGlobalFlagNames = []string{
 
 func configureCommandScopes() {
 	setCommandScope(listenCmd, executionScopeLocal, "server-url", "token", "search-url")
-	setCommandScope(createConfigCmd, executionScopeLocal)
 	setCommandScope(configCmd, executionScopeLocal, "server-url", "token", "search-url")
 	setCommandScope(configCreateCmd, executionScopeLocal)
 	setCommandScope(configPathCmd, executionScopeLocal)
@@ -51,10 +50,10 @@ func configureCommandScopes() {
 	setCommandScope(deleteCmd, executionScopeRemote, "client-timeout")
 	setCommandScope(updateDocumentsCmd, executionScopeRemote, "client-timeout")
 
-	for _, cmd := range []*cobra.Command{userCmd, createUserCmd, createUserAliasCmd} {
+	for _, cmd := range []*cobra.Command{userCmd, createUserCmd} {
 		setCommandScope(cmd, executionScopeHybrid, "client-timeout")
 	}
-	for _, cmd := range []*cobra.Command{deleteUserCmd, deleteUserAliasCmd, showUserCmd, showUserAliasCmd, updateUserCmd, updateUserAliasCmd} {
+	for _, cmd := range []*cobra.Command{deleteUserCmd, showUserCmd, updateUserCmd} {
 		setCommandScope(cmd, executionScopeRemote, "client-timeout")
 	}
 

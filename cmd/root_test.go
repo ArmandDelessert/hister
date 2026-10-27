@@ -46,6 +46,17 @@ func executeUserCommandForTest(t *testing.T, args ...string) (string, string, er
 	return executeInspectionWithStderr(t, args...)
 }
 
+func TestDeprecatedCommandsAreRejected(t *testing.T) {
+	for _, name := range []string{"create-config", "create-user", "show-user", "update-user", "delete-user"} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := executeInspectionWithStderr(t, name)
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("unknown command %q", name)) {
+				t.Errorf("expected unknown command error for %s, got %v", name, err)
+			}
+		})
+	}
+}
+
 func TestUserCommandHelp(t *testing.T) {
 	previousPreRun := rootCmd.PersistentPreRun
 	rootCmd.PersistentPreRun = func(*cobra.Command, []string) { t.Error("help initialized runtime state") }
@@ -78,33 +89,25 @@ func TestUserCommandHelp(t *testing.T) {
 		{"update", []string{"--username", "--password", "--regen-token", "--toggle-admin"}},
 		{"delete", []string{"--purge"}},
 	} {
-		for _, legacy := range []bool{false, true} {
-			args := []string{"user", tc.action}
-			if legacy {
-				args = []string{tc.action + "-user"}
+		args := []string{"user", tc.action}
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			out, _, err := executeUserCommandForTest(t, append(args, "--help")...)
+			if err != nil {
+				t.Fatal(err)
 			}
-			t.Run(strings.Join(args, " "), func(t *testing.T) {
-				out, _, err := executeUserCommandForTest(t, append(args, "--help")...)
-				if err != nil {
-					t.Fatal(err)
+			for _, want := range append(tc.flags, "hister "+strings.Join(args, " ")+" USERNAME", "--server-url", "--token", "--client-timeout") {
+				if !strings.Contains(out, want) {
+					t.Errorf("help missing %q: %s", want, out)
 				}
-				for _, want := range append(tc.flags, "hister "+strings.Join(args, " ")+" USERNAME", "--server-url", "--token", "--client-timeout") {
-					if !strings.Contains(out, want) {
-						t.Errorf("help missing %q: %s", want, out)
-					}
-				}
-				if strings.Contains(out, "--search-url") {
-					t.Error("user help includes an unrelated search flag")
-				}
-				if legacy && (!strings.Contains(out, "Deprecated") || !strings.Contains(out, "hister user "+tc.action)) {
-					t.Errorf("legacy help lacks migration guidance: %s", out)
-				}
-			})
-		}
+			}
+			if strings.Contains(out, "--search-url") {
+				t.Error("user help includes an unrelated search flag")
+			}
+		})
 	}
 }
 
-func TestUserCommandsAndDeprecatedAliases(t *testing.T) {
+func TestUserCommands(t *testing.T) {
 	for _, tc := range []struct {
 		action, method, path, response, output string
 		flags                                  []string
@@ -117,80 +120,71 @@ func TestUserCommandsAndDeprecatedAliases(t *testing.T) {
 		{"delete", http.MethodDelete, "/hister/api/users/77", `{"id":77,"username":"alice","deleted_documents":0}`, "User deleted: alice", nil, nil},
 		{"delete", http.MethodDelete, "/hister/api/users/77?purge=true", `{"id":77,"username":"alice","deleted_documents":3}`, "Purged 3 document(s)", []string{"--purge"}, nil},
 	} {
-		for _, legacy := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/%v/legacy=%t", tc.action, tc.flags, legacy), func(t *testing.T) {
-				oldCfg, oldAgent, oldTransport, oldPrompt := cfg, UserAgent, http.DefaultTransport, promptPassword
-				oldDB := model.DB
-				t.Cleanup(func() {
-					cfg, UserAgent, http.DefaultTransport, promptPassword = oldCfg, oldAgent, oldTransport, oldPrompt
-				})
-				dir := t.TempDir()
-				filename := filepath.Join(dir, "client.yml")
-				if err := os.WriteFile(filename, []byte("app:\n  user_handling: false\nserver:\n  database: /does/not/exist/hister.db\n"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "unused-data"))
-				promptPassword = func(string) (string, error) { return "password123", nil }
-				calls := 0
-				http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
-					calls++
-					if req.URL.Host != "remote.example" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" {
-						t.Errorf("unexpected server or authentication: %s", req.URL)
-					}
-					if req.Method == http.MethodGet && req.URL.Path == "/hister/api/users" {
-						if req.URL.Query().Get("username") != "alice" || req.URL.Query().Get("limit") != "1" {
-							t.Errorf("unexpected user lookup: %s", req.URL)
-						}
-						return jsonHTTPResponse(req, http.StatusOK, `{"users":[{"id":77,"username":"alice","revision":4}]}`), nil
-					}
-					if req.Method != tc.method || req.URL.RequestURI() != tc.path {
-						t.Errorf("unexpected request: %s %s", req.Method, req.URL)
-					}
-					if tc.payload != nil {
-						body, err := io.ReadAll(req.Body)
-						if err != nil {
-							t.Fatal(err)
-						}
-						assertContractJSON(t, body, contractJSON(t, tc.payload))
-					}
-					status := http.StatusOK
-					if tc.action == "create" {
-						status = http.StatusCreated
-					}
-					return jsonHTTPResponse(req, status, tc.response), nil
-				})
-				globals := []string{"--config", filename, "--server-url", "https://remote.example/hister", "--token", "admin-token", "--client-timeout", "2"}
-				args := append(globals, "user", tc.action, "alice")
-				if legacy {
-					args = append([]string{tc.action + "-user", "alice"}, globals...)
-				}
-				out, stderr, err := executeUserCommandForTest(t, append(args, tc.flags...)...)
-				if err != nil {
-					t.Fatal(err)
-				}
-				out = ansi.Strip(out)
-				wantCalls := 2
-				if tc.action == "create" || tc.action == "show" && len(tc.flags) == 0 {
-					wantCalls = 1
-				}
-				if calls != wantCalls || !strings.Contains(out, tc.output) {
-					t.Errorf("requests = %d, want %d; output = %q", calls, wantCalls, out)
-				}
-				if strings.Contains(out, "deprecated") || strings.Contains(out, "admin-token") || strings.Contains(out, "password123") {
-					t.Errorf("stdout contains a warning or credentials: %q", out)
-				}
-				if legacy {
-					if !strings.Contains(stderr, "deprecated") || !strings.Contains(stderr, "hister user "+tc.action) {
-						t.Errorf("missing migration notice: %q", stderr)
-					}
-				} else if stderr != "" {
-					t.Errorf("unexpected stderr: %q", stderr)
-				}
-				if model.DB != oldDB {
-					t.Error("remote command opened a local database")
-				}
+		t.Run(fmt.Sprintf("%s/%v", tc.action, tc.flags), func(t *testing.T) {
+			oldCfg, oldAgent, oldTransport, oldPrompt := cfg, UserAgent, http.DefaultTransport, promptPassword
+			oldDB := model.DB
+			t.Cleanup(func() {
+				cfg, UserAgent, http.DefaultTransport, promptPassword = oldCfg, oldAgent, oldTransport, oldPrompt
 			})
-		}
+			dir := t.TempDir()
+			filename := filepath.Join(dir, "client.yml")
+			if err := os.WriteFile(filename, []byte("app:\n  user_handling: false\nserver:\n  database: /does/not/exist/hister.db\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "unused-data"))
+			promptPassword = func(string) (string, error) { return "password123", nil }
+			calls := 0
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if req.URL.Host != "remote.example" || req.Header.Get("X-Access-Token") != "admin-token" || req.Header.Get("Origin") != "hister://" {
+					t.Errorf("unexpected server or authentication: %s", req.URL)
+				}
+				if req.Method == http.MethodGet && req.URL.Path == "/hister/api/users" {
+					if req.URL.Query().Get("username") != "alice" || req.URL.Query().Get("limit") != "1" {
+						t.Errorf("unexpected user lookup: %s", req.URL)
+					}
+					return jsonHTTPResponse(req, http.StatusOK, `{"users":[{"id":77,"username":"alice","revision":4}]}`), nil
+				}
+				if req.Method != tc.method || req.URL.RequestURI() != tc.path {
+					t.Errorf("unexpected request: %s %s", req.Method, req.URL)
+				}
+				if tc.payload != nil {
+					body, err := io.ReadAll(req.Body)
+					if err != nil {
+						t.Fatal(err)
+					}
+					assertContractJSON(t, body, contractJSON(t, tc.payload))
+				}
+				status := http.StatusOK
+				if tc.action == "create" {
+					status = http.StatusCreated
+				}
+				return jsonHTTPResponse(req, status, tc.response), nil
+			})
+			globals := []string{"--config", filename, "--server-url", "https://remote.example/hister", "--token", "admin-token", "--client-timeout", "2"}
+			args := append(globals, "user", tc.action, "alice")
+			out, stderr, err := executeUserCommandForTest(t, append(args, tc.flags...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = ansi.Strip(out)
+			wantCalls := 2
+			if tc.action == "create" || tc.action == "show" && len(tc.flags) == 0 {
+				wantCalls = 1
+			}
+			if calls != wantCalls || !strings.Contains(out, tc.output) {
+				t.Errorf("requests = %d, want %d; output = %q", calls, wantCalls, out)
+			}
+			if strings.Contains(out, "deprecated") || strings.Contains(out, "admin-token") || strings.Contains(out, "password123") {
+				t.Errorf("stdout contains a warning or credentials: %q", out)
+			}
+			if stderr != "" {
+				t.Errorf("unexpected stderr: %q", stderr)
+			}
+			if model.DB != oldDB {
+				t.Error("remote command opened a local database")
+			}
+		})
 	}
 }
 
@@ -199,16 +193,14 @@ func TestUserCommandsRequireOneUsername(t *testing.T) {
 	rootCmd.PersistentPreRun = func(*cobra.Command, []string) { t.Error("invalid arguments reached runtime initialization") }
 	t.Cleanup(func() { rootCmd.PersistentPreRun = previousPreRun })
 	for _, action := range []string{"create", "show", "update", "delete"} {
-		for _, path := range [][]string{{"user", action}, {action + "-user"}} {
-			for _, names := range [][]string{nil, {"alice", "bob"}} {
-				args := append(append([]string{}, path...), names...)
-				t.Run(strings.Join(args, " "), func(t *testing.T) {
-					_, _, err := executeUserCommandForTest(t, args...)
-					if err == nil || !strings.Contains(err.Error(), "accepts 1 arg(s)") {
-						t.Errorf("expected username argument error, got %v", err)
-					}
-				})
-			}
+		for _, names := range [][]string{nil, {"alice", "bob"}} {
+			args := append([]string{"user", action}, names...)
+			t.Run(strings.Join(args, " "), func(t *testing.T) {
+				_, _, err := executeUserCommandForTest(t, args...)
+				if err == nil || !strings.Contains(err.Error(), "accepts 1 arg(s)") {
+					t.Errorf("expected username argument error, got %v", err)
+				}
+			})
 		}
 	}
 }
@@ -277,7 +269,7 @@ func TestDeleteUserRemoteErrorsDoNotFallBack(t *testing.T) {
 	cfg.Server.Database = "/does/not/exist/hister.db"
 	localUser := testutil.CreateUser(t, "alice")
 	if deleteUserCmd.Annotations[executionScopeAnnotation] != string(executionScopeRemote) {
-		t.Error("delete-user is not classified as remote")
+		t.Error("user delete is not classified as remote")
 	}
 	for _, tc := range []struct {
 		name, body, wantError string
@@ -443,7 +435,7 @@ func TestCreateUserUsesServer(t *testing.T) {
 
 func TestCreateUserConnectionFlags(t *testing.T) {
 	if createUserCmd.Annotations[executionScopeAnnotation] != string(executionScopeHybrid) {
-		t.Error("create-user is not classified as hybrid")
+		t.Error("user create is not classified as hybrid")
 	}
 	flags, _ := applicableGlobalFlags(createUserCmd)
 	for _, name := range []string{"server-url", "token", "client-timeout"} {
@@ -452,10 +444,10 @@ func TestCreateUserConnectionFlags(t *testing.T) {
 		}
 	}
 	if createUserCmd.PreRun != nil {
-		t.Error("create-user still unconditionally initializes the local database")
+		t.Error("user create still unconditionally initializes the local database")
 	}
 	if flag := createUserCmd.Flags().Lookup("offline"); flag == nil || flag.Value.Type() != "bool" || flag.DefValue != "false" {
-		t.Error("create-user does not have an explicit --offline flag")
+		t.Error("user create does not have an explicit --offline flag")
 	}
 }
 
@@ -690,7 +682,7 @@ func TestShowUserUsesRemoteAccount(t *testing.T) {
 
 func TestShowUserConnectionFlags(t *testing.T) {
 	if showUserCmd.Annotations[executionScopeAnnotation] != string(executionScopeRemote) {
-		t.Error("show-user is not classified as remote")
+		t.Error("user show is not classified as remote")
 	}
 	flags, _ := applicableGlobalFlags(showUserCmd)
 	for _, name := range []string{"server-url", "token", "client-timeout"} {
@@ -699,7 +691,7 @@ func TestShowUserConnectionFlags(t *testing.T) {
 		}
 	}
 	if showUserCmd.PreRun != nil || showUserCmd.PreRunE != nil {
-		t.Error("show-user still initializes local user handling")
+		t.Error("user show still initializes local user handling")
 	}
 	showToken := showUserCmd.Flags().Lookup("show-token")
 	if showToken == nil || showToken.Value.Type() != "bool" {
@@ -954,7 +946,7 @@ func TestUpdateUserUsesRemoteAccount(t *testing.T) {
 
 func TestUpdateUserConnectionFlags(t *testing.T) {
 	if updateUserCmd.Annotations[executionScopeAnnotation] != string(executionScopeRemote) {
-		t.Error("update-user is not classified as remote")
+		t.Error("user update is not classified as remote")
 	}
 	flags, _ := applicableGlobalFlags(updateUserCmd)
 	for _, name := range []string{"server-url", "token", "client-timeout"} {
@@ -963,7 +955,7 @@ func TestUpdateUserConnectionFlags(t *testing.T) {
 		}
 	}
 	if updateUserCmd.PreRun != nil || updateUserCmd.PreRunE != nil {
-		t.Error("update-user still initializes local user handling")
+		t.Error("user update still initializes local user handling")
 	}
 }
 

@@ -93,10 +93,7 @@ hister -t <your-token> search "query"
 
 ## User Management Commands
 
-Use `hister user --help` to list account management commands. The old
-`create-user`, `show-user`, `update-user`, and `delete-user` commands are deprecated
-aliases. They still accept the same arguments and flags, but print a migration
-notice to standard error. Update scripts to use the `hister user` subcommands.
+Use `hister user --help` to list account management commands.
 
 `user create`, `user show`, `user update`, and `user delete` use the configured
 running server and require an administrator's personal access token.

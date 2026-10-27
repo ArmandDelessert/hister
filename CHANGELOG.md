@@ -1,5 +1,180 @@
 # Changelog
 
+## v0.21.0
+
+### New Features
+
+#### Configuration Reload
+
+`hister reload` applies configuration, rules, and logging changes without a
+manual server restart. It waits for completion and rejects invalid settings.
+Expect a brief interruption and refresh open web pages afterward. Client
+configuration changes still require restarting the affected clients.
+
+#### More Expressive Search
+
+Combine nested groups, phrases, and field filters with `AND`, `OR`, and `NOT`.
+For example, `(site:github.com OR site:gitlab.com) NOT title:archived` searches
+both sites while excluding archived titles. The new `site:` filter includes
+subdomains, and `has:` finds documents with a populated field or metadata value,
+such as `has:label` or `has:metadata.author`.
+
+Invalid queries now explain what needs fixing and where. URL regular expression
+searches are faster when a pattern has a specific starting prefix.
+
+#### Kiwix, Sitemap, and Readwise Reader Imports
+
+`hister import zim collection.zim` makes HTML and plain text from Kiwix archives
+searchable without downloading each original page. It recovers original URLs
+and article links, with `--base-url` as a fallback when archive paths match the
+source website. Entries without an identifiable original URL are skipped with
+a warning. Embedded images and other assets are not imported, and large
+archives can require substantial memory.
+
+`hister import sitemap FILE_OR_URL` indexes pages listed in XML sitemaps,
+including sitemap indexes, gzip compressed files, and standard input. Duplicate
+URLs are queued once, and the page crawl can be interrupted and resumed using
+its job ID. Existing documents are skipped unless `--force` is supplied.
+
+`hister import readwise` imports Readwise Reader documents with saved content,
+notes, summaries, tags, and source metadata. It uses Reader's stored HTML when
+available and otherwise tries the original page. Separate highlight and note
+records are skipped, and original PDF and EPUB attachments are not downloaded.
+
+#### Language Controls and Persistent Corrections
+
+Limit automatic language detection with `indexer.languages`, or choose between
+the default `low` memory mode and `high` accuracy mode with
+`indexer.language_detection_accuracy`. Short web pages can use their titles to
+help identify the language, and matching page declarations can supply regional
+labels.
+
+`hister update QUERY --language en` now pins the language across reindexing,
+imports, and document updates. Use `--language auto` to clear a pin or
+`--language unknown` to keep a document without an identified language.
+`language:en` includes regional variants such as `en-US`, while a regional filter
+narrows the results. Existing documents remain searchable when automatic
+detection is disabled.
+
+#### Expanded MCP Tools for AI Assistants
+
+Assistants can page through search results, use the new `get_facets` tool to
+explore document counts, and filter history by text and date. Search limits now
+apply to the combined history, keyword, and semantic results.
+
+Preview requests can select text, HTML, or metadata and read long documents in
+smaller portions, reducing how much content an assistant needs to retrieve at
+once.
+
+#### Remote User Management and Proxy Authentication
+
+The new `hister user create`, `show`, `update`, and `delete` commands manage
+accounts on the configured running server using an administrator's token.
+Account changes are applied together, conflicting updates are rejected, and
+the last administrator cannot be deleted or demoted. Use
+`hister user create USERNAME --offline --admin` with the server stopped to create
+the first administrator or recover access.
+
+`server.proxy_auth_header` enables sign in through a trusted authentication
+proxy. The proxy must verify users, replace client supplied identity headers,
+and prevent direct access to Hister. New proxy users receive ordinary accounts
+without passwords. OIDC providers can also select a stable account identity
+with `identity_claim`, including providers that do not supply email addresses.
+
+### Enhancements
+
+1. **Search interface**: simpler result controls, clearer domains and titles,
+   compact expandable snippets, and mobile friendly actions make results easier
+   to scan. Set `app.snippet_length` to control the returned context and use
+   **Always expand snippets** to remember a browser preference. Suggestions are
+   hidden by default and can be enabled through **Actions → Show suggestions**.
+2. **Semantic search responsiveness**: query embedding requests have separate
+   capacity from indexing and a configurable timeout. Searches return keyword
+   results when query embedding times out, with a default limit of two seconds.
+3. **PDF extraction**: the built in reader handles more LaTeX generated PDFs.
+   Configure `indexer.pdf_parser` to use an external parser such as `pdftotext`
+   for browser uploads, watched files, and file imports.
+4. **Browser capture**: the extension uses canonical URLs on the same hostname
+   to reduce duplicate pages. Automatic capture skips HTTP error pages, and
+   PDFs are recognized by their response type even without a `.pdf` suffix.
+5. **Previews and login**: GitHub issue previews include discussion content,
+   failed previews offer a fallback, and signing in returns to the original
+   page with its query or preview link.
+6. **Feedback**: maintenance commands show progress, command line searches
+   explain empty results and can include document text, and the Add page
+   explains submission failures.
+7. **Monitoring**: `server.expose_version` enables public version reporting for
+   monitoring clients and is disabled by default. Prometheus latency metrics
+   use native histograms.
+8. **Dependencies**: Go modules, npm packages, container bases, Nix inputs, and
+   GitHub Actions were updated.
+
+### Bug Fixes
+
+1. Anonymous searches in public mode return only global documents. Submitted
+   documents cannot reference another document's stored HTML or favicon, and
+   client redirects no longer leak access tokens to other destinations.
+2. Password changes invalidate the affected user's existing browser sessions.
+   GitHub login uses permanent account IDs so renamed or recycled usernames
+   cannot change which identity an account belongs to.
+3. Persistent crawls mark URLs complete only after successful document
+   submission. Failed submissions are recorded as failures, and interrupted
+   submissions remain resumable.
+4. Cleanup preserves HTML and favicons while documents are still being indexed.
+   Reindexing keeps files whose extracted text is empty, and exports preserve
+   existing backups when writing fails.
+5. Queries containing only negated terms return matching documents. Relevance
+   optimization no longer broadens the requested results, and semantic results
+   honor date filters and requested content fields.
+6. Server access to local files is restricted to configured directories,
+   including checks on symbolic link targets. Org files cannot read other files
+   through include directives. Request, download, and extraction limits bound
+   resource use.
+7. PDF capture preserves pending downloads and uses the committed page title.
+   The Firefox crawler rejects reported HTTP error responses, and qutebrowser
+   handles larger browser events.
+8. PostgreSQL timestamps are handled correctly, priority rule errors are
+   reported, and repeated index write failures no longer cause excessive CPU
+   use.
+
+### Backward Compatibility Notes
+
+The following changes require attention when upgrading from v0.20.0:
+
+1. **GitHub and OIDC accounts**: existing GitHub account links are not
+   automatically migrated to permanent account IDs. Back up the database and
+   arrange verified account relinking before users sign in again; otherwise,
+   login creates a separate account while documents remain with the old one.
+   Changing OIDC's `identity_claim` also requires relinking existing accounts.
+   Leaving it unset preserves the existing email based identity.
+2. **User management scripts**: the old `create-user`, `show-user`,
+   `update-user`, and `delete-user` names remain deprecated aliases, but account
+   operations now target the running server and require an administrator's
+   personal token. Use `user create --offline` for local account creation with
+   the server stopped. Replace the old token display flag with `--show-token`;
+   `--token` now supplies authentication credentials.
+3. **Search syntax**: uppercase `AND`, `OR`, and `NOT` are operators. Quote them
+   to search for the words themselves. Negation takes precedence over `AND`,
+   then `OR`; use parentheses to make grouping explicit. Malformed queries are
+   rejected by search, update, and delete operations.
+4. **Local files**: run `hister reindex` to remove previously indexed files
+   reached through symbolic links outside configured directories. Org files
+   using `#+INCLUDE` or `#+SETUPFILE` must contain the needed text directly.
+   Opening a watched local file downloads it; use its preview to read it in
+   Hister.
+5. **Size limits**: document, PDF, and batch uploads default to 40 MiB, controlled
+   by `server.max_batch_body_size`. HTTP HTML downloads and extracted text have
+   a 32 MiB ceiling. Favicon and robots files have an 8 MiB limit; an oversized
+   robots file causes the site's URLs to be skipped. Raising the upload limit
+   does not raise extraction limits.
+6. **MCP clients**: requests carrying an unrelated `Origin` are rejected. Set
+   `server.base_url` to the public URL when using a reverse proxy. Clients
+   paging opened history should pass both `last_id` and `last_updated_at` from
+   the previous response.
+7. **Language settings**: reindex to apply detection changes to existing
+   documents. Reapply language corrections made before persistent pins were
+   available if they should survive future updates.
+
 ## v0.20.0
 
 ### New Features

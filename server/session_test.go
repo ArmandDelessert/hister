@@ -91,7 +91,7 @@ func TestTokenSessionExpirationRefreshesOnValidRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/add", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -146,12 +146,12 @@ func TestTokenChangeInvalidatesBrowserSession(t *testing.T) {
 
 func TestHeaderTokenDoesNotCreateBrowserSession(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)
-	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/add", nil, map[string]string{
+	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/profile", nil, map[string]string{
 		"Origin":         "hister://",
 		"X-Access-Token": "secret",
 	})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /api/add status = %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("GET /api/profile status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	if len(rec.Result().Cookies()) != 0 {
 		t.Fatalf("header token response set cookies: %v", rec.Result().Cookies())
@@ -1217,7 +1217,7 @@ func responseSessionCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.C
 
 func assertSessionAccepted(t *testing.T, handler http.Handler, cookie *http.Cookie) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/add", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1228,7 +1228,7 @@ func assertSessionAccepted(t *testing.T, handler http.Handler, cookie *http.Cook
 
 func assertSessionRejected(t *testing.T, handler http.Handler, cookie *http.Cookie) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/add", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

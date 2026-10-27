@@ -400,10 +400,10 @@ Purged documents are not restored if account deletion fails. See
 API request bodies have a default limit of 1 MiB, including MCP requests and
 login requests. The following endpoints have their own limits:
 
-| Requests                                                             | Body limit                                       |
-| -------------------------------------------------------------------- | ------------------------------------------------ |
-| `POST /api/add`, `POST /add`, `POST /api/add_pdf`, `POST /api/batch` | `server.max_batch_body_size` MiB, default 40 MiB |
-| `POST /api/rules/preview`                                            | 1 MiB                                            |
+| Requests                                                | Body limit                                       |
+| ------------------------------------------------------- | ------------------------------------------------ |
+| `POST /api/add`, `POST /api/add_pdf`, `POST /api/batch` | `server.max_batch_body_size` MiB, default 40 MiB |
+| `POST /api/rules/preview`                               | 1 MiB                                            |
 
 Limits apply to JSON and form data, including requests sent with chunked transfer
 encoding. The PDF upload limit includes the base64 content and the surrounding

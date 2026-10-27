@@ -24,6 +24,68 @@ func (w *statusCountingWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
+func TestRemovedAddEndpoints(t *testing.T) {
+	previousFiles := staticTextFiles
+	staticTextFiles = map[string][]byte{"index.html": []byte("<html>app</html>")}
+	t.Cleanup(func() { staticTextFiles = previousFiles })
+	for _, prefix := range []string{"", "/hister"} {
+		t.Run("prefix="+prefix, func(t *testing.T) {
+			cfg := testutil.InitModel(t)
+			cfg.App.AccessToken = "secret"
+			if err := cfg.UpdateBaseURL("http://127.0.0.1:4433" + prefix); err != nil {
+				t.Fatal(err)
+			}
+			sessionStore = newSessionStore([]byte(strings.Repeat("x", 32)), cfg.BaseURL(""), sessionMaxAge)
+			idx := newServerTestIndexer(t, cfg)
+			handler := registerEndpoints(cfg, idx)
+			headers := map[string]string{
+				"Authorization": "Bearer secret",
+				"Content-Type":  "application/json",
+				"Origin":        "hister://",
+			}
+			for _, tc := range []struct {
+				method, path string
+				status       int
+			}{
+				{http.MethodGet, "/api/add", http.StatusNotFound},
+				{http.MethodHead, "/api/add", http.StatusNotFound},
+				{http.MethodPost, "/add", http.StatusMethodNotAllowed},
+			} {
+				response := testutil.ServeHTTP(t, handler, tc.method, prefix+tc.path,
+					strings.NewReader(`{"url":"https://example.com/removed-add","text":"Must not be indexed"}`), headers)
+				if response.Code != tc.status {
+					t.Errorf("%s %s status = %d, want %d", tc.method, tc.path, response.Code, tc.status)
+				}
+			}
+			if idx.GetByURLAndUser("https://example.com/removed-add", 0) != nil {
+				t.Error("removed endpoint indexed a document")
+			}
+
+			response := testutil.ServeHTTP(t, handler, http.MethodGet, prefix+"/api", nil, headers)
+			var endpoints []struct{ Method, Path string }
+			if err := json.Unmarshal(response.Body.Bytes(), &endpoints); err != nil || response.Code != http.StatusOK {
+				t.Fatalf("API documentation: %d %s, error = %v", response.Code, response.Body, err)
+			}
+			foundAdd := false
+			for _, endpoint := range endpoints {
+				if endpoint.Path == "/add" || endpoint.Path == "/api/add" && endpoint.Method != http.MethodPost {
+					t.Errorf("API documentation still lists %s %s", endpoint.Method, endpoint.Path)
+				}
+				if endpoint.Method == http.MethodPost && endpoint.Path == "/api/add" {
+					foundAdd = true
+				}
+			}
+			if !foundAdd {
+				t.Error("API documentation is missing POST /api/add")
+			}
+			response = testutil.ServeHTTP(t, handler, http.MethodGet, prefix+"/add", nil, nil)
+			if response.Code != http.StatusOK || response.Body.String() != "<html>app</html>" {
+				t.Fatalf("add page must remain available: %d %s", response.Code, response.Body)
+			}
+		})
+	}
+}
+
 func TestAddFormAccessTokenDoesNotAuthenticate(t *testing.T) {
 	cfg := testutil.Config(t)
 	cfg.App.AccessToken = "secret"

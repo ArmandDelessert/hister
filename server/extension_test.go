@@ -60,6 +60,20 @@ func TestExtensionCORSPreflightRejectsUntrustedOrigin(t *testing.T) {
 	}
 }
 
+func TestExtensionCORSPreflightRejectsRemovedAddPath(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	rec := testutil.ServeHTTP(t, handler, http.MethodOptions, "/add", nil, map[string]string{
+		"Origin":                        "safari-web-extension://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		"Access-Control-Request-Method": "POST",
+	})
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("OPTIONS /add status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("removed endpoint received Access-Control-Allow-Origin: %q", got)
+	}
+}
+
 func TestExtensionCSRFAllowsSafariHistoryAndProfile(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)
 	origin := "safari-web-extension://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

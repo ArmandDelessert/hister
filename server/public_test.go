@@ -259,13 +259,13 @@ func TestPublicModeProtectsWriteRoutes(t *testing.T) {
 
 func TestPublicModeAllowsAuthenticatedProtectedRoutes(t *testing.T) {
 	_, handler := newPublicTokenTestServer(t)
-	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/add", nil, map[string]string{
+	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/profile", nil, map[string]string{
 		"Origin":         "hister://",
 		"X-Access-Token": "secret",
 	})
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /api/add status = %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("GET /api/profile status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 
@@ -324,14 +324,14 @@ func TestTokenLoginSetsHttpOnlySessionCookieAndAuthenticates(t *testing.T) {
 		t.Fatal("server side session data contains the application access token")
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/add", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req.AddCookie(sessionCookie)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /api/add with session cookie status = %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("GET /api/profile with session cookie status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
 	configReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)

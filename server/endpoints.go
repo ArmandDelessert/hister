@@ -226,6 +226,10 @@ func serveStaticContent(c *webContext, path string, content []byte) {
 // serveSPA serves the SPA index.html for any route not matching a static file.
 func serveSPA(c *webContext) {
 	path := strings.TrimPrefix(c.Request.URL.Path, "/")
+	if path == "api" || strings.HasPrefix(path, "api/") {
+		http.NotFound(c.Response, c.Request)
+		return
+	}
 	if path == "index.html" {
 		serveIndex(c)
 		return
@@ -784,12 +788,7 @@ func serveVersions(c *webContext) {
 }
 
 func serveAdd(c *webContext) {
-	m := c.Request.Method
-	if m == http.MethodGet {
-		serve200(c)
-		return
-	}
-	if m != http.MethodPost {
+	if c.Request.Method != http.MethodPost {
 		serve500(c)
 		return
 	}
@@ -1740,10 +1739,7 @@ func serveAPI(c *webContext) {
 }
 
 func endpointMutates(e *Endpoint) bool {
-	if e.Method != http.MethodGet && e.Method != http.MethodHead {
-		return true
-	}
-	return e.Path == "/api/add"
+	return e.Method != http.MethodGet && e.Method != http.MethodHead
 }
 
 func serveStats(c *webContext) {

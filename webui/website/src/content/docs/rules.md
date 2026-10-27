@@ -57,7 +57,7 @@ document is submitted again. The override does not bypass sensitive content chec
 robots rules, or crawl and file selection filters.
 
 API clients can set `metadata.ignore_skip_rules` to the boolean `true` in JSON
-documents submitted to `/api/add` or `/add`. For `/api/add_pdf`, it belongs inside
+documents submitted to `/api/add`. For `/api/add_pdf`, it belongs inside
 `document.metadata`; for `/api/batch`, each add operation has its own metadata.
 The override is stored with the document and preserved in exported documents.
 

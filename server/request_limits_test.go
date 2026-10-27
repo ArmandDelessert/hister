@@ -187,7 +187,6 @@ func TestDocumentBodyLimitsPreserveConfiguredAllowance(t *testing.T) {
 			status     int
 		}{
 			{"/api/add", doc, http.StatusCreated},
-			{"/add", doc, http.StatusCreated},
 			{"/api/batch", `{"ops":[{"op":"add",` + doc[1:] + `]}`, http.StatusOK},
 			// A deliberately invalid PDF should reach validation within the upload
 			// allowance, but oversized requests must be rejected before processing.

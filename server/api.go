@@ -280,15 +280,6 @@ func init() {
 				},
 			},
 		},
-		// tmp added for backward compatibility
-		{
-			Name:         "Add",
-			Path:         "/api/add",
-			Method:       GET,
-			CSRFRequired: true,
-			Handler:      serveAdd,
-			Description:  "Add document form (returns 200; kept for backward compatibility)",
-		},
 		{
 			Name:         "Add",
 			Path:         "/api/add",
@@ -365,70 +356,6 @@ func init() {
 					Type:        "int64",
 					Required:    false,
 					Description: "Source modification time as a Unix timestamp for remote file snapshots",
-				},
-				documentLanguageOverrideSchema(),
-				documentMetadataSchema(),
-			},
-		},
-		// alias for /api/add - backward compatibility - use /api/add in the future
-		{
-			Name:         "Add (legacy path)",
-			Path:         "/add",
-			Method:       POST,
-			BodyLimit:    documentBodyLimit,
-			CSRFRequired: true,
-			Handler:      serveAdd,
-			Description:  "Index a document (legacy path; prefer /api/add)." + skipRulesOverrideDescription,
-			Args: []*EndpointArg{
-				{
-					Name:        "url",
-					Type:        "string",
-					Required:    true,
-					Description: "URL of the document to index",
-				},
-				{
-					Name:        "title",
-					Type:        "string",
-					Required:    false,
-					Description: "Document title",
-				},
-				{
-					Name:        "text",
-					Type:        "string",
-					Required:    false,
-					Description: "Plain-text content",
-				},
-			},
-			JSONSchema: []*JSONSchemaField{
-				{
-					Name:        "url",
-					Type:        "string",
-					Required:    true,
-					Description: "URL of the document to index",
-				},
-				{
-					Name:        "title",
-					Type:        "string",
-					Required:    false,
-					Description: "Document title",
-				},
-				{
-					Name:        "text",
-					Type:        "string",
-					Required:    false,
-					Description: "Plain-text content (overrides server-side HTML extraction)",
-				},
-				{
-					Name:        "html",
-					Type:        "string",
-					Required:    false,
-					Description: "Raw HTML source (text is extracted server-side)",
-				},
-				{
-					Name:        "favicon",
-					Type:        "string",
-					Required:    false,
-					Description: "Base64-encoded favicon data URI",
 				},
 				documentLanguageOverrideSchema(),
 				documentMetadataSchema(),

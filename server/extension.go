@@ -11,7 +11,6 @@ const chromeExtensionOrigin = "chrome-extension://cciilamhchpmbdnniabclekddabkif
 // port are allowed to call without a web-session CSRF token. Keep this in
 // lockstep with the endpoints the extension actually uses.
 var browserExtensionAPIPaths = map[string]struct{}{
-	"/add":          {},
 	"/api/add":      {},
 	"/api/add_pdf":  {},
 	"/api/config":   {},

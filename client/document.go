@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/asciimoo/hister/server/types"
 )
 
 // AddDocumentResult describes the outcome of one document in a bulk request.
@@ -254,4 +256,24 @@ type CleanupResult struct {
 func (c *Client) Cleanup() (result CleanupResult, err error) {
 	err = c.requestJSON(context.Background(), http.MethodPost, "/api/cleanup", nil, &result)
 	return result, err
+}
+
+// Purge previews or removes retained records on the configured server.
+func (c *Client) Purge(ctx context.Context, request types.PurgeRequest) (*types.PurgeResult, error) {
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	var result *types.PurgeResult
+	if err := c.requestJSON(ctx, http.MethodPost, "/api/purge", request, &result); err != nil {
+		return nil, err
+	}
+	if result == nil || result.DryRun != request.DryRun {
+		return nil, errors.New("invalid purge response")
+	}
+	for _, count := range []int64{result.Versions, result.HistoryEntries, result.HistoryQueries, result.HistoryURLs, result.CrawlJobs, result.CrawlURLs} {
+		if count < 0 {
+			return nil, errors.New("invalid purge count")
+		}
+	}
+	return result, nil
 }

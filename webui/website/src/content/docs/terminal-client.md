@@ -147,6 +147,16 @@ results separately:
 hister cleanup > cleanup-results.txt
 ```
 
+### Purge Retained Data
+
+Preview old stored versions, unpinned opened result history, and completed crawl records:
+
+```bash
+hister purge --versions --history --crawl-jobs --before 2026-01-01 --dry
+```
+
+Select one or more categories and a `--before` date or RFC3339 timestamp. Omit `--dry` to preview and then confirm deletion, or add `--yes` to skip confirmation. The operation requires a running server and administrator access in multi user mode, and applies across all users. Current documents remain searchable. See [Purging Retained Data](data-lifecycle#purging-retained-data) for the cutoff rules and retained records.
+
 ### Index a URL Manually
 
 To manually index a specific URL:

@@ -2525,6 +2525,35 @@ func serveCleanup(c *webContext) {
 	c.JSON(result)
 }
 
+func servePurge(c *webContext) {
+	var request types.PurgeRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		if !requestBodyTooLarge(c, err) {
+			http.Error(c.Response, "invalid purge request", http.StatusBadRequest)
+		}
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		if !requestBodyTooLarge(c, err) {
+			http.Error(c.Response, "expected one purge request", http.StatusBadRequest)
+		}
+		return
+	}
+	if err := request.Validate(); err != nil {
+		http.Error(c.Response, err.Error(), http.StatusBadRequest)
+		return
+	}
+	result, err := model.Purge(c.Request.Context(), request)
+	if err != nil {
+		log.Error().Err(err).Msg("retained data purge failed")
+		serve500(c)
+		return
+	}
+	c.JSON(result)
+}
+
 func serveFavicon(c *webContext) {
 	i, err := iofs.ReadFile(appSubFS, "favicon.ico")
 	if err != nil {

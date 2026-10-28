@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/asciimoo/hister/client"
+	"github.com/asciimoo/hister/server/types"
 
 	"github.com/spf13/cobra"
 )
@@ -44,6 +47,77 @@ var cleanupCmd = &cobra.Command{
 			result.LocalDocumentsChecked, result.LocalDocumentsSkipped, result.LocalDocumentsRemoved, result.HTMLRemoved, result.FaviconRemoved)
 		return err
 	},
+}
+
+var purgeCmd = &cobra.Command{
+	Use:   "purge",
+	Short: "Permanently remove selected retained data",
+	Long: `Purge stored versions, unpinned opened result history, or completed crawl records before an explicit cutoff.
+
+Select at least one of --versions, --history, or --crawl-jobs, and supply --before.
+Current indexed documents, pinned history, and resumable crawls are preserved.
+This applies across all users and requires administrator access in multi user mode.
+Counts are previewed before confirmation. Use --dry to preview without deleting.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		before, _ := cmd.Flags().GetString("before")
+		cutoff, err := time.Parse(time.RFC3339, before)
+		if err != nil {
+			cutoff, err = time.Parse(time.DateOnly, before)
+		}
+		if err != nil {
+			return fmt.Errorf("--before requires a date (YYYY-MM-DD) or RFC3339 timestamp")
+		}
+		request := types.PurgeRequest{Before: cutoff, DryRun: true}
+		request.Versions, _ = cmd.Flags().GetBool("versions")
+		request.History, _ = cmd.Flags().GetBool("history")
+		request.CrawlJobs, _ = cmd.Flags().GetBool("crawl-jobs")
+		if err := request.Validate(); err != nil {
+			return err
+		}
+		cmd.SilenceUsage = true
+		c := newClient(client.WithTimeout(0))
+		result, err := c.Purge(cmd.Context(), request)
+		if err != nil {
+			return fmt.Errorf("failed to preview purge: %w", err)
+		}
+		if err := printPurgeCounts(cmd.OutOrStdout(), "Would purge", result); err != nil {
+			return err
+		}
+		dry, _ := cmd.Flags().GetBool("dry")
+		if dry {
+			return nil
+		}
+		if result.Versions == 0 && result.HistoryEntries == 0 && result.HistoryQueries == 0 && result.HistoryURLs == 0 && result.CrawlJobs == 0 && result.CrawlURLs == 0 {
+			return nil
+		}
+		yes, _ := cmd.Flags().GetBool("yes")
+		if !yes {
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Permanently purge these records across all users before %s? [y/N] ", cutoff.UTC().Format(time.RFC3339)); err != nil {
+				return err
+			}
+			answer, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+			if err != nil && err != io.EOF {
+				return err
+			}
+			answer = strings.ToLower(strings.TrimSpace(answer))
+			if answer != "y" && answer != "yes" {
+				cmd.Println("Purge cancelled")
+				return nil
+			}
+		}
+		request.DryRun = false
+		result, err = c.Purge(cmd.Context(), request)
+		if err != nil {
+			return fmt.Errorf("failed to purge retained data: %w", err)
+		}
+		return printPurgeCounts(cmd.OutOrStdout(), "Purged", result)
+	},
+}
+
+func printPurgeCounts(out io.Writer, prefix string, result *types.PurgeResult) error {
+	_, err := fmt.Fprintf(out, "%s %d version(s), %d history entry(s), %d history query record(s), %d history URL record(s), %d crawl job(s), and %d crawl URL record(s)\n", prefix, result.Versions, result.HistoryEntries, result.HistoryQueries, result.HistoryURLs, result.CrawlJobs, result.CrawlURLs)
+	return err
 }
 
 func runMaintenance(cmd *cobra.Command, name, activity string, operation func() error) error {

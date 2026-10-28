@@ -25,7 +25,107 @@ import (
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
+	"github.com/asciimoo/hister/server/types"
 )
+
+func TestPurgeCommandPreviewsBeforeDeletion(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, want  string
+		flags              []string
+		apply, failPreview bool
+		previewBody        string
+	}{
+		{name: "dry run", flags: []string{"--dry"}, want: "2 version(s)"},
+		{name: "yes", flags: []string{"--yes"}, apply: true, want: "Purged"},
+		{name: "confirmation", input: "yes\n", apply: true, want: "Purged"},
+		{name: "cancel", input: "no\n", want: "Purge cancelled"},
+		{name: "failed preview", flags: []string{"--yes"}, failPreview: true},
+		{name: "invalid preview", flags: []string{"--yes"}, failPreview: true, previewBody: `{}`},
+		{name: "negative count", flags: []string{"--yes"}, failPreview: true, previewBody: `{"dry_run":true,"versions":-1}`},
+		{name: "no matches", flags: []string{"--yes"}, want: "0 version(s)", previewBody: `{"dry_run":true,"versions":0}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldConfig, oldTransport, oldPreRun := cfg, http.DefaultTransport, rootCmd.PersistentPreRun
+			t.Cleanup(func() {
+				cfg, http.DefaultTransport, rootCmd.PersistentPreRun = oldConfig, oldTransport, oldPreRun
+				rootCmd.SetIn(nil)
+			})
+			cfg = testutil.Config(t)
+			cfg.App.AccessToken = "purge-token"
+			if err := cfg.UpdateBaseURL("https://remote.example/hister"); err != nil {
+				t.Fatal(err)
+			}
+			rootCmd.PersistentPreRun = func(*cobra.Command, []string) {}
+			rootCmd.SetIn(strings.NewReader(tc.input))
+			previews, deletions := 0, 0
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodPost || req.URL.Path != "/hister/api/purge" || req.Header.Get("X-Access-Token") != "purge-token" {
+					t.Fatalf("unexpected purge request: %s %s", req.Method, req.URL)
+				}
+				var body types.PurgeRequest
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if !body.Versions || !body.History || body.CrawlJobs || body.Before.Format(time.RFC3339) != "2026-01-01T00:00:00Z" {
+					t.Fatalf("purge body=%+v", body)
+				}
+				if body.DryRun {
+					previews++
+				} else {
+					deletions++
+					if previews != 1 {
+						t.Fatal("deletion did not follow a preview")
+					}
+				}
+				if tc.previewBody != "" {
+					return jsonHTTPResponse(req, 200, tc.previewBody), nil
+				}
+				if tc.failPreview {
+					return jsonHTTPResponse(req, 500, `{}`), nil
+				}
+				return jsonHTTPResponse(req, 200, fmt.Sprintf(`{"dry_run":%t,"versions":2,"history_entries":3,"history_queries":1,"history_urls":1,"crawl_jobs":0,"crawl_urls":0}`, body.DryRun)), nil
+			})
+			args := append([]string{"purge", "--versions", "--history", "--before", "2026-01-01"}, tc.flags...)
+			output, _, err := executeUserCommandForTest(t, args...)
+			if (err != nil) != tc.failPreview {
+				t.Fatalf("error=%v, output=%s", err, output)
+			}
+			if !tc.failPreview && !strings.Contains(output, tc.want) {
+				t.Fatalf("output=%q, want %q", output, tc.want)
+			}
+			wantDeletions := 0
+			if tc.apply {
+				wantDeletions = 1
+			}
+			if previews != 1 || deletions != wantDeletions {
+				t.Fatalf("previews=%d, deletions=%d", previews, deletions)
+			}
+		})
+	}
+}
+
+func TestPurgeCommandRejectsInvalidSelectionBeforeRequest(t *testing.T) {
+	for _, args := range [][]string{
+		{"purge", "--versions"},
+		{"purge", "--before", "2026-01-01"},
+		{"purge", "--versions", "--before", "tomorrow"},
+		{"purge", "--versions", "--before", "9999-01-01"},
+		{"purge", "--versions", "--before", "2026-01-01", "extra"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			oldPreRun, oldTransport := rootCmd.PersistentPreRun, http.DefaultTransport
+			t.Cleanup(func() { rootCmd.PersistentPreRun, http.DefaultTransport = oldPreRun, oldTransport })
+			rootCmd.PersistentPreRun = func(*cobra.Command, []string) {}
+			http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+				t.Fatal("invalid purge selection sent a request")
+				return nil, nil
+			})
+			if _, _, err := executeUserCommandForTest(t, args...); err == nil {
+				t.Fatal("invalid purge selection accepted")
+			}
+		})
+	}
+}
 
 func executeUserCommandForTest(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()

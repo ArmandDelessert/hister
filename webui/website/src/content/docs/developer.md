@@ -395,6 +395,36 @@ when documents remain or `last_admin` when deleting the final administrator.
 Purged documents are not restored if account deletion fails. See
 [Data Lifecycle and Retention](data-lifecycle#multi-user-ownership) for retention limits.
 
+### Retained Data Purge
+
+`POST /api/purge` requires administrator access in multi user mode and the normal
+authentication and CSRF checks. The selection applies across all users. Supply
+an exclusive `before` cutoff as an RFC3339 timestamp in the past and at least one
+of `versions`, `history`, or `crawl_jobs`:
+
+```json
+{
+  "before": "2026-01-01T00:00:00Z",
+  "versions": true,
+  "history": true,
+  "crawl_jobs": true,
+  "dry_run": true
+}
+```
+
+Success returns `dry_run` and integer counts for `versions`, `history_entries`,
+`history_queries`, `history_urls`, `crawl_jobs`, and `crawl_urls`. A dry run counts
+rows without deleting them, including query and URL rows that would become
+unreferenced. Otherwise the counts describe rows deleted in one SQL transaction.
+A transaction failure rolls back all selected categories and returns `500`.
+Invalid cutoffs, empty selections, unknown fields, and trailing JSON return `400`.
+
+Version age uses `created_at`; history entry, orphan query and URL, and crawl job
+age uses `updated_at`. Pinned history is retained. Only completed crawl jobs with
+no pending or in progress URLs qualify. Current index documents, assets, vectors,
+and embedding jobs are unaffected. See [Purging Retained Data](data-lifecycle#purging-retained-data)
+for user guidance and limitations.
+
 ### Request Limits
 
 API request bodies have a default limit of 1 MiB, including MCP requests and

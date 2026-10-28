@@ -76,7 +76,7 @@ On a normal revisit, the new title, text, HTML preview, metadata, and update tim
 
 Versioning is separate. When a URL matches a versioning rule and content changes, Hister stores text and HTML differences in the SQL database. These records let the preview interface reconstruct earlier content. Version records have no automatic age or count limit.
 
-Disabling a versioning rule stops future differences from being recorded. It does not remove differences already stored.
+Disabling a versioning rule stops future differences from being recorded. Use [purge](#purging-retained-data) to remove old differences already stored.
 
 ## Preview Retention
 
@@ -118,7 +118,7 @@ For each matching current document, deletion removes:
 - The searchable document from the Bleve indexes.
 - Its HTML preview and favicon when no other indexed document references the same content.
 - Its semantic chunks and pending embedding job.
-- Matching opened result history associations for the same URL and owner. These associations use soft deletion in the SQL database.
+- Matching opened result history associations for the same URL and owner. Unreferenced query and URL records can remain.
 
 Document deletion does not remove:
 
@@ -147,6 +147,29 @@ hister cleanup
 During local document reconciliation, cleanup removes indexed documents that are outside the configured directories, no longer match their `filetypes`, `patterns`, `excludes`, or hidden path settings, or have a different configured owner. It evaluates fields already stored in the index and does not walk, stat, or read local files. Cleanup therefore does not discover new files, update changed files, or detect missing source files. Startup directory indexing and the file watcher handle those operations. Cleanup reports how many indexed local documents it checked, skipped, and removed.
 
 Normal updates and deletions already attempt to remove unreferenced assets. The stored data cleanup handles leftovers, such as files left by an interrupted operation. Cleanup does not delete web documents, version differences, crawl jobs, or search history.
+
+## Purging Retained Data
+
+Use `hister purge` to permanently remove selected retained data from the running server. It applies across all users and requires administrator access in multi user mode. Current searchable documents and their previews remain intact.
+
+Choose at least one category and an explicit cutoff:
+
+```bash
+hister purge --versions --history --crawl-jobs --before 2026-01-01 --dry
+hister purge --versions --history --crawl-jobs --before 2026-01-01
+```
+
+| Flag           | Records removed                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--versions`   | Stored version differences created before the cutoff, including versions of deleted documents                                   |
+| `--history`    | Unpinned opened result history last used before the cutoff, plus old query and URL records with no remaining history references |
+| `--crawl-jobs` | Completed crawl jobs last updated before the cutoff and their URL records                                                       |
+
+Pinned history, running or interrupted crawl jobs, and jobs with pending URLs remain. Removing version differences makes those earlier versions unavailable. Removing crawl records does not delete the documents they indexed.
+
+`--before` accepts a date at midnight UTC or an RFC3339 timestamp with a timezone. Records exactly at the cutoff remain. The command previews counts before asking for confirmation; `--dry` stops after the preview and `--yes` skips confirmation. Counts can change between preview and deletion if other work modifies the data. If a database error interrupts deletion, Hister rolls back the purge.
+
+Purging does not erase source files, browser history, logs, exports, or backups, and does not guarantee immediate disk space reclamation. It does not configure automatic expiry.
 
 ## Crawl Job Lifecycle
 

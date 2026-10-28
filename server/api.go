@@ -1053,6 +1053,22 @@ func init() {
 			Description:  "Remove local documents that no longer match configured directories, and remove orphaned HTML and favicon data files (admin only)",
 		},
 		{
+			Name:         "Purge retained data",
+			Path:         "/api/purge",
+			Method:       POST,
+			CSRFRequired: true,
+			AdminOnly:    true,
+			Handler:      servePurge,
+			Description:  "Permanently remove selected retained SQL records before a cutoff, or preview matching counts (admin only). Current documents are preserved.",
+			JSONSchema: []*JSONSchemaField{
+				{Name: "before", Type: "string", Required: true, Description: "Exclusive cutoff as an RFC3339 timestamp in the past"},
+				{Name: "versions", Type: "bool", Description: "Remove stored document versions created before the cutoff"},
+				{Name: "history", Type: "bool", Description: "Remove unpinned opened result history last used before the cutoff, and old unreferenced query and URL records"},
+				{Name: "crawl_jobs", Type: "bool", Description: "Remove completed crawl jobs last updated before the cutoff and their URL records; preserve running, interrupted, and queued work"},
+				{Name: "dry_run", Type: "bool", Description: "Return matching counts without deleting records"},
+			},
+		},
+		{
 			Name:         "Reindex",
 			Path:         "/api/reindex",
 			Method:       POST,

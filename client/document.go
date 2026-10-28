@@ -213,6 +213,20 @@ func (c *Client) DeleteDocuments(query string) error {
 	return c.requestJSON(context.Background(), http.MethodPost, "/api/delete", map[string]string{"query": query}, nil)
 }
 
+// CountDocumentsForDeletion uses the same query and ownership scope as deletion.
+func (c *Client) CountDocumentsForDeletion(query string) (uint64, error) {
+	var result struct {
+		Matched *uint64 `json:"matched"`
+	}
+	if err := c.requestJSON(context.Background(), http.MethodPost, "/api/delete", map[string]any{"query": query, "dry_run": true}, &result); err != nil {
+		return 0, err
+	}
+	if result.Matched == nil {
+		return 0, errors.New("deletion preview response is missing the matched count")
+	}
+	return *result.Matched, nil
+}
+
 // UpdateLabel sets or clears the user-defined label for a stored document.
 func (c *Client) UpdateLabel(urlStr, label string) error {
 	return c.requestJSON(context.Background(), http.MethodPost, "/api/label", map[string]string{"url": urlStr, "label": label}, nil)

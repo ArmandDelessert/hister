@@ -107,23 +107,28 @@ Examples:
   hister delete "language:en domain:example.com"
   hister delete --dry "updated:>90d"
 
-Non-admin users are restricted to their own documents by the server.`,
+Non-admin users are restricted to their own documents by the server.
+Dry runs and confirmation counts use the server's deletion scope. Administrators
+can delete across users; use user_id:ID to restrict the query to one owner.
+Verbose output lists URLs visible in search, which may differ from the documents
+selected for deletion.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		c := newClient()
 		dry, _ := cmd.Flags().GetBool("dry")
 		verbose, _ := cmd.Flags().GetBool("verbose")
 		yes, _ := cmd.Flags().GetBool("yes")
-		var total uint64
+		total, err := c.CountDocumentsForDeletion(args[0])
+		if err != nil {
+			return fmt.Errorf("failed to inspect documents for deletion: %w", err)
+		}
 		if verbose {
+			cmd.PrintErrln("URLs visible in search may differ from the documents selected for deletion; the count uses deletion scope.")
 			var pageKey string
 			for {
 				res, err := c.Search(&client.SearchQuery{Text: args[0], PageKey: pageKey, Sort: "domain"})
 				if err != nil {
-					exit(1, "Failed to search: "+err.Error())
-				}
-				if total == 0 {
-					total = res.Total
+					return fmt.Errorf("failed to list URLs visible in search: %w", err)
 				}
 				for _, doc := range res.Documents {
 					fmt.Println(doc.URL)
@@ -133,31 +138,22 @@ Non-admin users are restricted to their own documents by the server.`,
 				}
 				pageKey = res.PageKey
 			}
-			if dry {
-				fmt.Printf("%d document(s) would be deleted\n", total)
-				return
-			}
-		} else {
-			res, err := c.Search(&client.SearchQuery{Text: args[0]})
-			if err != nil {
-				exit(1, "Failed to search: "+err.Error())
-			}
-			total = res.Total
-			if dry {
-				fmt.Printf("%d document(s) would be deleted\n", total)
-				return
-			}
+		}
+		if dry {
+			fmt.Printf("%d document(s) would be deleted\n", total)
+			return nil
 		}
 		if total == 0 {
 			fmt.Println("No documents matched the query")
-			return
+			return nil
 		}
 		if !yes && !yesNoPrompt(fmt.Sprintf("Delete %d document(s)?", total), false) {
 			fmt.Println("Deletion cancelled")
-			return
+			return nil
 		}
 		if err := c.DeleteDocuments(args[0]); err != nil {
-			exit(1, "Failed to delete: "+err.Error())
+			return fmt.Errorf("failed to delete: %w", err)
 		}
+		return nil
 	},
 }

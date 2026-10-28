@@ -347,7 +347,7 @@ func init() {
 	updateUserCmd.Flags().Bool("toggle-admin", false, "toggle admin status")
 
 	deleteCmd.Flags().Bool("dry", false, "display the number of documents that would be deleted without actually deleting them")
-	deleteCmd.Flags().BoolP("verbose", "v", false, "list all URLs that would be deleted before performing the deletion. Can be used with --dry")
+	deleteCmd.Flags().BoolP("verbose", "v", false, "list matching URLs visible in search; these may differ from deletion matches. Can be used with --dry")
 	deleteCmd.Flags().BoolP("yes", "y", false, "delete without prompting for confirmation")
 
 	updateDocumentsCmd.Flags().Uint("user-id", 0, "new owner user ID; 0 makes documents global")

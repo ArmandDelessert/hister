@@ -46,6 +46,161 @@ func executeUserCommandForTest(t *testing.T, args ...string) (string, string, er
 	return executeInspectionWithStderr(t, args...)
 }
 
+func executeDeleteCommandForTest(t *testing.T, input string, args ...string) (string, string, error) {
+	t.Helper()
+	dir := t.TempDir()
+	streams := make([]*os.File, 3)
+	for n, name := range []string{"stdin", "stdout", "stderr"} {
+		file, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		streams[n] = file
+		t.Cleanup(func() {
+			if err := file.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	if _, err := streams[0].WriteString(input); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := streams[0].Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	stdin, stdout, stderr := os.Stdin, os.Stdout, os.Stderr
+	os.Stdin, os.Stdout, os.Stderr = streams[0], streams[1], streams[2]
+	defer func() { os.Stdin, os.Stdout, os.Stderr = stdin, stdout, stderr }()
+	command := &cobra.Command{Use: deleteCmd.Use, Args: deleteCmd.Args, Run: deleteCmd.Run, RunE: deleteCmd.RunE, SilenceUsage: true, SilenceErrors: true}
+	command.Flags().Bool("dry", false, "")
+	command.Flags().Bool("verbose", false, "")
+	command.Flags().Bool("yes", false, "")
+	command.SetArgs(args)
+	err := command.Execute()
+	output := make([]string, 2)
+	for n, file := range streams[1:] {
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		output[n] = string(data)
+	}
+	return output[0], output[1], err
+}
+
+func TestDeleteDocumentsUsesDeletionScope(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, output, prompt string
+		flags                       []string
+		matched                     int
+		searchEmpty                 bool
+		deleted                     bool
+	}{
+		{name: "dry run", flags: []string{"--dry"}, matched: 3, output: "3 document(s) would be deleted"},
+		{name: "verbose dry run", flags: []string{"--dry", "--verbose"}, matched: 3, output: "3 document(s) would be deleted"},
+		{name: "confirmation", input: "y\n", matched: 3, prompt: "Delete 3 document(s)?", deleted: true},
+		{name: "cancellation", input: "n\n", matched: 3, prompt: "Delete 3 document(s)?", output: "Deletion cancelled"},
+		{name: "matches outside search visibility", flags: []string{"--yes"}, matched: 3, searchEmpty: true, deleted: true},
+		{name: "no deletable documents", flags: []string{"--yes"}, matched: 0, output: "No documents matched the query"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previousConfig, previousTransport := cfg, http.DefaultTransport
+			t.Cleanup(func() { cfg, http.DefaultTransport = previousConfig, previousTransport })
+			cfg = testutil.Config(t)
+			cfg.App.AccessToken = "admin-token"
+			if err := cfg.UpdateBaseURL("https://remote.example/hister"); err != nil {
+				t.Fatal(err)
+			}
+			deleted := false
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Header.Get("X-Access-Token") != "admin-token" {
+					t.Error("request did not authenticate with the configured token")
+				}
+				switch req.URL.Path {
+				case "/hister/search":
+					if tc.searchEmpty {
+						return jsonHTTPResponse(req, http.StatusOK, `{"total":0,"documents":[]}`), nil
+					}
+					return jsonHTTPResponse(req, http.StatusOK, `{"total":1,"documents":[{"url":"https://example.com/visible"}]}`), nil
+				case "/hister/api/delete":
+					var body struct {
+						Query  string `json:"query"`
+						DryRun bool   `json:"dry_run"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+						t.Fatal(err)
+					}
+					if req.Method != http.MethodPost || body.Query != "domain:example.com" {
+						t.Errorf("unexpected deletion request: %s %+v", req.Method, body)
+					}
+					if body.DryRun {
+						return jsonHTTPResponse(req, http.StatusOK, fmt.Sprintf(`{"matched":%d}`, tc.matched)), nil
+					}
+					deleted = true
+					return jsonHTTPResponse(req, http.StatusOK, fmt.Sprintf(`{"deleted":%d}`, tc.matched)), nil
+				default:
+					t.Errorf("unexpected request: %s", req.URL)
+					return jsonHTTPResponse(req, http.StatusNotFound, ""), nil
+				}
+			})
+			out, stderr, err := executeDeleteCommandForTest(t, tc.input, append([]string{"domain:example.com"}, tc.flags...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, tc.output) || !strings.Contains(stderr, tc.prompt) {
+				t.Errorf("stdout = %q, stderr = %q; want %q and %q", out, stderr, tc.output, tc.prompt)
+			}
+			if tc.name == "verbose dry run" && (!strings.Contains(out, "https://example.com/visible") || !strings.Contains(stderr, "may differ from the documents selected for deletion")) {
+				t.Errorf("verbose output did not explain search visibility: stdout = %q, stderr = %q", out, stderr)
+			}
+			if deleted != tc.deleted {
+				t.Errorf("deleted = %t, want %t", deleted, tc.deleted)
+			}
+		})
+	}
+}
+
+func TestDeleteDocumentsRejectsInvalidPreview(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{name: "server error", status: http.StatusInternalServerError, body: "cannot count documents"},
+		{name: "missing count", status: http.StatusOK, body: `{}`},
+		{name: "null count", status: http.StatusOK, body: `{"matched":null}`},
+		{name: "negative count", status: http.StatusOK, body: `{"matched":-1}`},
+		{name: "invalid JSON", status: http.StatusOK, body: `not JSON`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previousConfig, previousTransport := cfg, http.DefaultTransport
+			t.Cleanup(func() { cfg, http.DefaultTransport = previousConfig, previousTransport })
+			cfg = testutil.Config(t)
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				var body struct {
+					DryRun bool `json:"dry_run"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if req.URL.Path != "/api/delete" || !body.DryRun {
+					t.Errorf("attempted deletion or fallback after an invalid preview: %s", req.URL)
+				}
+				return jsonHTTPResponse(req, tc.status, tc.body), nil
+			})
+			out, stderr, err := executeDeleteCommandForTest(t, "", "domain:example.com", "--yes")
+			if err == nil || !strings.Contains(err.Error(), "failed to inspect documents for deletion") {
+				t.Errorf("error = %v, want a deletion preview error", err)
+			}
+			if out != "" || stderr != "" {
+				t.Errorf("invalid preview produced output: stdout = %q, stderr = %q", out, stderr)
+			}
+		})
+	}
+}
+
 func TestDeprecatedCommandsAreRejected(t *testing.T) {
 	for _, name := range []string{"create-config", "create-user", "show-user", "update-user", "delete-user"} {
 		t.Run(name, func(t *testing.T) {

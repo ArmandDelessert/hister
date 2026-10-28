@@ -111,6 +111,8 @@ hister delete --dry --verbose 'updated:>90d'
 
 Relative time filters describe elapsed age, so `updated:>90d` matches documents not updated for more than 90 days. The command asks for confirmation unless `--yes` is supplied.
 
+Dry runs and confirmation prompts count documents using the same permissions and query as deletion. `--verbose` lists matching URLs visible in search, which can differ from the documents selected for deletion on a shared server. The count includes every deletion match even when its URL is not listed. Documents added or changed after the preview can affect the final deletion.
+
 For each matching current document, deletion removes:
 
 - The searchable document from the Bleve indexes.
@@ -163,7 +165,7 @@ Deleting a crawl job removes its queue and status records. It does not delete do
 
 All users share the server storage and search index files, but each current document has an owner ID. Normal searches for an authenticated user include that user's documents and global documents owned by user ID `0`.
 
-A regular user can delete only their own current documents. An administrator deletion request has no automatic owner restriction and can affect other users. The command line `--dry` check uses normal administrator search scope, so it does not reveal matching documents owned by other users. On a shared server, constrain an administrator deletion query with `user_id:ID` and never infer its full impact from the dry run count alone.
+A regular user can delete only their own current documents. An administrator deletion request has no automatic owner restriction and can affect other users. The command line `--dry` count includes those documents. On a shared server, constrain an administrator deletion query with `user_id:ID` to select one owner's documents.
 
 Use `hister update QUERY --user-id ID` to change ownership without exporting and importing current
 documents. The operation preserves current indexed content and stored version records. It skips a

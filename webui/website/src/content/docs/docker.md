@@ -16,11 +16,17 @@ The `latest` image runs as the nonroot user with UID and GID `65532`. The exampl
 Hister can be fully [configured using environment variables](configuration#environment-variables).
 This is the **recommended approach for containerized environments** (Docker, Kubernetes, etc.) as it avoids the need to manage configuration files inside the container or mounted volumes.
 
-If you prefer using a configuration file instead of environment variables, you can generate a default one using Docker:
+If you prefer using a configuration file instead of environment variables, generate a commented reference using Docker:
 
 ```bash
 docker run --rm ghcr.io/asciimoo/hister:latest config create > config.yml
 ```
+
+Uncomment each setting you want to activate and its enclosing section, preserving indentation.
+Leave unrelated settings commented. The listen address example follows the container build's
+default. To print all defaults as active YAML values, use `config create --full` instead.
+Shell redirection replaces an existing destination file, so choose a new filename to keep an
+existing configuration.
 
 ### Basic Docker Compose
 

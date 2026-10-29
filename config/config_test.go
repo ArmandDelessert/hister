@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -10,6 +11,62 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestLoadCommentedConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name, content, address string
+	}{
+		{"comments only", "# app:\n#   title: Example title\n# server:\n#   address: 127.0.0.1:5544\n", DefaultServerAddress},
+		{"selected setting", "# app:\n#   title: Example title\nserver:\n  address: 127.0.0.1:5544\n", "127.0.0.1:5544"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, inspection := range []bool{false, true} {
+				name := "startup"
+				if inspection {
+					name = "inspection"
+				}
+				t.Run(name, func(t *testing.T) {
+					dir := t.TempDir()
+					filename := filepath.Join(dir, "config.yml")
+					t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "data"))
+					if err := os.WriteFile(filename, []byte(tc.content), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					var c *Config
+					var err error
+					if inspection {
+						var selected string
+						c, selected, err = LoadForInspection(filename, true)
+						if selected != filename {
+							t.Fatalf("selected file = %q, want %q", selected, filename)
+						}
+					} else {
+						c, err = Load(filename)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := c.Validate(); err != nil {
+						t.Fatal(err)
+					}
+					if c.App.Title != CreateDefaultConfig().App.Title || c.Server.Address != tc.address {
+						t.Fatalf("title = %q, address = %q; commented values must not override defaults", c.App.Title, c.Server.Address)
+					}
+					content, err := os.ReadFile(filename)
+					if err != nil || string(content) != tc.content {
+						t.Fatalf("loading changed main configuration: %q, err=%v", content, err)
+					}
+					if inspection {
+						entries, err := os.ReadDir(dir)
+						if err != nil || len(entries) != 1 {
+							t.Fatalf("inspection created runtime files: %v, err=%v", entries, err)
+						}
+					}
+				})
+			}
+		})
+	}
+}
 
 func TestPDFParserConfiguration(t *testing.T) {
 	readParser := func(cfg *Config) map[string]any {

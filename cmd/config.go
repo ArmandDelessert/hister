@@ -127,8 +127,8 @@ func inspectConfig() (*config.Config, string, error) {
 
 var configCreateCmd = &cobra.Command{
 	Use:   "create [FILENAME]",
-	Short: "Create default configuration file",
-	Long:  "Write the default configuration to FILENAME, or print it to standard output when no filename is given.",
+	Short: "Create a commented default configuration reference",
+	Long:  "Write all default settings as commented YAML to FILENAME, or print them to standard output when no filename is given. Uncomment a section and selected settings to activate them, leaving unrelated settings commented. Use --full to write active YAML values for all defaults. Existing files are never overwritten.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runConfigCreate,
 }
@@ -138,6 +138,18 @@ func runConfigCreate(cmd *cobra.Command, args []string) error {
 	content, err := yaml.Marshal(config.CreateDefaultConfig())
 	if err != nil {
 		return err
+	}
+	if full, _ := cmd.Flags().GetBool("full"); !full {
+		var reference strings.Builder
+		reference.WriteString("# Commented settings are examples and do not override web configuration.\n")
+		reference.WriteString("# Uncomment a section and selected settings to manage them in this file.\n")
+		for line := range strings.SplitAfterSeq(string(content), "\n") {
+			if line != "" {
+				reference.WriteString("# ")
+				reference.WriteString(line)
+			}
+		}
+		content = []byte(reference.String())
 	}
 	if len(args) == 0 {
 		_, err := cmd.OutOrStdout().Write(content)

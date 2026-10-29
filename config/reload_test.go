@@ -8,6 +8,42 @@ import (
 	"testing"
 )
 
+func TestReloadCommentedConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "config.yml")
+	t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "data"))
+	const reference = "# app:\n#   title: Example title\n# server:\n#   address: 127.0.0.1:5544\n"
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(filename, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(reference)
+	c, err := Load(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ content, address string }{
+		{reference, DefaultServerAddress},
+		{"# app:\n#   title: Example title\nserver:\n  address: 127.0.0.1:5544\n", "127.0.0.1:5544"},
+		{reference, DefaultServerAddress},
+	} {
+		write(tc.content)
+		c, err = c.Reload()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.App.Title != CreateDefaultConfig().App.Title || c.Server.Address != tc.address {
+			t.Fatalf("title = %q, address = %q; reload must only apply uncommented values", c.App.Title, c.Server.Address)
+		}
+		content, err := os.ReadFile(filename)
+		if err != nil || string(content) != tc.content {
+			t.Fatalf("reload changed main configuration: %q, err=%v", content, err)
+		}
+	}
+}
+
 func TestReloadPreservesRuntimeStateAndAppliesOverrides(t *testing.T) {
 	dir := t.TempDir()
 	filename := filepath.Join(dir, "config.yml")

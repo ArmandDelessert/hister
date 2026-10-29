@@ -253,6 +253,7 @@ func init() {
 	rootCmd.AddCommand(listenCmd)
 	rootCmd.AddCommand(configCmd, doctorCmd)
 	configCmd.AddCommand(configCreateCmd, configPathCmd, configShowCmd, configValidateCmd)
+	configCreateCmd.Flags().Bool("full", false, "Write all default settings as active YAML values")
 	addOutputFormatFlag(doctorCmd)
 	rootCmd.AddCommand(listURLsCmd)
 	rootCmd.AddCommand(listFilesCmd)

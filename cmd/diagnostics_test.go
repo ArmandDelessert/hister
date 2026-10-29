@@ -25,7 +25,7 @@ func executeInspection(t *testing.T, args ...string) (string, error) {
 
 func executeInspectionWithStderr(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
-	for _, flags := range []*pflag.FlagSet{rootCmd.PersistentFlags(), doctorCmd.Flags()} {
+	for _, flags := range []*pflag.FlagSet{rootCmd.PersistentFlags(), doctorCmd.Flags(), configCreateCmd.Flags()} {
 		flags.VisitAll(func(flag *pflag.Flag) {
 			value, changed := flag.Value.String(), flag.Changed
 			t.Cleanup(func() {

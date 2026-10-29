@@ -90,8 +90,11 @@ interruption and refresh open Hister web pages afterwards. An admin token is req
 user mode. See [Reloading a Running Server](configuration#reloading-a-running-server) for examples
 and limitations.
 
-`config create [FILENAME]` writes default configuration to a new file, or prints YAML when no
-filename is given. It refuses to overwrite existing files.
+`config create [FILENAME]` writes all default settings as commented YAML to a new file, or
+prints them when no filename is given. Uncomment a setting and its enclosing section to
+activate it, preserving indentation and leaving unrelated settings commented. Use
+`config create --full [FILENAME]` to write all defaults as active YAML values. Both forms
+refuse to overwrite existing files and work without a valid current configuration.
 
 `config path` prints the absolute path of the selected main config file, or `(defaults)` when
 no file is found. It works even when the file contains invalid YAML. `config show` prints

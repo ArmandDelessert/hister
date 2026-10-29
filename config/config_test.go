@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -65,6 +66,223 @@ func TestLoadCommentedConfiguration(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestTUIConfigurationDoesNotSelectMainFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("LOCALAPPDATA", dir)
+	c := CreateDefaultConfig()
+	c.TUI = DefaultTUIConfig
+	c.TUI.DarkTheme = "saved-theme"
+	if err := c.SaveTUIConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if c.Filename() != "*Default Config*" {
+		t.Fatalf("saving TUI preferences selected a nonexistent main file: %q", c.Filename())
+	}
+	c = CreateDefaultConfig()
+	c.LoadTUIConfig()
+	if c.Filename() != "*Default Config*" || c.TUI.DarkTheme != "saved-theme" {
+		t.Fatalf("TUI loading lost preferences or selected a main file: %q, %+v", c.Filename(), c.TUI)
+	}
+}
+
+func TestConfigurationSourcesPreserveExplicitValues(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "config.yml")
+	const raw = `app:
+  title: Hister
+  subtitle: ''
+  show_suggestions: false
+crawler:
+  delay: 0
+  headers: {}
+  cookies: []
+indexer:
+  languages: []
+server: {}
+extractors:
+  markdown: {}
+  ytdlp:
+    options:
+      timeout: 0
+`
+	if err := os.WriteFile(filename, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := LoadForInspection(filename, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"app.title", "app.subtitle", "app.show_suggestions", "crawler.delay", "crawler.headers", "crawler.cookies", "indexer.languages", "extractors.ytdlp.options.timeout"} {
+		source := c.Source(path)
+		if source.Kind != "file" || source.Name != filename || !source.Locked || source.Reason == "" {
+			t.Errorf("explicit %s source = %+v, want a file lock", path, source)
+		}
+	}
+	for _, path := range []string{"app.search_url", "server.address", "extractors.markdown.enable", "extractors.ytdlp.enable", "extractors.ytdlp.options.extra_args"} {
+		if source := c.Source(path); source.Kind != "default" || source.Locked {
+			t.Errorf("omitted %s source = %+v, want unlocked defaults", path, source)
+		}
+	}
+	if c.App.Title != "Hister" || c.App.Subtitle != "" || c.App.ShowSuggestions || c.Crawler.Delay != 0 || len(c.Crawler.Headers) != 0 || len(c.Indexer.Languages) != 0 {
+		t.Fatal("source tracking changed explicit values")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("candidate loading created runtime files: %v, err=%v", entries, err)
+	}
+}
+
+func TestConfigurationSourcesEnvironmentAndNormalization(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "config.yml")
+	const raw = "app:\n  title: From file\n  show_suggestions: true\n  user_handling: false\ncrawler:\n  delay: 10\n  headers:\n    X-Trace: file\nserver:\n  address: 127.0.0.1:4433\n"
+	if err := os.WriteFile(filename, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{
+		"HISTER__APP__TITLE": "", "HISTER__APP__SHOW_SUGGESTIONS": "false",
+		"HISTER__CRAWLER__DELAY": "0", "HISTER__CRAWLER__HEADERS__AUTHORIZATION": "private-credential",
+		"HISTER__APP__DIRECTORY": filepath.Join(dir, "unused"), "HISTER_DATA_DIR": filepath.Join(dir, "data"),
+		"HISTER__SERVER__ADDRESS": "127.0.0.1:5544", "HISTER_PORT": "6655",
+		"HISTER__SERVER__PROXY_AUTH_HEADER": "X-Remote-User",
+	} {
+		t.Setenv(key, value)
+	}
+	c, _, err := LoadForInspection(filename, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, name := range map[string]string{
+		"app.title": "HISTER__APP__TITLE", "app.show_suggestions": "HISTER__APP__SHOW_SUGGESTIONS",
+		"crawler.delay": "HISTER__CRAWLER__DELAY", "crawler.headers": "HISTER__CRAWLER__HEADERS__AUTHORIZATION",
+		"crawler.headers.x-trace": "HISTER__CRAWLER__HEADERS__AUTHORIZATION",
+		"app.directory":           "HISTER_DATA_DIR", "server.address": "HISTER_PORT",
+	} {
+		if source := c.Source(path); source.Kind != "environment" || source.Name != name || !source.Locked {
+			t.Errorf("%s source = %+v, want %s", path, source, name)
+		}
+	}
+	if c.App.Title != "" || c.App.ShowSuggestions || c.Crawler.Delay != 0 || c.Server.Address != "127.0.0.1:6655" || c.App.Directory != filepath.Join(dir, "data") {
+		t.Fatal("explicit environment values did not override the file and defaults")
+	}
+	source := c.Source("app.user_handling")
+	if !c.App.UserHandling || !source.Locked || source.DerivedFrom != "server.proxy_auth_header" || source.Name != "HISTER__SERVER__PROXY_AUTH_HEADER" {
+		t.Fatalf("proxy authentication dependency was lost: %+v", source)
+	}
+	if strings.Contains(source.Reason, "X-Remote-User") || strings.Contains(c.Source("crawler.headers").Reason, "private-credential") {
+		t.Fatal("source descriptions contain setting values")
+	}
+}
+
+func TestLoadRequiresRequestedFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("LOCALAPPDATA", dir)
+	t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "data"))
+	if err := os.MkdirAll(filepath.Join(dir, "hister"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "hister", "config.yml"), []byte("app:\n  title: Fallback\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, filename := range []string{filepath.Join(dir, "missing.yml"), dir} {
+		if _, err := Load(filename); err == nil {
+			t.Errorf("startup silently replaced requested file %q", filename)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "data")); !os.IsNotExist(err) {
+		t.Fatalf("failed loading initialized runtime data: %v", err)
+	}
+}
+
+func TestConfigurationSourcesIgnoreEmptyContainers(t *testing.T) {
+	for _, raw := range []string{
+		"# app:\n#   title: Hister\n",
+		"{}\n",
+		"app: {}\nserver:\n  oauth:\n    github: {}\nextractors:\n  ytdlp:\n    options: {}\n",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "config.yml")
+			if err := os.WriteFile(filename, []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, _, err := LoadForInspection(filename, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{"app.title", "server.address", "server.oauth.github.client_secret", "extractors.ytdlp.enable", "extractors.ytdlp.options.timeout"} {
+				if source := c.Source(path); source.Kind != "default" || source.Locked {
+					t.Errorf("empty category pinned %s: %+v", path, source)
+				}
+			}
+		})
+	}
+}
+
+func TestConfigurationSourcesPreservePartialMaps(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "config.yml")
+	const raw = "hotkeys:\n  web:\n    alt+x: focus_search_input\nsensitive_content_patterns:\n  custom: private\n"
+	if err := os.WriteFile(filename, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := LoadForInspection(filename, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Hotkeys.Web["alt+x"] != "focus_search_input" || c.Hotkeys.Web["enter"] != "open_result" || c.SensitiveContentPatterns["custom"] != "private" || c.SensitiveContentPatterns["github_token"] == "" {
+		t.Fatal("source tracking changed how partial main file maps inherit defaults")
+	}
+	for _, path := range []string{"hotkeys.web", "hotkeys.web.enter", "sensitive_content_patterns", "sensitive_content_patterns.github_token"} {
+		if source := c.Source(path); source.Kind != "file" || !source.Locked {
+			t.Errorf("authoritative collection member did not lock %s: %+v", path, source)
+		}
+	}
+}
+
+func TestConfigurationSourcesIgnoreInapplicableSpecialEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "config.yml")
+	address := "unix:" + filepath.Join(dir, "hister.sock")
+	raw := fmt.Sprintf("app:\n  directory: %q\nserver:\n  address: %q\n  base_url: http://localhost\n", dir, address)
+	if err := os.WriteFile(filename, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTER_DATA_DIR", "")
+	t.Setenv("HISTER_PORT", "5544")
+	c, _, err := LoadForInspection(filename, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.App.Directory != dir || c.Server.Address != address || c.Source("app.directory").Kind != "file" || c.Source("server.address").Kind != "file" {
+		t.Fatal("empty or inapplicable special environment values replaced the file source")
+	}
+}
+
+func TestConfigurationSourcesPreserveAutomaticEnvironmentPrecedence(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(filename, []byte("app:\n  title: File\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTER_APP__TITLE", "Automatic environment")
+	for _, explicit := range []bool{false, true} {
+		if explicit {
+			t.Setenv("HISTER__APP__TITLE", "Explicit environment")
+		}
+		c, _, err := LoadForInspection(filename, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, value := "HISTER_APP__TITLE", "Automatic environment"
+		if explicit {
+			name, value = "HISTER__APP__TITLE", "Explicit environment"
+		}
+		if source := c.Source("app.title"); c.App.Title != value || source.Kind != "environment" || source.Name != name {
+			t.Errorf("title = %q, source = %+v; want %q from %s", c.App.Title, source, value, name)
+		}
 	}
 }
 

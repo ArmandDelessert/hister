@@ -111,18 +111,43 @@ func inspectConfig() (*config.Config, string, error) {
 	if err != nil {
 		return nil, name, err
 	}
-	flags := rootCmd.PersistentFlags()
-	for flag, target := range map[string]*string{
-		"log-level":  &c.App.LogLevel,
-		"search-url": &c.App.SearchURL,
-		"server-url": &c.Server.BaseURL,
-		"token":      &c.App.AccessToken,
-	} {
-		if flags.Changed(flag) {
-			*target, _ = flags.GetString(flag)
-		}
+	if err := globalConfigOverrides()(c); err != nil {
+		return nil, name, err
 	}
 	return c, name, c.Validate()
+}
+
+func globalConfigOverrides() func(*config.Config) error {
+	type override struct{ path, flag, value string }
+	var values []override
+	flags := rootCmd.PersistentFlags()
+	for flag, path := range map[string]string{
+		"log-level": "app.log_level", "search-url": "app.search_url",
+		"server-url": "server.base_url", "token": "app.access_token",
+	} {
+		if flags.Changed(flag) {
+			value, _ := flags.GetString(flag)
+			values = append(values, override{path, flag, value})
+		}
+	}
+	return func(c *config.Config) error {
+		defaults := config.CreateDefaultConfig()
+		if c.App.LogLevel == "" {
+			c.App.LogLevel = defaults.App.LogLevel
+		}
+		if c.App.SearchURL == "" {
+			c.App.SearchURL = defaults.App.SearchURL
+		}
+		fields := map[string]*string{
+			"app.log_level": &c.App.LogLevel, "app.search_url": &c.App.SearchURL,
+			"server.base_url": &c.Server.BaseURL, "app.access_token": &c.App.AccessToken,
+		}
+		for _, value := range values {
+			*fields[value.path] = value.value
+			c.SetFlagSource(value.path, value.flag)
+		}
+		return nil
+	}
 }
 
 var configCreateCmd = &cobra.Command{

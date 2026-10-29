@@ -95,3 +95,91 @@ func TestReloadRequiresOriginalFile(t *testing.T) {
 		t.Fatalf("failed reload created files: %v, %v", entries, err)
 	}
 }
+
+func TestReloadWithoutMainConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HISTER_DATA_DIR", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("LOCALAPPDATA", dir)
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A file appearing after startup must not silently become authoritative.
+	if err := os.WriteFile(filepath.Join(dir, "hister", "config.yml"), []byte("app:\n  title: Unexpected file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTER__APP__SUBTITLE", "Updated environment")
+	next, err := c.Reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Filename() != "*Default Config*" || next.App.Title != "Hister" || next.App.Subtitle != "Updated environment" {
+		t.Fatalf("reload did not retain defaults and environment without a selected file: %q, %+v", next.Filename(), next.App)
+	}
+}
+
+func TestReloadRefreshesSourcesAndDetachesCandidates(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "data"))
+	filename := filepath.Join(dir, "config.yml")
+	const original = "app:\n  title: Original\ncrawler:\n  headers:\n    x-test: original\n"
+	if err := os.WriteFile(filename, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Source("app.title").Kind != "file" {
+		t.Fatal("startup did not capture the selected file source")
+	}
+	const updated = "# app:\n#   title: Original\ncrawler:\n  headers:\n    x-test: updated\n"
+	if err := os.WriteFile(filename, []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next, err := c.Reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.App.Title != "Hister" || next.Source("app.title").Locked || next.Source("crawler.headers").Kind != "file" {
+		t.Fatal("reload retained a removed file selection")
+	}
+	next.Crawler.Headers["x-test"] = "candidate"
+	snapshot := *c
+	snapshot.SetFlagSource("app.title", "test-title")
+	if c.Crawler.Headers["x-test"] != "original" || c.App.Title != "Original" || c.Source("app.title").Kind != "file" {
+		t.Fatal("changing a candidate or snapshot mutated the active configuration")
+	}
+	t.Setenv("HISTER__APP__TITLE", "Environment")
+	next, err = next.Reload()
+	if err != nil || next.App.Title != "Environment" || next.Source("app.title").Kind != "environment" {
+		t.Fatalf("reload did not capture updated environment sources: %v", err)
+	}
+	data, err := os.ReadFile(filename)
+	if err != nil || string(data) != updated {
+		t.Fatalf("reload rewrote the main file: %v", err)
+	}
+}
+
+func TestReloadKeepsSelectedRelativeFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "data"))
+	const content = "app:\n  title: Selected file\n"
+	if err := os.WriteFile("config.yml", []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load("config.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Filename() != filepath.Join(dir, "config.yml") {
+		t.Fatalf("main file identity was resolved relative to data storage: %q", c.Filename())
+	}
+	t.Chdir(t.TempDir())
+	next, err := c.Reload()
+	if err != nil || next.App.Title != "Selected file" {
+		t.Fatalf("reload lost the selected file after changing directory: %v", err)
+	}
+}

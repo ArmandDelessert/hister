@@ -54,10 +54,7 @@ func (c *Config) ReadRules() error {
 // modifying runtime files. Overrides preserve the running command's flags.
 // The caller owns validation and replacement of runtime components.
 func (c *Config) Reload(overrides ...func(*Config) error) (*Config, error) {
-	if c.fname == "" {
-		return nil, errors.New("server started without a configuration file; restart with --config to enable reload")
-	}
-	next, _, err := LoadForInspection(c.fname, true)
+	next, err := loadSelected(c.fname, true)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +78,7 @@ func (c *Config) Reload(overrides ...func(*Config) error) (*Config, error) {
 	// These belong to the existing session store and terminal clients.
 	next.secretKey = c.secretKey
 	next.TUI = c.TUI
+	next.tuiPath = c.tuiPath
 	next.Hotkeys.TUI = c.Hotkeys.TUI
 	return next, nil
 }

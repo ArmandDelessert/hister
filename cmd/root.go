@@ -172,20 +172,12 @@ var listenCmd = &cobra.Command{
 	Short: "Start the Hister HTTP server",
 	Long:  `Start the Hister HTTP server and watch configured directories for file changes.`,
 	PreRun: func(cmd *cobra.Command, _ []string) {
-		if public, _ := cmd.Flags().GetBool("public"); public {
-			cfg.App.Public = true
-		}
 		if err := cfg.ValidatePublicMode(); err != nil {
 			exit(1, "Failed to initialize config: "+err.Error())
 		}
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		idx := initIndex(model.ReadWrite)
-		if a, err := cmd.Flags().GetString("address"); err == nil && cmd.Flags().Changed("address") {
-			if err := cfg.UpdateListenAddress(a); err != nil {
-				exit(1, `Failed to set server address: `+err.Error())
-			}
-		}
 		if (cfg.App.AccessToken != "" || cfg.App.UserHandling) && strings.HasPrefix(cfg.BaseURL(""), "http://") {
 			log.Warn().Msg("Using authentication without https. Credentials and sessions are sent in plain text network requests.")
 		}
@@ -377,7 +369,7 @@ func init() {
 	searchCmd.Flags().String("sort", "relevance", "result order: relevance, date, domain, or visits")
 	configureCommandScopes()
 
-	rootCmd.PersistentPreRun = func(_ *cobra.Command, _ []string) { initialize() }
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) { initialize(cmd) }
 
 	zerolog.CallerMarshalFunc = func(_ uintptr, file string, line int) string {
 		dir, fn := filepath.Split(file)
@@ -390,13 +382,13 @@ func init() {
 	log.Logger = log.With().Caller().Logger().Output(logging.Default)
 }
 
-func initialize() {
+func initialize(cmd *cobra.Command) {
 	if ll := os.Getenv("HISTER__APP__LOG_LEVEL"); ll != "debug" {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	} else {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	}
-	initConfig()
+	initConfig(cmd)
 	if cfg.Crawler.UserAgent != "" {
 		UserAgent = cfg.Crawler.UserAgent
 	}
@@ -405,33 +397,19 @@ func initialize() {
 	log.Debug().Msg("Logging initialization complete")
 }
 
-func initConfig() {
-	var err error
-
-	if !rootCmd.PersistentFlags().Changed("config") {
-		if envConfig := os.Getenv("HISTER_CONFIG"); envConfig != "" {
-			cfgFile = envConfig
-		}
-	}
-
-	cfg, err = config.Load(cfgFile)
+func initConfig(cmd *cobra.Command) {
+	filename, explicit := inspectionConfigSource()
+	name, err := config.ResolvePath(filename, explicit)
 	if err != nil {
 		exit(1, "Failed to initialize config: "+err.Error())
 	}
-
-	if v, _ := rootCmd.PersistentFlags().GetString("log-level"); v != "" && (rootCmd.Flags().Changed("log-level") || cfg.App.LogLevel == "") {
-		cfg.App.LogLevel = v
+	override := globalConfigOverrides()
+	if cmd == listenCmd {
+		override = listenConfigOverrides(cmd)
 	}
-	if v, _ := rootCmd.PersistentFlags().GetString("search-url"); v != "" && (rootCmd.Flags().Changed("search-url") || cfg.App.SearchURL == "") {
-		cfg.App.SearchURL = v
-	}
-	if v, _ := rootCmd.PersistentFlags().GetString("server-url"); v != "" && rootCmd.Flags().Changed("server-url") {
-		if err := cfg.UpdateBaseURL(v); err != nil {
-			exit(1, "Failed to initialize config: "+err.Error())
-		}
-	}
-	if v, _ := rootCmd.PersistentFlags().GetString("token"); rootCmd.PersistentFlags().Changed("token") {
-		cfg.App.AccessToken = v
+	cfg, err = config.Load(name, override)
+	if err != nil {
+		exit(1, "Failed to initialize config: "+err.Error())
 	}
 	if err := cfg.ValidatePublicMode(); err != nil {
 		exit(1, "Failed to initialize config: "+err.Error())

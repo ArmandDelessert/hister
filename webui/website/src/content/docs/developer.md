@@ -88,6 +88,19 @@ good first issues. Coding agents should also follow the repository
 The Go module is `github.com/asciimoo/hister`. The root npm workspace includes
 the web application, website, shared components, and browser extension.
 
+### Configuration loading
+
+`config.ResolvePath` selects a main file. Pass the selected path to `config.Load`, or an empty
+string to start with defaults and environment settings. `LoadForInspection` and `Config.Reload`
+share candidate decoding without creating runtime files. Reload retains the original main file
+selection, independently of the TUI preferences path.
+
+`Config.Source(path)` reports a setting's origin and source lock without retaining its value.
+Explicit empty and default valued settings remain distinguishable from omitted settings.
+Collections share one source lock; extractor options are tracked individually. CLI overrides
+must apply their typed value and call `SetFlagSource` only for explicitly supplied flags.
+This metadata does not grant editing permission or replace field validation.
+
 ## Development Commands
 
 Install the frontend dependencies once before running frontend commands:

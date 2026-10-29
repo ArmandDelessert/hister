@@ -37,6 +37,8 @@ import (
 
 type Config struct {
 	fname                    string
+	tuiPath                  string
+	sources                  map[string]ValueSource
 	App                      App                   `yaml:"app" mapstructure:"app"`
 	Server                   Server                `yaml:"server" mapstructure:"server"`
 	Indexer                  Indexer               `yaml:"indexer" mapstructure:"indexer"`
@@ -462,38 +464,6 @@ func getDefaultDataDir() string {
 	}
 }
 
-func readConfigFile(filename string) ([]byte, string, error) {
-	// If a specific config file is provided, use it directly
-	b, err := os.ReadFile(filename)
-	if err == nil {
-		return b, filename, nil
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, "", errors.New("configuration file not found. Use --config to specify a custom config file")
-	}
-
-	// List of paths to search for config file, in order of preference
-	paths := getConfigSearchPaths(homeDir)
-
-	for _, path := range paths {
-		b, err := os.ReadFile(path)
-		if err == nil {
-			// Check if this is the deprecated ~/.histerrc path and warn if so
-			if strings.HasSuffix(path, ".histerrc") {
-				log.Warn().
-					Str("oldPath", path).
-					Str("newPath", paths[0]).
-					Msg("Configuration file found at deprecated location ~/.histerrc. Please move it to the recommended location for your OS")
-			}
-			return b, path, nil
-		}
-	}
-
-	return nil, "", errors.New("configuration file not found. Use --config to specify a custom config file")
-}
-
 // getConfigSearchPaths returns the list of paths to search for config files
 // in order of preference, respecting XDG Base Directory standards.
 func getConfigSearchPaths(homeDir string) []string {
@@ -554,22 +524,34 @@ func getConfigSearchPaths(homeDir string) []string {
 	return paths
 }
 
-func loadViper(rawConfig []byte) (*viper.Viper, error) {
+func loadViper(rawConfig []byte, sources map[string]ValueSource) (*viper.Viper, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")
 
-	bindEnvironment(v)
+	bindEnvironment(v, sources)
 
 	if len(rawConfig) > 0 {
 		if err := v.ReadConfig(bytes.NewBuffer(rawConfig)); err != nil {
 			return nil, err
 		}
 	}
+	// Preserve Viper's older automatic environment lookup for known keys.
+	// Explicit HISTER__ bindings above have higher precedence, even when empty.
+	for _, key := range v.AllKeys() {
+		setting := sourceSettingPath(key)
+		if setting == "" || sources[setting].Kind == "environment" {
+			continue
+		}
+		name := "HISTER_" + strings.ToUpper(strings.ReplaceAll(key, ".", "__"))
+		if value := os.Getenv(name); value != "" {
+			sources[setting] = ValueSource{Kind: "environment", Name: name}
+		}
+	}
 
 	return v, nil
 }
 
-func bindEnvironment(v *viper.Viper) {
+func bindEnvironment(v *viper.Viper, sources map[string]ValueSource) {
 	v.SetEnvPrefix("HISTER")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "__"))
 	v.AutomaticEnv()
@@ -589,6 +571,9 @@ func bindEnvironment(v *viper.Viper) {
 			val = parseEnvValue(parts[1])
 		}
 		v.Set(normalizedKey, val)
+		if setting := sourceSettingPath(normalizedKey); setting != "" {
+			sources[setting] = ValueSource{Kind: "environment", Name: parts[0]}
+		}
 		log.Debug().Str("env", parts[0]).Str("key", normalizedKey).Msg("Loaded configuration from environment variable")
 	}
 }
@@ -620,19 +605,32 @@ func parseEnvValue(s string) any {
 	return s
 }
 
-// Load reads and parses the configuration from the specified file.
-func Load(filename string) (*Config, error) {
-	b, fn, err := readConfigFile(filename)
-	if err != nil {
-		log.Debug().Msg("No config file found, using default config")
+// Load initializes runtime configuration from a selected file. An empty name
+// uses defaults and environment only; discovery belongs to ResolvePath.
+func Load(filename string, overrides ...func(*Config) error) (*Config, error) {
+	name := filename
+	var err error
+	if filename != "" {
+		name, err = ResolvePath(filename, true)
 	}
-
-	c, err := parseConfig(b)
 	if err != nil {
 		return nil, err
 	}
-
-	c.fname = fn
+	if strings.HasSuffix(name, ".histerrc") {
+		log.Warn().Str("oldPath", name).Msg("Configuration file found at deprecated location ~/.histerrc. Please move it to the recommended location for your OS")
+	}
+	c, err := loadSelected(name, false)
+	if err != nil {
+		return nil, err
+	}
+	for _, override := range overrides {
+		if err := override(c); err != nil {
+			return nil, err
+		}
+	}
+	if err := c.validateBasic(); err != nil {
+		return nil, err
+	}
 	return c, c.init()
 }
 
@@ -716,15 +714,11 @@ func CreateDefaultConfig() *Config {
 }
 
 func parseConfig(rawConfig []byte) (*Config, error) {
-	v, err := loadViper(rawConfig)
+	c, err := decodeConfig(rawConfig, "", false)
 	if err != nil {
 		return nil, err
 	}
 
-	c := CreateDefaultConfig()
-	if err := v.Unmarshal(&c); err != nil {
-		return nil, err
-	}
 	return c, c.validateBasic()
 }
 
@@ -765,6 +759,7 @@ func (c *Config) normalize() error {
 
 	if dataDir := os.Getenv("HISTER_DATA_DIR"); dataDir != "" {
 		c.App.Directory = dataDir
+		c.recordSource("app.directory", "environment", "HISTER_DATA_DIR")
 	}
 
 	network, _, err := c.Server.ListenEndpoint()
@@ -777,6 +772,7 @@ func (c *Config) normalize() error {
 			host = c.Server.Address
 		}
 		c.Server.Address = net.JoinHostPort(host, envPort)
+		c.recordSource("server.address", "environment", "HISTER_PORT")
 	}
 
 	if strings.HasPrefix(c.App.Directory, "~/") {
@@ -790,9 +786,6 @@ func (c *Config) normalize() error {
 }
 
 func (c *Config) init() error {
-	if err := c.normalize(); err != nil {
-		return err
-	}
 	if err := c.UpdateBaseURL(c.Server.BaseURL); err != nil {
 		return err
 	}
@@ -942,19 +935,7 @@ func (c *Config) UpdateBaseURL(u string) error {
 }
 
 func (c *Config) LoadTUIConfig() {
-	if c.fname == "" {
-		c.TUI = DefaultTUIConfig
-		c.Hotkeys.TUI = copyMap(DefaultTUIHotkeys)
-		c.fname = c.defaultConfigPath()
-		tuiPath := filepath.Join(filepath.Dir(c.fname), "tui.yaml")
-		if _, err := os.Stat(tuiPath); os.IsNotExist(err) {
-			if err := c.SaveTUIConfig(); err != nil {
-				log.Debug().Err(err).Msg("Failed to create tui.yaml")
-			}
-		}
-		return
-	}
-	tuiPath := filepath.Join(filepath.Dir(c.fname), "tui.yaml")
+	tuiPath := c.tuiConfigPath()
 	b, err := os.ReadFile(tuiPath)
 	if err != nil {
 		c.TUI = DefaultTUIConfig
@@ -1057,13 +1038,7 @@ func (c *Config) Filename() string {
 }
 
 func (c *Config) SaveTUIConfig() error {
-	if c.fname == "" {
-		c.fname = c.defaultConfigPath()
-		if err := os.MkdirAll(filepath.Dir(c.fname), 0o755); err != nil {
-			return err
-		}
-	}
-	tuiPath := filepath.Join(filepath.Dir(c.fname), "tui.yaml")
+	tuiPath := c.tuiConfigPath()
 	if err := os.MkdirAll(filepath.Dir(tuiPath), 0o755); err != nil {
 		return err
 	}
@@ -1079,6 +1054,17 @@ func (c *Config) SaveTUIConfig() error {
 		v.Set("hotkeys", c.Hotkeys.TUI)
 	}
 	return v.WriteConfigAs(tuiPath)
+}
+
+func (c *Config) tuiConfigPath() string {
+	if c.tuiPath == "" {
+		mainPath := c.fname
+		if mainPath == "" {
+			mainPath = c.defaultConfigPath()
+		}
+		c.tuiPath = filepath.Join(filepath.Dir(mainPath), "tui.yaml")
+	}
+	return c.tuiPath
 }
 
 func (c *Config) defaultConfigPath() string {

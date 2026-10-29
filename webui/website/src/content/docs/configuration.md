@@ -766,6 +766,10 @@ their own settings.
 Edit the configuration file used to start the server. Settings supplied through startup flags or
 environment variables still take precedence. An admin token is required in multi user mode.
 
+If the server started without a configuration file, reload keeps using defaults and startup
+overrides. Restart with `--config FILENAME` to select a new file. If the server started with a
+file, that file must remain readable; reload never silently switches to another one.
+
 Logging changes take effect on reload, including `app.log_file`, `app.log_format`, and
 `app.log_level`. You can also reload after renaming a log file for rotation. Clearing
 `app.log_file` sends logs back to the terminal or service logs. If the new log file cannot be
@@ -1040,6 +1044,9 @@ The web UI prompts for the access token and exchanges it for an opaque browser s
 ## Public Mode
 
 Public mode lets anonymous visitors search the shared index while write access remains authenticated. Enable it with `app.public: true` or by starting the server with `hister listen --public`. A public instance must also configure either `app.access_token` or `app.user_handling`, otherwise Hister refuses to start.
+
+Use `hister listen --public=false` to override public mode enabled in the file or environment.
+This explicit choice also remains in effect after reload.
 
 ```yaml
 app:

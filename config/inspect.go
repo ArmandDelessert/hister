@@ -17,8 +17,7 @@ import (
 
 // ResolvePath uses the normal configuration search order. Explicit paths must
 // exist. An empty result means defaults and environment variables are in use.
-// Unlike runtime loading, inspection reports unreadable files instead of
-// silently falling back to another configuration.
+// Unreadable files are errors rather than permission to use another source.
 func ResolvePath(filename string, explicit bool) (string, error) {
 	paths := []string{filename}
 	if !explicit {
@@ -52,32 +51,53 @@ func LoadForInspection(filename string, explicit bool) (*Config, string, error) 
 	if err != nil {
 		return nil, name, err
 	}
+	c, err := loadSelected(name, true)
+	return c, name, err
+}
+
+// loadSelected composes a detached candidate without discovery or runtime IO.
+// An empty name deliberately retains the absence of a main configuration file.
+func loadSelected(name string, strict bool) (*Config, error) {
 	var raw []byte
 	if name != "" {
+		var err error
 		raw, err = os.ReadFile(name)
 		if err != nil {
-			return nil, name, fmt.Errorf("read config file: %w", err)
+			return nil, fmt.Errorf("read config file: %w", err)
 		}
 	}
-	v, err := loadViper(raw)
+	c, err := decodeConfig(raw, name, strict)
 	if err != nil {
-		return nil, name, errors.New("invalid configuration YAML")
+		return nil, err
+	}
+	c.fname = name
+	return c, c.normalize()
+}
+
+func decodeConfig(raw []byte, name string, strict bool) (*Config, error) {
+	sources, err := fileSources(raw, name)
+	if err != nil {
+		return nil, err
+	}
+	v, err := loadViper(raw, sources)
+	if err != nil {
+		return nil, errors.New("invalid configuration YAML")
 	}
 	c := CreateDefaultConfig()
+	c.sources = sources
 	var metadata mapstructure.Metadata
 	if err := v.Unmarshal(c, func(dc *mapstructure.DecoderConfig) { dc.Metadata = &metadata }); err != nil {
 		// Decoder errors can include credential values. Do not echo them.
 		if field, ok := errors.AsType[*mapstructure.DecodeError](err); ok {
-			return nil, name, fmt.Errorf("invalid configuration value at %s", field.Name())
+			return nil, fmt.Errorf("invalid configuration value at %s", field.Name())
 		}
-		return nil, name, errors.New("invalid configuration keys or value types")
+		return nil, errors.New("invalid configuration keys or value types")
 	}
-	if len(metadata.Unused) > 0 {
+	if strict && len(metadata.Unused) > 0 {
 		slices.Sort(metadata.Unused)
-		return nil, name, fmt.Errorf("unknown configuration keys: %s", strings.Join(metadata.Unused, ", "))
+		return nil, fmt.Errorf("unknown configuration keys: %s", strings.Join(metadata.Unused, ", "))
 	}
-	c.fname = name
-	return c, name, c.normalize()
+	return c, nil
 }
 
 // Validate checks the main configuration without initializing runtime state.

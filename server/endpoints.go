@@ -64,7 +64,7 @@ var ws = websocket.Upgrader{
 	},
 }
 
-func registerEndpoints(cfg *config.Config, idx *indexer.Indexer, overrides ...func(*config.Config) error) http.Handler {
+func registerEndpoints(cfg *config.Config, idx *indexer.Indexer, overrides ...config.Override) http.Handler {
 	mux := http.NewServeMux()
 	reloader := &configReloader{current: cfg, overrides: overrides}
 	tokenAuth := cfg.App.AccessToken != ""

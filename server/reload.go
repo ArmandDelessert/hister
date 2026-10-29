@@ -13,7 +13,7 @@ import (
 type configReloader struct {
 	mu        sync.Mutex
 	current   *config.Config
-	overrides []func(*config.Config) error
+	overrides []config.Override
 }
 
 // beginRequest takes a snapshot for readers and serializes reloads with rule

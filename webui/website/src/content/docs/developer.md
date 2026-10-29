@@ -98,8 +98,12 @@ selection, independently of the TUI preferences path.
 `Config.Source(path)` reports a setting's origin and source lock without retaining its value.
 Explicit empty and default valued settings remain distinguishable from omitted settings.
 Collections share one source lock; extractor options are tracked individually. CLI overrides
-must apply their typed value and call `SetFlagSource` only for explicitly supplied flags.
-This metadata does not grant editing permission or replace field validation.
+use `config.Override` entries containing a path, typed value, and source. `Load`,
+`LoadForInspection`, and `Config.Reload` accept these entries after environment settings.
+Loading applies values and provenance together and copies mutable inputs for each candidate.
+Bind a CLI flag to its configuration path with `bindConfigFlag` beside its registration.
+Only explicitly supplied flags become overrides. This metadata does not grant editing
+permission or replace field validation.
 
 ## Development Commands
 

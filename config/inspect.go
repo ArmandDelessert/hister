@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -43,21 +44,21 @@ func ResolvePath(filename string, explicit bool) (string, error) {
 	return "", nil
 }
 
-// LoadForInspection decodes defaults, YAML and environment variables without
-// creating runtime files or opening databases. Call Validate after applying
-// command line overrides. Rules and the separate TUI config are not loaded.
-func LoadForInspection(filename string, explicit bool) (*Config, string, error) {
+// LoadForInspection decodes defaults, YAML, environment variables, and explicit
+// overrides without creating runtime files or opening databases. Call Validate
+// on the result. Rules and the separate TUI config are not loaded.
+func LoadForInspection(filename string, explicit bool, overrides ...Override) (*Config, string, error) {
 	name, err := ResolvePath(filename, explicit)
 	if err != nil {
 		return nil, name, err
 	}
-	c, err := loadSelected(name, true)
+	c, err := loadSelected(name, true, overrides...)
 	return c, name, err
 }
 
 // loadSelected composes a detached candidate without discovery or runtime IO.
 // An empty name deliberately retains the absence of a main configuration file.
-func loadSelected(name string, strict bool) (*Config, error) {
+func loadSelected(name string, strict bool, overrides ...Override) (*Config, error) {
 	var raw []byte
 	if name != "" {
 		var err error
@@ -66,27 +67,44 @@ func loadSelected(name string, strict bool) (*Config, error) {
 			return nil, fmt.Errorf("read config file: %w", err)
 		}
 	}
-	c, err := decodeConfig(raw, name, strict)
+	inputs, err := loadInputs(raw, name)
 	if err != nil {
 		return nil, err
+	}
+	c, err := inputs.decode(strict)
+	if err != nil {
+		return nil, err
+	}
+	environment, err := c.environmentOverrides()
+	if err != nil {
+		return nil, err
+	}
+	if len(environment)+len(overrides) > 0 {
+		if err := inputs.apply(append(environment, overrides...)...); err != nil {
+			return nil, err
+		}
+		c, err = inputs.decode(strict)
+		if err != nil {
+			return nil, err
+		}
 	}
 	c.fname = name
 	return c, c.normalize()
 }
 
 func decodeConfig(raw []byte, name string, strict bool) (*Config, error) {
-	sources, err := fileSources(raw, name)
+	inputs, err := loadInputs(raw, name)
 	if err != nil {
 		return nil, err
 	}
-	v, err := loadViper(raw, sources)
-	if err != nil {
-		return nil, errors.New("invalid configuration YAML")
-	}
+	return inputs.decode(strict)
+}
+
+func (inputs *configInputs) decode(strict bool) (*Config, error) {
 	c := CreateDefaultConfig()
-	c.sources = sources
+	c.sources = maps.Clone(inputs.sources)
 	var metadata mapstructure.Metadata
-	if err := v.Unmarshal(c, func(dc *mapstructure.DecoderConfig) { dc.Metadata = &metadata }); err != nil {
+	if err := inputs.values.Unmarshal(c, func(dc *mapstructure.DecoderConfig) { dc.Metadata = &metadata }); err != nil {
 		// Decoder errors can include credential values. Do not echo them.
 		if field, ok := errors.AsType[*mapstructure.DecodeError](err); ok {
 			return nil, fmt.Errorf("invalid configuration value at %s", field.Name())

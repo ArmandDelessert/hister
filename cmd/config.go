@@ -16,8 +16,42 @@ import (
 	"github.com/asciimoo/hister/server/document"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
+
+const configPathAnnotation = "hister_config_path"
+
+func bindConfigFlag(flags *pflag.FlagSet, name, path string) {
+	flag := flags.Lookup(name)
+	if flag.Annotations == nil {
+		flag.Annotations = make(map[string][]string)
+	}
+	flag.Annotations[configPathAnnotation] = []string{path}
+}
+
+func configFlagOverrides(flagSets ...*pflag.FlagSet) []config.Override {
+	var overrides []config.Override
+	seen := make(map[*pflag.Flag]bool)
+	values := viper.New()
+	for _, flags := range flagSets {
+		flags.VisitAll(func(flag *pflag.Flag) {
+			paths := flag.Annotations[configPathAnnotation]
+			if !flag.Changed || len(paths) != 1 || seen[flag] {
+				return
+			}
+			seen[flag] = true
+			// VisitAll supplies a nonnil flag, the only requirement of BindPFlag.
+			_ = values.BindPFlag(flag.Name, flag)
+			overrides = append(overrides, config.Override{
+				Path: paths[0], Value: values.Get(flag.Name),
+				Source: config.ValueSource{Kind: "flag", Name: "--" + flag.Name},
+			})
+		})
+	}
+	return overrides
+}
 
 // Configuration commands override the root initialization hook to avoid creating
 // directories, secret keys, rules, TUI configuration, or log files.
@@ -107,47 +141,15 @@ func configSourceLabel(name string) string {
 
 func inspectConfig() (*config.Config, string, error) {
 	filename, explicit := inspectionConfigSource()
-	c, name, err := config.LoadForInspection(filename, explicit)
+	c, name, err := config.LoadForInspection(filename, explicit, globalConfigOverrides()...)
 	if err != nil {
-		return nil, name, err
-	}
-	if err := globalConfigOverrides()(c); err != nil {
 		return nil, name, err
 	}
 	return c, name, c.Validate()
 }
 
-func globalConfigOverrides() func(*config.Config) error {
-	type override struct{ path, flag, value string }
-	var values []override
-	flags := rootCmd.PersistentFlags()
-	for flag, path := range map[string]string{
-		"log-level": "app.log_level", "search-url": "app.search_url",
-		"server-url": "server.base_url", "token": "app.access_token",
-	} {
-		if flags.Changed(flag) {
-			value, _ := flags.GetString(flag)
-			values = append(values, override{path, flag, value})
-		}
-	}
-	return func(c *config.Config) error {
-		defaults := config.CreateDefaultConfig()
-		if c.App.LogLevel == "" {
-			c.App.LogLevel = defaults.App.LogLevel
-		}
-		if c.App.SearchURL == "" {
-			c.App.SearchURL = defaults.App.SearchURL
-		}
-		fields := map[string]*string{
-			"app.log_level": &c.App.LogLevel, "app.search_url": &c.App.SearchURL,
-			"server.base_url": &c.Server.BaseURL, "app.access_token": &c.App.AccessToken,
-		}
-		for _, value := range values {
-			*fields[value.path] = value.value
-			c.SetFlagSource(value.path, value.flag)
-		}
-		return nil
-	}
+func globalConfigOverrides() []config.Override {
+	return configFlagOverrides(rootCmd.PersistentFlags())
 }
 
 var configCreateCmd = &cobra.Command{

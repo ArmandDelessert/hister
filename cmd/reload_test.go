@@ -81,12 +81,16 @@ func TestListenConfigOverridesPreservedForReload(t *testing.T) {
 		}
 	}
 	override := listenConfigOverrides(listenCmd)
-	// The closure keeps startup values even if a flag variable later changes.
+	// Captured overrides keep startup values even if a flag variable later changes.
 	if err := rootCmd.PersistentFlags().Set("token", "later-token"); err != nil {
 		t.Fatal(err)
 	}
-	c := config.CreateDefaultConfig()
-	if err := override(c); err != nil {
+	filename := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(filename, []byte("# Defaults\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := config.LoadForInspection(filename, true, override...)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Validate(); err != nil {
@@ -111,12 +115,9 @@ func TestListenExplicitFalseOverridesFile(t *testing.T) {
 	if err := os.WriteFile(filename, []byte("app:\n  public: true\n  access_token: file-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, _, err := config.LoadForInspection(filename, true)
-	if err != nil {
-		t.Fatal(err)
-	}
 	override := listenConfigOverrides(listenCmd)
-	if err := override(c); err != nil {
+	c, _, err := config.LoadForInspection(filename, true, override...)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if c.App.Public {
@@ -128,8 +129,12 @@ func TestListenExplicitFalseOverridesFile(t *testing.T) {
 }
 
 func TestListenDefaultFlagsDoNotLockSettings(t *testing.T) {
-	c := config.CreateDefaultConfig()
-	if err := listenConfigOverrides(listenCmd)(c); err != nil {
+	filename := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(filename, []byte("# Defaults\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := config.LoadForInspection(filename, true, listenConfigOverrides(listenCmd)...)
+	if err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"app.log_level", "app.search_url", "app.access_token", "app.public", "server.address", "server.base_url"} {
@@ -146,7 +151,7 @@ func TestStartupRetainsEmptySettingFallbacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "data"))
-	c, err := config.Load(filename, globalConfigOverrides())
+	c, err := config.Load(filename, globalConfigOverrides()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +180,7 @@ func TestListenStartupAndReloadUseSameOverrides(t *testing.T) {
 		if cfg.App.Public || cfg.App.AccessToken != "" || cfg.Server.Address != "127.0.0.1:7788" {
 			t.Fatal("startup did not apply explicit false, empty, and address flags")
 		}
-		next, err := cfg.Reload(listenConfigOverrides(cmd))
+		next, err := cfg.Reload(listenConfigOverrides(cmd)...)
 		if err != nil {
 			return err
 		}

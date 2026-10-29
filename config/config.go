@@ -524,38 +524,30 @@ func getConfigSearchPaths(homeDir string) []string {
 	return paths
 }
 
-func loadViper(rawConfig []byte, sources map[string]ValueSource) (*viper.Viper, error) {
-	v := viper.New()
-	v.SetConfigType("yaml")
-
-	bindEnvironment(v, sources)
-
-	if len(rawConfig) > 0 {
-		if err := v.ReadConfig(bytes.NewBuffer(rawConfig)); err != nil {
-			return nil, err
-		}
+func loadInputs(rawConfig []byte, name string) (*configInputs, error) {
+	inputs, err := fileInputs(rawConfig, name)
+	if err != nil {
+		return nil, err
 	}
-	// Preserve Viper's older automatic environment lookup for known keys.
-	// Explicit HISTER__ bindings above have higher precedence, even when empty.
-	for _, key := range v.AllKeys() {
-		setting := sourceSettingPath(key)
-		if setting == "" || sources[setting].Kind == "environment" {
-			continue
-		}
+	// Preserve the older environment spelling for keys present in the file.
+	// Capture it explicitly so decoding cannot introduce untracked values.
+	for _, key := range inputs.values.AllKeys() {
 		name := "HISTER_" + strings.ToUpper(strings.ReplaceAll(key, ".", "__"))
 		if value := os.Getenv(name); value != "" {
-			sources[setting] = ValueSource{Kind: "environment", Name: name}
+			if err := inputs.apply(Override{Path: key, Value: value, Source: ValueSource{Kind: "environment", Name: name}}); err != nil {
+				return nil, err
+			}
 		}
 	}
+	// HISTER__ bindings have higher precedence, including explicit empty values.
+	if err := bindEnvironment(inputs); err != nil {
+		return nil, err
+	}
 
-	return v, nil
+	return inputs, nil
 }
 
-func bindEnvironment(v *viper.Viper, sources map[string]ValueSource) {
-	v.SetEnvPrefix("HISTER")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "__"))
-	v.AutomaticEnv()
-
+func bindEnvironment(inputs *configInputs) error {
 	for _, env := range os.Environ() {
 		if !strings.HasPrefix(env, "HISTER__") {
 			continue
@@ -570,12 +562,12 @@ func bindEnvironment(v *viper.Viper, sources map[string]ValueSource) {
 		if isUntypedOptionKey(normalizedKey) {
 			val = parseEnvValue(parts[1])
 		}
-		v.Set(normalizedKey, val)
-		if setting := sourceSettingPath(normalizedKey); setting != "" {
-			sources[setting] = ValueSource{Kind: "environment", Name: parts[0]}
+		if err := inputs.apply(Override{Path: normalizedKey, Value: val, Source: ValueSource{Kind: "environment", Name: parts[0]}}); err != nil {
+			return err
 		}
 		log.Debug().Str("env", parts[0]).Str("key", normalizedKey).Msg("Loaded configuration from environment variable")
 	}
+	return nil
 }
 
 func isUntypedOptionKey(normalizedKey string) bool {
@@ -607,7 +599,7 @@ func parseEnvValue(s string) any {
 
 // Load initializes runtime configuration from a selected file. An empty name
 // uses defaults and environment only; discovery belongs to ResolvePath.
-func Load(filename string, overrides ...func(*Config) error) (*Config, error) {
+func Load(filename string, overrides ...Override) (*Config, error) {
 	name := filename
 	var err error
 	if filename != "" {
@@ -619,14 +611,9 @@ func Load(filename string, overrides ...func(*Config) error) (*Config, error) {
 	if strings.HasSuffix(name, ".histerrc") {
 		log.Warn().Str("oldPath", name).Msg("Configuration file found at deprecated location ~/.histerrc. Please move it to the recommended location for your OS")
 	}
-	c, err := loadSelected(name, false)
+	c, err := loadSelected(name, false, overrides...)
 	if err != nil {
 		return nil, err
-	}
-	for _, override := range overrides {
-		if err := override(c); err != nil {
-			return nil, err
-		}
 	}
 	if err := c.validateBasic(); err != nil {
 		return nil, err
@@ -752,27 +739,36 @@ func (c *Config) validateBasic() error {
 	return nil
 }
 
-func (c *Config) normalize() error {
-	if c.Server.ProxyAuthHeader != "" {
-		c.App.UserHandling = true
-	}
-
+func (c *Config) environmentOverrides() ([]Override, error) {
+	var overrides []Override
 	if dataDir := os.Getenv("HISTER_DATA_DIR"); dataDir != "" {
-		c.App.Directory = dataDir
-		c.recordSource("app.directory", "environment", "HISTER_DATA_DIR")
+		overrides = append(overrides, Override{Path: "app.directory", Value: dataDir, Source: ValueSource{Kind: "environment", Name: "HISTER_DATA_DIR"}})
 	}
 
 	network, _, err := c.Server.ListenEndpoint()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if envPort := os.Getenv("HISTER_PORT"); envPort != "" && network == "tcp" {
 		host, _, err := net.SplitHostPort(c.Server.Address)
 		if err != nil || host == "" {
 			host = c.Server.Address
 		}
-		c.Server.Address = net.JoinHostPort(host, envPort)
-		c.recordSource("server.address", "environment", "HISTER_PORT")
+		overrides = append(overrides, Override{Path: "server.address", Value: net.JoinHostPort(host, envPort), Source: ValueSource{Kind: "environment", Name: "HISTER_PORT"}})
+	}
+	return overrides, nil
+}
+
+func (c *Config) normalize() error {
+	defaults := CreateDefaultConfig()
+	if c.App.LogLevel == "" && c.Source("app.log_level").Kind != "flag" {
+		c.App.LogLevel = defaults.App.LogLevel
+	}
+	if c.App.SearchURL == "" && c.Source("app.search_url").Kind != "flag" {
+		c.App.SearchURL = defaults.App.SearchURL
+	}
+	if c.Server.ProxyAuthHeader != "" {
+		c.App.UserHandling = true
 	}
 
 	if strings.HasPrefix(c.App.Directory, "~/") {

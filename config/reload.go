@@ -53,15 +53,10 @@ func (c *Config) ReadRules() error {
 // Reload reads the original main configuration and rules without creating or
 // modifying runtime files. Overrides preserve the running command's flags.
 // The caller owns validation and replacement of runtime components.
-func (c *Config) Reload(overrides ...func(*Config) error) (*Config, error) {
-	next, err := loadSelected(c.fname, true)
+func (c *Config) Reload(overrides ...Override) (*Config, error) {
+	next, err := loadSelected(c.fname, true, overrides...)
 	if err != nil {
 		return nil, err
-	}
-	for _, override := range overrides {
-		if err := override(next); err != nil {
-			return nil, err
-		}
 	}
 	if err := next.Validate(); err != nil {
 		return nil, err

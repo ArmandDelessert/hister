@@ -286,6 +286,94 @@ func TestConfigurationSourcesPreserveAutomaticEnvironmentPrecedence(t *testing.T
 	}
 }
 
+func TestCandidateOverridesApplyValuesAndSourcesTogether(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(filename, []byte("app:\n  title: File\n  public: true\ncrawler:\n  delay: 10\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTER__APP__TITLE", "Environment")
+	c, _, err := LoadForInspection(filename, true,
+		Override{Path: "app.title", Value: "", Source: ValueSource{Kind: "flag", Name: "--title"}},
+		Override{Path: "app.public", Value: false, Source: ValueSource{Kind: "flag", Name: "--public"}},
+		Override{Path: "crawler.delay", Value: 0, Source: ValueSource{Kind: "flag", Name: "--delay"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.App.Title != "" || c.App.Public || c.Crawler.Delay != 0 {
+		t.Fatal("explicit empty, false, and zero overrides did not replace lower priority values")
+	}
+	for path, name := range map[string]string{"app.title": "--title", "app.public": "--public", "crawler.delay": "--delay"} {
+		if source := c.Source(path); source.Kind != "flag" || source.Name != name || !source.Locked {
+			t.Errorf("%s source = %+v, want %s", path, source, name)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("applying overrides initialized runtime files: %v, %v", entries, err)
+	}
+}
+
+func TestCandidateOverridesFollowSpecialEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(filename, []byte("# Defaults\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTER_PORT", "6655")
+	t.Setenv("HISTER_DATA_DIR", filepath.Join(dir, "environment"))
+	c, _, err := LoadForInspection(filename, true,
+		Override{Path: "server.address", Value: "127.0.0.1:7788", Source: ValueSource{Kind: "flag", Name: "--address"}},
+		Override{Path: "app.directory", Value: filepath.Join(dir, "flag"), Source: ValueSource{Kind: "flag", Name: "--directory"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Server.Address != "127.0.0.1:7788" || c.App.Directory != filepath.Join(dir, "flag") {
+		t.Fatal("special environment values overwrote higher priority inputs")
+	}
+	for _, path := range []string{"server.address", "app.directory"} {
+		if c.Source(path).Kind != "flag" {
+			t.Errorf("source of %s does not match the applied value", path)
+		}
+	}
+}
+
+func TestCandidateOverridesDoNotShareMutableInputs(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(filename, []byte("# Defaults\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	languages := []string{"en", "de"}
+	arguments := []string{"--startup"}
+	options := map[string]any{"UserAgent": "startup", "args": arguments}
+	overrides := []Override{
+		{Path: "indexer.languages", Value: languages, Source: ValueSource{Kind: "flag", Name: "--languages"}},
+		{Path: "crawler.backend_options", Value: options, Source: ValueSource{Kind: "flag", Name: "--options"}},
+	}
+	c, _, err := LoadForInspection(filename, true, overrides...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options["UserAgent"] != "startup" {
+		t.Error("loading normalized the caller's map in place")
+	}
+	c.Indexer.Languages[0] = "fr"
+	c.Crawler.BackendOptions["args"].([]string)[0] = "--candidate"
+	c.Crawler.BackendOptions["useragent"] = "candidate"
+	if languages[0] != "en" || arguments[0] != "--startup" {
+		t.Error("candidate mutations changed the captured override values")
+	}
+	next, _, err := LoadForInspection(filename, true, overrides...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Indexer.Languages[0] != "en" || next.Crawler.BackendOptions["args"].([]string)[0] != "--startup" || next.Crawler.BackendOptions["useragent"] != "startup" {
+		t.Fatal("reusing overrides retained mutations from an earlier candidate")
+	}
+}
+
 func TestPDFParserConfiguration(t *testing.T) {
 	readParser := func(cfg *Config) map[string]any {
 		t.Helper()

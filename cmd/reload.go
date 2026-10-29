@@ -35,24 +35,6 @@ var reloadCmd = &cobra.Command{
 
 // Capture explicit startup flags once. A later reload must not discard them
 // or adopt values from the client that requested the reload.
-func listenConfigOverrides(cmd *cobra.Command) func(*config.Config) error {
-	global := globalConfigOverrides()
-	address, _ := cmd.Flags().GetString("address")
-	addressChanged := cmd.Flags().Changed("address")
-	public, _ := cmd.Flags().GetBool("public")
-	publicChanged := cmd.Flags().Changed("public")
-	return func(c *config.Config) error {
-		if err := global(c); err != nil {
-			return err
-		}
-		if addressChanged {
-			c.Server.Address = address
-			c.SetFlagSource("server.address", "address")
-		}
-		if publicChanged {
-			c.App.Public = public
-			c.SetFlagSource("app.public", "public")
-		}
-		return nil
-	}
+func listenConfigOverrides(cmd *cobra.Command) []config.Override {
+	return configFlagOverrides(rootCmd.PersistentFlags(), cmd.Flags())
 }

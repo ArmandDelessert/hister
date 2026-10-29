@@ -67,10 +67,7 @@ func TestReloadPreservesRuntimeStateAndAppliesOverrides(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, secretKeyFilename), []byte("replacement"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	next, err := c.Reload(func(next *Config) error {
-		next.App.SearchURL = "https://startup.example/?q={query}"
-		return nil
-	})
+	next, err := c.Reload(Override{Path: "app.search_url", Value: "https://startup.example/?q={query}", Source: ValueSource{Kind: "flag", Name: "--search-url"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,8 +143,10 @@ func TestReloadRefreshesSourcesAndDetachesCandidates(t *testing.T) {
 		t.Fatal("reload retained a removed file selection")
 	}
 	next.Crawler.Headers["x-test"] = "candidate"
-	snapshot := *c
-	snapshot.SetFlagSource("app.title", "test-title")
+	snapshot, err := c.Reload(Override{Path: "app.title", Value: "Candidate", Source: ValueSource{Kind: "flag", Name: "--title"}})
+	if err != nil || snapshot.App.Title != "Candidate" || snapshot.Source("app.title").Kind != "flag" {
+		t.Fatalf("candidate override failed: %v", err)
+	}
 	if c.Crawler.Headers["x-test"] != "original" || c.App.Title != "Original" || c.Source("app.title").Kind != "file" {
 		t.Fatal("changing a candidate or snapshot mutated the active configuration")
 	}

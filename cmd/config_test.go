@@ -13,8 +13,58 @@ import (
 
 	"github.com/asciimoo/hister/config"
 
+	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
 )
+
+func TestConfigFlagsCaptureRegisteredPathsGenerically(t *testing.T) {
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	flags.String("heading", "", "")
+	bindConfigFlag(flags, "heading", "app.title")
+	flags.Bool("suggest", false, "")
+	bindConfigFlag(flags, "suggest", "app.show_suggestions")
+	flags.Int("pause", 5, "")
+	bindConfigFlag(flags, "pause", "crawler.delay")
+	flags.StringSlice("langs", nil, "")
+	bindConfigFlag(flags, "langs", "indexer.languages")
+	flags.StringToString("headers", nil, "")
+	bindConfigFlag(flags, "headers", "crawler.headers")
+	flags.String("unchanged", "", "")
+	bindConfigFlag(flags, "unchanged", "app.subtitle")
+	flags.Bool("dry", false, "")
+	// Subcommands parse inherited flags through a different FlagSet.
+	inherited := pflag.NewFlagSet("subcommand", pflag.ContinueOnError)
+	inherited.AddFlagSet(flags)
+	if err := inherited.Parse([]string{"--heading=", "--suggest=false", "--pause=0", "--langs=en,de", "--headers=x-test=value", "--dry"}); err != nil {
+		t.Fatal(err)
+	}
+	overrides := configFlagOverrides(flags, flags)
+	if len(overrides) != 5 {
+		t.Fatalf("captured %d settings, want five distinct explicitly bound flags", len(overrides))
+	}
+	if err := flags.Set("langs", "fr,hu"); err != nil {
+		t.Fatal(err)
+	}
+	filename := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(filename, []byte("app:\n  title: File\n  show_suggestions: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := config.LoadForInspection(filename, true, overrides...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.App.Title != "" || c.App.ShowSuggestions || c.Crawler.Delay != 0 || !reflect.DeepEqual(c.Indexer.Languages, []string{"en", "de"}) || c.Crawler.Headers["x-test"] != "value" {
+		t.Fatal("registered flags did not retain their captured typed values")
+	}
+	for path, name := range map[string]string{"app.title": "--heading", "app.show_suggestions": "--suggest", "crawler.delay": "--pause", "indexer.languages": "--langs", "crawler.headers": "--headers"} {
+		if source := c.Source(path); source.Kind != "flag" || source.Name != name || !source.Locked {
+			t.Errorf("%s source = %+v, want %s", path, source, name)
+		}
+	}
+	if c.Source("app.subtitle").Locked {
+		t.Fatal("an unchanged flag pinned its setting")
+	}
+}
 
 func TestWriteDefaultConfigFileCreatesParentDirectories(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), "nested", "config", "config.yml")

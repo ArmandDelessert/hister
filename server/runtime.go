@@ -32,7 +32,7 @@ type serverRuntime struct {
 	current   *runtimeGeneration
 	paused    bool
 	ctx       context.Context
-	overrides []func(*config.Config) error
+	overrides []config.Override
 	serving   *runtimeListener
 	failures  chan error
 }
@@ -386,7 +386,7 @@ func (r *serverRuntime) close() {
 	}
 }
 
-func listenRuntime(ctx context.Context, cfg *config.Config, idx *indexer.Indexer, overrides ...func(*config.Config) error) error {
+func listenRuntime(ctx context.Context, cfg *config.Config, idx *indexer.Indexer, overrides ...config.Override) error {
 	r := &serverRuntime{ctx: ctx, overrides: overrides, failures: make(chan error, 1)}
 	listener, err := newListener(cfg.Server)
 	if err != nil {

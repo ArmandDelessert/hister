@@ -184,7 +184,7 @@ var listenCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		server.Version = Version
-		return server.Listen(ctx, cfg, idx, listenConfigOverrides(cmd))
+		return server.Listen(ctx, cfg, idx, listenConfigOverrides(cmd)...)
 	},
 }
 
@@ -237,9 +237,13 @@ func init() {
 	dcfg := config.CreateDefaultConfig()
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.yml", "config file (default paths: ./config.yml or $HOME/.histerrc or $HOME/.config/hister/config.yml)")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "set log level (possible options: error, warning, info, debug, trace)")
+	bindConfigFlag(rootCmd.PersistentFlags(), "log-level", "app.log_level")
 	rootCmd.PersistentFlags().StringP("search-url", "s", dcfg.App.SearchURL, "set default search engine url")
+	bindConfigFlag(rootCmd.PersistentFlags(), "search-url", "app.search_url")
 	rootCmd.PersistentFlags().StringP("server-url", "u", dcfg.Server.BaseURL, "hister server URL")
+	bindConfigFlag(rootCmd.PersistentFlags(), "server-url", "server.base_url")
 	rootCmd.PersistentFlags().StringP("token", "t", "", "access token (overrides config access_token)")
+	bindConfigFlag(rootCmd.PersistentFlags(), "token", "app.access_token")
 	rootCmd.PersistentFlags().Int("client-timeout", 0, "HTTP client timeout in seconds (default 10; explicitly set 0 to disable the timeout)")
 
 	rootCmd.AddCommand(listenCmd)
@@ -295,7 +299,9 @@ func init() {
 	importCmd.PersistentFlags().Bool("ignore-rules", false, ignoreRulesFlagUsage)
 
 	listenCmd.Flags().StringP("address", "a", dcfg.Server.Address, "Listen address (host:port or unix:/absolute/path; Unix sockets require --server-url or server.base_url)")
+	bindConfigFlag(listenCmd.Flags(), "address", "server.address")
 	listenCmd.Flags().Bool("public", false, "allow unauthenticated access to public search interfaces")
+	bindConfigFlag(listenCmd.Flags(), "public", "app.public")
 
 	listURLsCmd.Flags().Bool("offline", false, "connect to the indexer directly without using the HTTP API (server should be stopped)")
 	listFilesCmd.Flags().Bool("relative", false, "print paths relative to each configured indexing directory")
@@ -407,7 +413,7 @@ func initConfig(cmd *cobra.Command) {
 	if cmd == listenCmd {
 		override = listenConfigOverrides(cmd)
 	}
-	cfg, err = config.Load(name, override)
+	cfg, err = config.Load(name, override...)
 	if err != nil {
 		exit(1, "Failed to initialize config: "+err.Error())
 	}

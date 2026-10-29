@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -22,6 +23,82 @@ type stubExtractor struct {
 	match        func(*document.Document) bool
 	extract      func(*document.Document) sdk.ExtractResult
 	preview      func(*document.Document) sdk.PreviewResult
+}
+
+type describedExtractor struct {
+	*stubExtractor
+	metadata []sdk.OptionMetadata
+}
+
+func (e *describedExtractor) OptionMetadata() []sdk.OptionMetadata { return e.metadata }
+
+func TestRegistryOptionMetadataControlsValidationAndExposure(t *testing.T) {
+	e := &describedExtractor{
+		stubExtractor: &stubExtractor{name: "Custom", capabilities: sdk.Capabilities{Extract: true}, cfg: &config.Extractor{Enable: true, Options: map[string]any{"labels": []string{"default"}, "credential": "private-credential", "legacy": "hidden-credential"}}},
+		metadata: []sdk.OptionMetadata{
+			{Key: "labels", Label: "Labels", Description: "Document labels.", Effect: "runtime", Default: []string{"default"}, Schema: config.SettingSchema{Type: "list", Control: "list", Collection: "replace", Sensitivity: "none", Items: &config.SettingSchema{Type: "string", Control: "text", Collection: "none", Sensitivity: "none"}}},
+			{Key: "credential", Label: "Credential", Description: "Authentication credential.", Effect: "runtime", Default: "private-credential", Schema: config.SettingSchema{Type: "string", Control: "secret", Collection: "none", Sensitivity: "secret"}},
+		},
+	}
+	r, err := NewRegistry(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := r.ConfigurationFields()
+	encoded, err := json.Marshal(fields)
+	if err != nil || strings.Contains(string(encoded), "private-credential") || strings.Contains(string(encoded), "hidden-credential") {
+		t.Fatal("extractor metadata leaked values")
+	}
+	var foundLegacy bool
+	for _, field := range fields {
+		if field.ReadOnlyReason == "" {
+			t.Fatal("extractor fields became editable before their category is supported")
+		}
+		if field.Path == "extractors.custom.options.legacy" {
+			foundLegacy = true
+			if field.Default != nil || field.Schema.Type != "unknown" {
+				t.Fatal("guessed an undocumented option's type or default")
+			}
+		}
+	}
+	if !foundLegacy {
+		t.Fatal("undocumented option was not identified as read only")
+	}
+	if err := r.Init(map[string]*config.Extractor{"custom": {Enable: true, Options: map[string]any{"labels": []any{42}}}}); err == nil {
+		t.Fatal("accepted a value incompatible with the declared item type")
+	}
+	if err := r.Init(map[string]*config.Extractor{"custom": {Enable: true, Options: map[string]any{"labels": []any{}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Init(map[string]*config.Extractor{"custom": {Enable: false}}); err != nil {
+		t.Fatal(err)
+	}
+	if field := r.ConfigurationFields()[0]; field.Default != true {
+		t.Fatalf("applied settings replaced static enable default: %+v", field)
+	}
+	if labels := e.GetConfig().Options["labels"].([]any); len(labels) != 0 {
+		t.Fatal("explicit empty collection did not replace defaults")
+	}
+	invalid := &describedExtractor{stubExtractor: &stubExtractor{name: "Invalid", capabilities: sdk.Capabilities{Extract: true}}, metadata: []sdk.OptionMetadata{{Key: "unsupported"}}}
+	if err := r.Register(invalid); err == nil {
+		t.Fatal("registered incomplete metadata")
+	}
+}
+
+func TestRegistryConfigurationDoesNotShareOptionCollections(t *testing.T) {
+	options := map[string]any{"nested": map[string]any{"items": []string{"original"}}}
+	e := &stubExtractor{name: "Custom", capabilities: sdk.Capabilities{Extract: true}}
+	r, err := NewRegistry(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Init(map[string]*config.Extractor{"custom": {Enable: true, Options: options}}); err != nil {
+		t.Fatal(err)
+	}
+	e.GetConfig().Options["nested"].(map[string]any)["items"].([]string)[0] = "changed"
+	if options["nested"].(map[string]any)["items"].([]string)[0] != "original" {
+		t.Fatal("a prepared extractor mutated the source configuration")
+	}
 }
 
 type contextStubExtractor struct {

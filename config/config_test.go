@@ -177,6 +177,7 @@ func TestManagedConfigurationRejectsInvalidFiles(t *testing.T) {
 		"app:\n  show_suggestions: 'false'\n", "app: null\n", "app:\n  title: null\n",
 		"app:\n  title: valid\n---\napp:\n  title: private-credential\n",
 		"app.directory: private-credential\n", "app:\n  directory: private-credential\n",
+		"app:\n  log_file: private-credential\n",
 		"server:\n  database: private-credential\n", "server:\n  proxy_auth_header: private-credential\n",
 		"indexer:\n  pdf_parser:\n    command: private-credential\n",
 		"indexer:\n  pdf_parser:\n    args: [private-credential]\n",

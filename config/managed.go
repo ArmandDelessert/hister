@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +15,15 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// configComposition is an immutable snapshot of loaded inputs. Drafts compose
+// from it without rereading external files or mutating the active configuration.
+type configComposition struct {
+	defaults      *Config
+	authoritative map[string]any
+	sources       map[string]ValueSource
+	managed       map[string]any
+}
 
 // loadManaged adds sparse web selections only where no authoritative source
 // selects the setting. Reading configuration never rewrites either file.
@@ -40,9 +50,18 @@ func (inputs *configInputs) loadManaged(directory string) error {
 	if err != nil {
 		return fmt.Errorf("managed configuration %s: %w", name, err)
 	}
+	selections := make(map[string]any, len(web.sources))
 	for path := range web.sources {
+		selections[path] = web.values.Get(path)
+	}
+	return inputs.applyManaged(selections, name)
+}
+
+func (inputs *configInputs) applyManaged(selections map[string]any, name string) error {
+	inputs.managed = cloneInputValue(reflect.ValueOf(selections)).Interface().(map[string]any)
+	for path, value := range inputs.managed {
 		if _, locked := inputs.sources[path]; !locked {
-			if err := inputs.apply(Override{Path: path, Value: web.values.Get(path), Source: ValueSource{Kind: "web", Name: name}}); err != nil {
+			if err := inputs.apply(Override{Path: path, Value: value, Source: ValueSource{Kind: "web", Name: name}}); err != nil {
 				return err
 			}
 		}
@@ -51,6 +70,28 @@ func (inputs *configInputs) loadManaged(directory string) error {
 		inputs.sources[path] = source
 	}
 	return nil
+}
+
+func (c *Config) composeDraft(selections map[string]any) (*Config, error) {
+	inputs, err := fileInputs(nil, "")
+	if err != nil {
+		return nil, err
+	}
+	inputs.defaults = c.composition.defaults
+	if err := inputs.apply(Override{Value: c.composition.authoritative}); err != nil {
+		return nil, err
+	}
+	inputs.sources = maps.Clone(c.composition.sources)
+	if err := inputs.applyManaged(selections, filepath.Join(c.App.Directory, "config.web.yml")); err != nil {
+		return nil, err
+	}
+	next, err := inputs.decode(true)
+	if err != nil {
+		return nil, err
+	}
+	next.fname = c.fname
+	next.composition = &configComposition{defaults: c.composition.defaults, authoritative: c.composition.authoritative, sources: c.composition.sources, managed: inputs.managed}
+	return next, next.normalize()
 }
 
 func validateManagedYAML(raw []byte) error {
@@ -73,7 +114,7 @@ func validateManagedYAML(raw []byte) error {
 func validateManagedNode(node *yaml.Node, typ reflect.Type, path string) error {
 	invalid := func() error { return fmt.Errorf("unsupported setting or value at %s", path) }
 	switch path {
-	case "app.directory", "server.database", "server.proxy_auth_header", "indexer.pdf_parser.command", "indexer.pdf_parser.args":
+	case "app.directory", "app.log_file", "server.database", "server.proxy_auth_header", "indexer.pdf_parser.command", "indexer.pdf_parser.args":
 		return fmt.Errorf("%s is file managed", path)
 	}
 	if strings.HasPrefix(path, "server.oauth.") {

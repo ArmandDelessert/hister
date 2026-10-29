@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -92,6 +93,11 @@ func loadSelected(name string, strict bool, overrides ...Override) (*Config, err
 	if err := c.normalize(); err != nil {
 		return nil, err
 	}
+	composition := &configComposition{
+		defaults:      inputs.defaults,
+		authoritative: cloneInputValue(reflect.ValueOf(inputs.values.AllSettings())).Interface().(map[string]any),
+		sources:       maps.Clone(inputs.sources),
+	}
 	if err := inputs.loadManaged(c.App.Directory); err != nil {
 		return nil, err
 	}
@@ -100,6 +106,8 @@ func loadSelected(name string, strict bool, overrides ...Override) (*Config, err
 		return nil, err
 	}
 	c.fname = name
+	composition.managed = inputs.managed
+	c.composition = composition
 	return c, c.normalize()
 }
 
@@ -112,7 +120,10 @@ func decodeConfig(raw []byte, name string, strict bool) (*Config, error) {
 }
 
 func (inputs *configInputs) decode(strict bool) (*Config, error) {
-	c := CreateDefaultConfig()
+	if inputs.defaults == nil {
+		inputs.defaults = CreateDefaultConfig()
+	}
+	c := cloneInputValue(reflect.ValueOf(inputs.defaults)).Interface().(*Config)
 	inputs.clearWebDefaults(reflect.ValueOf(c).Elem(), "")
 	c.sources = maps.Clone(inputs.sources)
 	var metadata mapstructure.Metadata
@@ -163,22 +174,60 @@ func (c *Config) Validate() error {
 	if err := c.validateOAuth(); err != nil {
 		return err
 	}
-	switch c.App.LogLevel {
-	case "", "error", "err", "warning", "warn", "info", "debug", "trace":
-	default:
-		return errors.New("app.log_level must be error, warning, info, debug, or trace")
-	}
-	switch c.App.LogFormat {
-	case "", "text", "json":
-	default:
-		return errors.New("app.log_format must be text or json")
-	}
 	switch c.Crawler.Backend {
 	case "", "http", "chromedp", "bidi":
 	default:
 		return errors.New("crawler.backend must be http, chromedp, or bidi")
 	}
 	return nil
+}
+
+// ValidateFields aggregates independent candidate errors without returning raw
+// validator errors, which can contain credentials or user supplied patterns.
+// A shallow copy is sufficient for these validators: only normalization of
+// scalar server fields and the parsed base URL mutates configuration.
+func (c *Config) ValidateFields() []FieldError {
+	candidate := *c
+	fields := candidate.validateAppFields()
+	check := func(path, message string, err error) {
+		if err != nil {
+			fields = append(fields, FieldError{Path: path, Code: "invalid_configuration", Message: message})
+		}
+	}
+	check("indexer.pdf_parser", "Check the parser command, arguments, and positive timeout.", candidate.Indexer.PDFParser.Validate())
+	check("server.max_batch_body_size", "Use a positive batch size within the supported integer range.", candidate.Server.validateMaxBatchBodySize())
+	_, _, listenErr := candidate.Server.ListenEndpoint()
+	check("server.address", "Use a TCP address or unix: followed by an absolute socket path.", listenErr)
+	if err := candidate.UpdateBaseURL(candidate.Server.BaseURL); err != nil {
+		check("server.base_url", "Set a valid base URL for the configured listen address.", err)
+	} else {
+		u := candidate.parsedBaseURL
+		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			check("server.base_url", "Use an HTTP or HTTPS URL without credentials, a query, or a fragment.", errors.New("invalid base URL"))
+		}
+	}
+	check("app.public", "Public access requires a token or user handling.", candidate.ValidatePublicMode())
+	check("hotkeys.web", "Use supported key combinations and actions.", candidate.Hotkeys.Validate())
+	check("semantic_search", "Check the embedding endpoint, model, dimensions, and context length.", candidate.validateSemanticSearch())
+	check("indexer", "Choose a supported detection accuracy and at least two distinct languages, or no language restriction.", candidate.Indexer.Validate())
+	check("server.oauth", "Check provider names, required credentials, and provider settings.", candidate.validateOAuth())
+	switch candidate.Crawler.Backend {
+	case "", "http", "chromedp", "bidi":
+	default:
+		check("crawler.backend", "Choose http, chromedp, or bidi.", errors.New("invalid backend"))
+	}
+	patterns := make([]string, 0, len(candidate.SensitiveContentPatterns))
+	for _, pattern := range candidate.SensitiveContentPatterns {
+		patterns = append(patterns, pattern)
+	}
+	slices.Sort(patterns)
+	_, err := regexp.Compile("(" + strings.Join(patterns, "|") + ")")
+	check("sensitive_content_patterns", "Use valid regular expressions that can be combined.", err)
+	// Keep the existing complete validator authoritative as more checks are added.
+	if err := candidate.Validate(); err != nil && len(fields) == 0 {
+		check("", "The complete configuration is invalid. Check the inherited settings.", err)
+	}
+	return fields
 }
 
 const redactedValue = "[REDACTED]"

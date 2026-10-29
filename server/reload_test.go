@@ -14,9 +14,85 @@ import (
 	"testing"
 
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/testutil"
 )
+
+func TestPrepareConfigurationDraftValidatesFreshExtractors(t *testing.T) {
+	for _, invalid := range []bool{false, true} {
+		t.Run(fmt.Sprintf("invalid_%v", invalid), func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HISTER_DATA_DIR", dir)
+			filename := filepath.Join(dir, "config.yml")
+			// A missing executable must not trigger runtime preparation or
+			// execution during form validation.
+			raw := fmt.Sprintf("extractors:\n  ytdlp:\n    enable: true\n    options:\n      binary: %q\n", filepath.Join(dir, "must-not-run"))
+			if invalid {
+				raw += "      max_concurrent_jobs: -1\n  basic:\n    options:\n      unknown: private-credential\nsensitive_content_patterns:\n  broken: '[private-credential'\n"
+			}
+			if err := os.WriteFile(filename, []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, _, err := config.LoadForInspection(filename, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := json.Marshal(extractor.DefaultRegistry().List())
+			if err != nil {
+				t.Fatal(err)
+			}
+			next, fields := prepareConfigurationDraft(c, []config.SettingEdit{{Path: "app.title", Action: "set", Value: json.RawMessage(`"Candidate"`)}})
+			if invalid {
+				if next != nil || len(fields) != 3 {
+					t.Fatalf("invalid extractor settings accepted or errors not aggregated: %v", fields)
+				}
+				paths := map[string]bool{}
+				for _, field := range fields {
+					paths[field.Path] = true
+				}
+				if !paths["extractors.ytdlp"] || !paths["extractors.basic"] {
+					t.Fatalf("extractor errors lack stable paths: %v", fields)
+				}
+				encoded, err := json.Marshal(fields)
+				if err != nil || strings.Contains(string(encoded), "private-credential") {
+					t.Fatal("extractor validation exposed option values")
+				}
+			} else if next == nil || len(fields) > 0 || next.App.Title != "Candidate" {
+				t.Fatalf("valid draft rejected: %v", fields)
+			}
+			after, err := json.Marshal(extractor.DefaultRegistry().List())
+			if err != nil || string(after) != string(before) {
+				t.Fatal("draft validation changed the active extractor chain")
+			}
+			if c.App.Title != "Hister" {
+				t.Fatal("draft validation mutated the active configuration")
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 {
+				t.Fatal("draft validation created runtime files")
+			}
+		})
+	}
+}
+
+func TestConfigurationCatalogKeepsUnsupportedCategoriesReadOnly(t *testing.T) {
+	fields := configurationCatalog()
+	var app, enable, option bool
+	for _, field := range fields {
+		switch field.Path {
+		case "app.title":
+			app = field.ReadOnlyReason == "" && field.Default == "Hister"
+		case "extractors.ytdlp.enable":
+			enable = field.ReadOnlyReason != "" && field.Default == false
+		case "extractors.ytdlp.options.binary":
+			option = field.ReadOnlyReason != "" && field.Schema.Type == "unknown" && field.Default == nil
+		}
+	}
+	if !app || !enable || !option {
+		t.Fatal("combined catalog lost defaults or enabled an unsupported setting")
+	}
+}
 
 func newReloadTestServer(t *testing.T, multiUser bool) (*config.Config, http.Handler, func(string)) {
 	t.Helper()

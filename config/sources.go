@@ -57,8 +57,10 @@ func (c *Config) Source(path string) ValueSource {
 // Read presence from YAML before decoding into defaults. Structural containers
 // do not select settings; lists and dictionaries select their whole collection.
 type configInputs struct {
-	values  *viper.Viper
-	sources map[string]ValueSource
+	values   *viper.Viper
+	sources  map[string]ValueSource
+	managed  map[string]any
+	defaults *Config
 }
 
 func fileInputs(raw []byte, name string) (*configInputs, error) {
@@ -122,11 +124,16 @@ func cloneInputValue(value reflect.Value) reflect.Value {
 			copy.SetMapIndex(iter.Key(), cloneInputValue(iter.Value()))
 		}
 		return copy
-	case reflect.Slice:
-		if value.IsNil() {
-			return value
+	case reflect.Slice, reflect.Array:
+		var copy reflect.Value
+		if value.Kind() == reflect.Slice {
+			if value.IsNil() {
+				return value
+			}
+			copy = reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		} else {
+			copy = reflect.New(value.Type()).Elem()
 		}
-		copy := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
 		for i := range value.Len() {
 			copy.Index(i).Set(cloneInputValue(value.Index(i)))
 		}

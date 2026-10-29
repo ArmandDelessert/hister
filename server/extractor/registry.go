@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/asciimoo/hister/server/extractor/extractors/twitter"
 	"github.com/asciimoo/hister/server/extractor/extractors/wikipedia"
 	"github.com/asciimoo/hister/server/extractor/extractors/ytdlp"
+	"github.com/asciimoo/hister/server/extractor/sdk"
 )
 
 var (
@@ -37,8 +39,9 @@ var (
 
 // Registry owns an ordered collection of extractor instances.
 type Registry struct {
-	mu         sync.RWMutex
-	extractors []Extractor
+	mu              sync.RWMutex
+	extractors      []Extractor
+	enabledDefaults map[string]bool
 }
 
 // NewRegistry constructs a registry in the order supplied.
@@ -102,9 +105,13 @@ func DefaultRegistry() *Registry {
 // Replace publishes fresh, already configured extractor instances. Existing
 // callers keep their old snapshot until their operation completes.
 func (r *Registry) Replace(next *Registry) {
-	extractors := next.Extractors()
+	next.mu.RLock()
+	extractors := append([]Extractor(nil), next.extractors...)
+	defaults := maps.Clone(next.enabledDefaults)
+	next.mu.RUnlock()
 	r.mu.Lock()
 	r.extractors = extractors
+	r.enabledDefaults = defaults
 	r.mu.Unlock()
 }
 
@@ -122,6 +129,7 @@ func (r *Registry) Register(candidate Extractor) error {
 	if err := r.validateLocked(candidate); err != nil {
 		return err
 	}
+	r.rememberDefault(candidate)
 	r.extractors = append(r.extractors, candidate)
 	return nil
 }
@@ -143,10 +151,18 @@ func (r *Registry) RegisterBefore(name string, candidate Extractor) error {
 	if index < 0 {
 		return fmt.Errorf("%w: %s", ErrExtractorNotFound, name)
 	}
+	r.rememberDefault(candidate)
 	r.extractors = append(r.extractors, nil)
 	copy(r.extractors[index+1:], r.extractors[index:])
 	r.extractors[index] = candidate
 	return nil
+}
+
+func (r *Registry) rememberDefault(candidate Extractor) {
+	if r.enabledDefaults == nil {
+		r.enabledDefaults = make(map[string]bool)
+	}
+	r.enabledDefaults[strings.ToLower(candidate.Name())] = candidate.GetConfig().Enable
 }
 
 func (r *Registry) validateLocked(candidate Extractor) error {
@@ -160,6 +176,18 @@ func (r *Registry) validateLocked(candidate Extractor) error {
 	capabilities := candidate.Capabilities()
 	if !capabilities.Enrich && !capabilities.Extract && !capabilities.Preview {
 		return fmt.Errorf("%w: %s declares no capabilities", ErrInvalidExtractor, name)
+	}
+	if describer, ok := candidate.(sdk.OptionDescriber); ok {
+		seen := make(map[string]bool)
+		for _, option := range describer.OptionMetadata() {
+			if err := option.Validate(); err != nil {
+				return fmt.Errorf("%w: %s has invalid option metadata", ErrInvalidExtractor, name)
+			}
+			if seen[option.Key] {
+				return fmt.Errorf("%w: %s has duplicate option metadata", ErrInvalidExtractor, name)
+			}
+			seen[option.Key] = true
+		}
 	}
 	for _, registered := range r.extractors {
 		if strings.EqualFold(registered.Name(), name) {
@@ -186,7 +214,7 @@ func isNilExtractor(candidate Extractor) bool {
 // extractor. Register all extractors before calling Init.
 func (r *Registry) Init(cfgs map[string]*config.Extractor) error {
 	for _, candidate := range r.Extractors() {
-		defaults := candidate.GetConfig()
+		defaults := candidate.GetConfig().Clone()
 		merged := &config.Extractor{
 			Enable:  defaults.Enable,
 			Options: make(map[string]any, len(defaults.Options)),
@@ -194,11 +222,89 @@ func (r *Registry) Init(cfgs map[string]*config.Extractor) error {
 		maps.Copy(merged.Options, defaults.Options)
 		if user, ok := cfgs[strings.ToLower(candidate.Name())]; ok && user != nil {
 			merged.Enable = user.Enabled(defaults.Enable)
-			maps.Copy(merged.Options, user.Options)
+			maps.Copy(merged.Options, user.Clone().Options)
+		}
+		if describer, ok := candidate.(sdk.OptionDescriber); ok {
+			for _, option := range describer.OptionMetadata() {
+				if value, present := merged.Options[option.Key]; present {
+					normalized, message := option.Schema.ValidateValue(value)
+					if message != "" {
+						return fmt.Errorf("extractor %s option %s: %s", candidate.Name(), option.Key, message)
+					}
+					merged.Options[option.Key] = normalized
+				}
+			}
 		}
 		if err := candidate.SetConfig(merged); err != nil {
 			return fmt.Errorf("extractor %s: %w", candidate.Name(), err)
 		}
 	}
 	return nil
+}
+
+// ConfigurationFields returns static descriptions. Extractor editing remains
+// disabled until its category has controls and the secret preservation protocol.
+// Undescribed options are explicitly unknown; their values never become defaults.
+func (r *Registry) ConfigurationFields() []config.FieldMetadata {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var fields []config.FieldMetadata
+	for _, candidate := range r.extractors {
+		prefix := "extractors." + strings.ToLower(candidate.Name())
+		fields = append(fields, config.FieldMetadata{Path: prefix + ".enable", Category: "extractors", Label: candidate.Name(), Description: candidate.Description(), Default: r.enabledDefaults[strings.ToLower(candidate.Name())], Schema: config.SettingSchema{Type: "boolean", Control: "switch", Collection: "none", Sensitivity: "none"}, Effect: "runtime", ReadOnlyReason: "Extractor editing is not available yet."})
+		described := make(map[string]bool)
+		if describer, ok := candidate.(sdk.OptionDescriber); ok {
+			for _, option := range describer.OptionMetadata() {
+				described[option.Key] = true
+				field := config.FieldMetadata{Path: prefix + ".options." + option.Key, Category: "extractors", Label: option.Label, Description: option.Description, Schema: option.Schema, Effect: option.Effect, ReadOnlyReason: option.ReadOnlyReason}
+				if field.ReadOnlyReason == "" {
+					field.ReadOnlyReason = "Extractor editing is not available yet."
+				}
+				if option.Schema.Sensitivity == "none" {
+					field.Default = option.Default
+				}
+				fields = append(fields, field)
+			}
+		}
+		keys := slices.Sorted(maps.Keys(candidate.GetConfig().Options))
+		for _, key := range keys {
+			if described[key] {
+				continue
+			}
+			fields = append(fields, config.FieldMetadata{Path: prefix + ".options." + key, Category: "extractors", Label: key, Description: "This option has no editing metadata.", Schema: config.SettingSchema{Type: "unknown", Control: "none", Collection: "unknown", Sensitivity: "unknown"}, ReadOnlyReason: "Undescribed options are file managed."})
+		}
+	}
+	return fields
+}
+
+// ValidateConfiguration uses fresh built in instances and reports only safe
+// field errors. It never publishes a registry, extracts content, or probes tools.
+func ValidateConfiguration(cfgs map[string]*config.Extractor) []config.FieldError {
+	r := NewDefaultRegistry()
+	known := make(map[string]bool)
+	var fields []config.FieldError
+	for _, candidate := range r.Extractors() {
+		name := strings.ToLower(candidate.Name())
+		known[name] = true
+		entry, present := cfgs[name]
+		if !present {
+			continue
+		}
+		invalid := entry == nil
+		if !invalid {
+			// This registry owns fresh instances. Initializing one at a time
+			// collects independent failures instead of stopping at the first.
+			single := mustNewRegistry(candidate)
+			invalid = single.Init(map[string]*config.Extractor{name: entry}) != nil
+		}
+		if invalid {
+			fields = append(fields, config.FieldError{Path: "extractors." + name, Code: "invalid_extractor", Message: "Check this extractor's option names, types, and values."})
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(cfgs)) {
+		if !known[name] {
+			fields = append(fields, config.FieldError{Path: "extractors", Code: "unknown_extractor", Message: "Use a registered lower case extractor name."})
+		}
+	}
+	return fields
 }

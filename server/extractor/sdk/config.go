@@ -1,9 +1,52 @@
 package sdk
 
 import (
+	"errors"
 	"fmt"
-	"maps"
+	"regexp"
+
+	"github.com/asciimoo/hister/config"
 )
+
+// OptionMetadata is supplied by an extractor, never inferred from GetConfig.
+// Defaults describe the installed extractor, not its current credentials.
+type OptionMetadata struct {
+	Key            string
+	Label          string
+	Description    string
+	Schema         config.SettingSchema
+	Default        any
+	Effect         string
+	ReadOnlyReason string
+}
+
+// OptionDescriber is optional. Undescribed options remain hidden and read only.
+// Implementations must return fresh metadata independent of applied configuration.
+type OptionDescriber interface {
+	OptionMetadata() []OptionMetadata
+}
+
+var optionKey = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+func (m OptionMetadata) Validate() error {
+	if !optionKey.MatchString(m.Key) || m.Label == "" || m.Description == "" {
+		return errors.New("option metadata requires a key, label, and description")
+	}
+	switch m.Effect {
+	case "runtime", "reindex", "reembed":
+	default:
+		return errors.New("option metadata requires an explicit runtime or index effect")
+	}
+	if err := m.Schema.ValidateDefinition(); err != nil {
+		return err
+	}
+	if m.Default != nil {
+		if _, message := m.Schema.ValidateValue(m.Default); message != "" {
+			return errors.New("option metadata has an invalid default")
+		}
+	}
+	return nil
+}
 
 // ConfigSupport provides the standard configuration behavior for an extractor.
 // Its zero value is enabled by default and rejects every option key.
@@ -57,8 +100,9 @@ func (s *ConfigSupport) SetConfig(config *Config) error {
 }
 
 func copyConfig(config Config) Config {
-	options := make(map[string]any, len(config.Options))
-	maps.Copy(options, config.Options)
-	config.Options = options
-	return config
+	copy := config.Clone()
+	if copy.Options == nil {
+		copy.Options = make(map[string]any)
+	}
+	return *copy
 }

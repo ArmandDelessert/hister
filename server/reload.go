@@ -6,7 +6,21 @@ import (
 	"sync"
 
 	"github.com/asciimoo/hister/config"
+	"github.com/asciimoo/hister/server/extractor"
 )
+
+func configurationCatalog() []config.FieldMetadata {
+	fields := config.FieldCatalog()
+	return append(fields, extractor.NewDefaultRegistry().ConfigurationFields()...)
+}
+
+// prepareConfigurationDraft keeps extractor validation in the server layer.
+// The config package owns composition and never imports the extractor runtime.
+func prepareConfigurationDraft(current *config.Config, edits []config.SettingEdit) (*config.Config, []config.FieldError) {
+	return current.PrepareDraft(edits, func(candidate *config.Config) []config.FieldError {
+		return extractor.ValidateConfiguration(candidate.Extractors)
+	})
+}
 
 // configReloader owns one generation's HTTP configuration. Readers receive
 // immutable rule snapshots while writes are serialized with reload preparation.

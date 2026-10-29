@@ -21,6 +21,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -39,6 +40,7 @@ type Config struct {
 	fname                    string
 	tuiPath                  string
 	sources                  map[string]ValueSource
+	composition              *configComposition
 	App                      App                   `yaml:"app" mapstructure:"app"`
 	Server                   Server                `yaml:"server" mapstructure:"server"`
 	Indexer                  Indexer               `yaml:"indexer" mapstructure:"indexer"`
@@ -104,6 +106,14 @@ type Server struct {
 
 func (s Server) MaxBatchBodyBytes() int64 {
 	return s.MaxBatchBodySize << 20
+}
+
+func (s Server) validateMaxBatchBodySize() error {
+	maxBatchBodySize := int64(^uint64(0)>>1) >> 20
+	if s.MaxBatchBodySize < 1 || s.MaxBatchBodySize > maxBatchBodySize {
+		return fmt.Errorf("server.max_batch_body_size must be between 1 and %d", maxBatchBodySize)
+	}
+	return nil
 }
 
 // ListenEndpoint returns the network and address used by net.Listen.
@@ -278,6 +288,14 @@ func (e *Extractor) Enabled(defaultValue bool) bool {
 		return defaultValue
 	}
 	return e.Enable
+}
+
+// Clone detaches option collections so preparing an extractor cannot mutate
+// the loaded configuration or another registry's defaults.
+func (e *Extractor) Clone() *Extractor {
+	copy := *e
+	copy.Options = cloneInputValue(reflect.ValueOf(e.Options)).Interface().(map[string]any)
+	return &copy
 }
 
 // SemanticSearch holds configuration for optional vector similarity search.
@@ -720,25 +738,18 @@ func parseConfig(rawConfig []byte) (*Config, error) {
 }
 
 func (c *Config) validateBasic() error {
+	if fields := c.validateAppFields(); len(fields) > 0 {
+		return fields[0]
+	}
 	if err := c.Indexer.PDFParser.Validate(); err != nil {
 		return err
-	}
-	if c.App.SnippetLength < 1 {
-		return errors.New("app.snippet_length must be a positive integer")
 	}
 	if _, _, err := c.Server.ListenEndpoint(); err != nil {
 		return err
 	}
-	maxBatchBodySize := int64(^uint64(0)>>1) >> 20
-	if c.Server.MaxBatchBodySize < 1 || c.Server.MaxBatchBodySize > maxBatchBodySize {
-		return fmt.Errorf("server.max_batch_body_size must be between 1 and %d", maxBatchBodySize)
+	if err := c.Server.validateMaxBatchBodySize(); err != nil {
+		return err
 	}
-	switch c.App.ColorScheme {
-	case "automatic", "dark", "light":
-	default:
-		return errors.New("app.color_scheme must be one of automatic, dark, or light")
-	}
-
 	if c.Server.BaseURL != "" {
 		pu, err := url.Parse(c.Server.BaseURL)
 		if err != nil || pu.Scheme == "" || pu.Host == "" {

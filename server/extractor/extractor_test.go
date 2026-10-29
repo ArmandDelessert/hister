@@ -3,6 +3,8 @@ package extractor
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -617,5 +619,63 @@ func TestRegistryInstancesHaveIndependentConfiguration(t *testing.T) {
 	}
 	if !second.GetConfig().Enable {
 		t.Fatal("second registry inherited configuration")
+	}
+}
+
+func TestRegistryLoadedConfigurationPreservesOmittedEnable(t *testing.T) {
+	for _, tc := range []struct {
+		name, main, web, env      string
+		defaultEnable, wantEnable bool
+	}{
+		{"options only", "    options: {label: selected}\n", "", "", true, true},
+		{"explicit false", "    enable: false\n    options: {label: selected}\n", "", "", true, false},
+		{"default disabled", "    options: {label: selected}\n", "", "", false, false},
+		{"explicit true", "    enable: true\n    options: {label: selected}\n", "", "", false, true},
+		{"environment option", "    options: {}\n", "", "selected", true, true},
+		{"web false", "    options: {label: selected}\n", "extractors:\n  custom:\n    enable: false\n", "", true, false},
+		{"file false shadows web true", "    enable: false\n    options: {label: selected}\n", "extractors:\n  custom:\n    enable: true\n", "", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HISTER_DATA_DIR", dir)
+			filename := filepath.Join(dir, "config.yml")
+			if err := os.WriteFile(filename, []byte("extractors:\n  custom:\n"+tc.main), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.web.yml"), []byte(tc.web), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.env != "" {
+				t.Setenv("HISTER__EXTRACTORS__CUSTOM__OPTIONS__LABEL", tc.env)
+			}
+			c, _, err := config.LoadForInspection(filename, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			preferred := &stubExtractor{name: "Custom", capabilities: sdk.Capabilities{Extract: true}, cfg: &config.Extractor{Enable: tc.defaultEnable, Options: map[string]any{"label": "default"}}}
+			preferred.extract = func(d *document.Document) sdk.ExtractResult {
+				d.Text = preferred.GetConfig().Options["label"].(string)
+				return sdk.Extracted()
+			}
+			fallback := &stubExtractor{name: "Fallback", capabilities: sdk.Capabilities{Extract: true}, extract: func(d *document.Document) sdk.ExtractResult {
+				d.Text = "fallback"
+				return sdk.Extracted()
+			}}
+			registry := useExtractors(t, preferred, fallback)
+			if err := registry.Init(c.Extractors); err != nil {
+				t.Fatal(err)
+			}
+			doc := &document.Document{URL: "https://example.com"}
+			if err := registry.Extract(doc); err != nil {
+				t.Fatal(err)
+			}
+			want := "fallback"
+			if tc.wantEnable {
+				want = "selected"
+			}
+			if doc.Text != want {
+				t.Fatalf("extracted %q, want %q", doc.Text, want)
+			}
+		})
 	}
 }

@@ -19,6 +19,7 @@ type ValueSource struct {
 	Locked      bool
 	Reason      string
 	DerivedFrom string
+	WebSelected bool
 }
 
 // Override is an explicit setting assignment. Presence does not depend on
@@ -36,11 +37,18 @@ func (c *Config) Source(path string) ValueSource {
 		source.Locked = true
 		source.DerivedFrom = "server.proxy_auth_header"
 		source.Reason = "Enabled by server.proxy_auth_header"
+		source.WebSelected = c.sources["app.user_handling"].WebSelected
+		if source.WebSelected {
+			source.Reason += "; overrides stored web selection"
+		}
 		return source
 	}
 	if source, ok := c.sources[sourceSettingPath(strings.ToLower(path))]; ok {
-		source.Locked = true
+		source.Locked = source.Kind != "web"
 		source.Reason = "Set by " + source.Kind + ": " + source.Name
+		if source.Locked && source.WebSelected {
+			source.Reason += "; overrides stored web selection"
+		}
 		return source
 	}
 	return ValueSource{Kind: "default"}

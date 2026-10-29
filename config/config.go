@@ -266,8 +266,18 @@ type Rule struct {
 }
 
 type Extractor struct {
-	Enable  bool           `yaml:"enable" mapstructure:"enable"`
-	Options map[string]any `yaml:"options" mapstructure:"options"`
+	Enable        bool           `yaml:"enable" mapstructure:"enable"`
+	Options       map[string]any `yaml:"options" mapstructure:"options"`
+	enableOmitted bool
+}
+
+// Enabled preserves the extractor's own default when loaded configuration only
+// selects options. Programmatically constructed configurations remain explicit.
+func (e *Extractor) Enabled(defaultValue bool) bool {
+	if e.enableOmitted {
+		return defaultValue
+	}
+	return e.Enable
 }
 
 // SemanticSearch holds configuration for optional vector similarity search.
@@ -598,7 +608,7 @@ func parseEnvValue(s string) any {
 }
 
 // Load initializes runtime configuration from a selected file. An empty name
-// uses defaults and environment only; discovery belongs to ResolvePath.
+// uses defaults, managed selections, and environment; discovery belongs to ResolvePath.
 func Load(filename string, overrides ...Override) (*Config, error) {
 	name := filename
 	var err error

@@ -5,8 +5,152 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestManagedConfigurationSourcesAndReset(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HISTER_DATA_DIR", dir)
+	filename := filepath.Join(dir, "config.yml")
+	managed := filepath.Join(dir, "config.web.yml")
+	const web = "app:\n  title: Web title\n"
+	var running *Config
+	for _, tc := range []struct{ main, web, title, source string }{
+		{"app:\n  title: Hister\n", web, "Hister", "file"},
+		{"# no authoritative title\n", web, "Web title", "web"},
+		{"# no authoritative title\n", "{}\n", "Hister", "default"},
+	} {
+		if err := os.WriteFile(filename, []byte(tc.main), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(managed, []byte(tc.web), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		restarted, err := Load(filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if running == nil {
+			running = restarted
+		}
+		reloaded, err := running.Reload()
+		if err != nil {
+			t.Fatal(err)
+		}
+		inspected, _, err := LoadForInspection(filename, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range []*Config{restarted, reloaded, inspected} {
+			source := c.Source("app.title")
+			if c.App.Title != tc.title || source.Kind != tc.source {
+				t.Fatalf("title=%q, source=%+v", c.App.Title, source)
+			}
+			if tc.source == "file" && !strings.Contains(source.Reason, "web selection") {
+				t.Fatalf("shadowed web selection is not identified: %+v", source)
+			}
+		}
+		for name, want := range map[string]string{filename: tc.main, managed: tc.web} {
+			got, err := os.ReadFile(name)
+			if err != nil || string(got) != want {
+				t.Fatalf("loading changed %s: %v", name, err)
+			}
+		}
+		running = reloaded
+	}
+}
+
+func TestManagedConfigurationReloadWithoutMainFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HISTER_DATA_DIR", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("LOCALAPPDATA", dir)
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed := filepath.Join(dir, "config.web.yml")
+	if err := os.WriteFile(managed, []byte("app:\n  title: Saved\ncrawler:\n  headers: {x-test: original}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next, err := c.Reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.App.Title != "Saved" || next.Filename() != "*Default Config*" || !bytes.Equal(next.SecretKey(), c.SecretKey()) || next.TUI != c.TUI {
+		t.Fatal("reload lost selections or runtime state")
+	}
+	next.Crawler.Headers["x-test"] = "mutated"
+	restarted, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restarted.App.Title != "Saved" || restarted.Crawler.Headers["x-test"] != "original" || c.App.Title != "Hister" {
+		t.Fatal("candidates share state or managed selections were not retained")
+	}
+	if err := os.WriteFile(managed, []byte("app: [invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := next.Reload(); err == nil {
+		t.Fatal("reload accepted an invalid managed file")
+	}
+	if next.App.Title != "Saved" {
+		t.Fatal("failed reload mutated active configuration")
+	}
+	if err := os.Remove(managed); err != nil {
+		t.Fatal(err)
+	}
+	reset, err := next.Reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.App.Title != "Hister" || reset.Source("app.title").Kind != "default" {
+		t.Fatal("removing managed file did not restore inherited values")
+	}
+}
+
+func TestManagedConfigurationReloadSelectsNewDirectory(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "config.yml")
+	first, second := filepath.Join(dir, "first"), filepath.Join(dir, "second")
+	for directory, title := range map[string]string{first: "First", second: "Second"} {
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, "config.web.yml"), fmt.Appendf(nil, "app:\n  title: %s\n", title), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filename, fmt.Appendf(nil, "app:\n  directory: %q\n", first), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.App.Title != "First" {
+		t.Fatal("startup selected wrong managed file")
+	}
+	if err := os.WriteFile(filename, fmt.Appendf(nil, "app:\n  directory: %q\n", second), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next, err := c.Reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.App.Title != "Second" || next.App.Directory != second {
+		t.Fatal("reload did not select new directory's managed file")
+	}
+	entries, err := os.ReadDir(second)
+	if err != nil || len(entries) != 1 {
+		t.Fatal("candidate reload created runtime files in new directory")
+	}
+	got, err := os.ReadFile(filepath.Join(first, "config.web.yml"))
+	if err != nil || string(got) != "app:\n  title: First\n" {
+		t.Fatal("reload moved or rewrote previous managed file")
+	}
+}
 
 func TestReloadCommentedConfiguration(t *testing.T) {
 	dir := t.TempDir()

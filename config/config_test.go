@@ -3,9 +3,11 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -64,6 +66,303 @@ func TestLoadCommentedConfiguration(t *testing.T) {
 						}
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestManagedConfigurationLoading(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HISTER_DATA_DIR", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("LOCALAPPDATA", dir)
+	filename := filepath.Join(dir, "config.yml")
+	const main = "# Reference only\napp: {}\n"
+	if err := os.WriteFile(filename, []byte(main), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	managed := filepath.Join(dir, "config.web.yml")
+	const web = "app:\n  title: Web title\n  subtitle: ''\n  show_suggestions: false\ncrawler:\n  delay: 0\n"
+	if err := os.WriteFile(managed, []byte(web), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, inspection := range []bool{true, false} {
+		var c *Config
+		var err error
+		if inspection {
+			c, _, err = LoadForInspection(filename, true)
+		} else {
+			// Local commands and startup share this loader, including no main file.
+			c, err = Load("")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.App.Title != "Web title" || c.App.Subtitle != "" || c.App.ShowSuggestions || c.Crawler.Delay != 0 {
+			t.Fatalf("inspection=%v: managed selections were not applied: %+v", inspection, c.App)
+		}
+		if source := c.Source("app.title"); source.Kind != "web" || source.Name != managed || source.Locked {
+			t.Fatalf("managed title source = %+v, want an editable web selection", source)
+		}
+		if inspection {
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 2 {
+				t.Fatalf("inspection created runtime files: %v, %v", entries, err)
+			}
+		}
+	}
+	for name, want := range map[string]string{filename: main, managed: web} {
+		got, err := os.ReadFile(name)
+		if err != nil || string(got) != want {
+			t.Fatalf("loading rewrote %s: %v", name, err)
+		}
+	}
+}
+
+func TestManagedConfigurationCollections(t *testing.T) {
+	for _, tc := range []struct {
+		name, main, web, env string
+		want                 map[string]string
+		locked               bool
+	}{
+		{"replacement", "", "{alt+x: focus_search_input}", "", map[string]string{"alt+x": "focus_search_input"}, false},
+		{"clear", "", "{}", "", map[string]string{}, false},
+		{"file member locks collection", "hotkeys:\n  web:\n    alt+y: show_hotkeys\n", "{alt+x: focus_search_input}", "", nil, true},
+		{"empty file collection locks collection", "hotkeys:\n  web: {}\n", "{alt+x: focus_search_input}", "", nil, true},
+		{"environment member locks collection", "", "{alt+x: focus_search_input}", "show_hotkeys", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HISTER_DATA_DIR", dir)
+			filename := filepath.Join(dir, "config.yml")
+			if err := os.WriteFile(filename, []byte(tc.main), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.web.yml"), []byte("hotkeys:\n  web: "+tc.web+"\nsensitive_content_patterns: {}\nindexer:\n  languages: []\ncrawler:\n  cookies: []\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.env != "" {
+				t.Setenv("HISTER__HOTKEYS__WEB__ALT+Y", tc.env)
+			}
+			c, _, err := LoadForInspection(filename, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.locked {
+				if c.Hotkeys.Web["alt+x"] != "" || c.Hotkeys.Web["enter"] != "open_result" {
+					t.Fatalf("locked collection must suppress web replacement and retain main file semantics: %v", c.Hotkeys.Web)
+				}
+				if (tc.env != "" || strings.Contains(tc.main, "alt+y")) && c.Hotkeys.Web["alt+y"] != "show_hotkeys" {
+					t.Fatal("lost authoritative member")
+				}
+			} else if !maps.Equal(c.Hotkeys.Web, tc.want) {
+				t.Fatalf("web collection = %v, want %v", c.Hotkeys.Web, tc.want)
+			}
+			if source := c.Source("hotkeys.web"); source.Locked != tc.locked {
+				t.Fatalf("incorrect collection source: %+v", source)
+			}
+			if len(c.SensitiveContentPatterns) != 0 || len(c.Indexer.Languages) != 0 || len(c.Crawler.Cookies) != 0 {
+				t.Fatal("explicit empty web collections did not clear defaults")
+			}
+		})
+	}
+}
+
+func TestManagedConfigurationRejectsInvalidFiles(t *testing.T) {
+	for _, raw := range []string{
+		"app: [private-credential", "[private-credential]", "null\n",
+		"app:\n  title: first\n  title: private-credential\n",
+		"app:\n  unknown: private-credential\n", "app:\n  snippet_length: private-credential\n",
+		"app:\n  snippet_length: 18446744073709551615\n",
+		"app:\n  show_suggestions: 'false'\n", "app: null\n", "app:\n  title: null\n",
+		"app:\n  title: valid\n---\napp:\n  title: private-credential\n",
+		"app.directory: private-credential\n", "app:\n  directory: private-credential\n",
+		"server:\n  database: private-credential\n", "server:\n  proxy_auth_header: private-credential\n",
+		"indexer:\n  pdf_parser:\n    command: private-credential\n",
+		"indexer:\n  pdf_parser:\n    args: [private-credential]\n",
+		"server:\n  oauth:\n    oidc:\n      admin_groups: [private-credential]\n",
+		"server:\n  oauth:\n    oidc:\n      identity_claim: private-credential\n",
+		"server:\n  oauth:\n    oidc:\n      groups_claim: private-credential\n",
+		"tui:\n  dark_theme: private-credential\n", "hotkeys:\n  tui: {}\n", "rules: {}\n",
+		"crawler:\n  backend_options:\n    exec_path: private-credential\n",
+		"extractors:\n  ytdlp:\n    options:\n      binary: private-credential\n",
+		"extractors:\n  ytdlp:\n    options:\n      extra_args: [private-credential]\n",
+		"extractors:\n  custom:\n    options:\n      undocumented: private-credential\n",
+	} {
+		t.Run(fmt.Sprintf("case_%d", len(raw))+strings.Split(raw, "\n")[0], func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HISTER_DATA_DIR", dir)
+			// Invalid managed content is rejected even when the file locks it.
+			filename := filepath.Join(dir, "config.yml")
+			if err := os.WriteFile(filename, []byte("app:\n  title: Locked\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			managed := filepath.Join(dir, "config.web.yml")
+			if err := os.WriteFile(managed, []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for _, inspection := range []bool{true, false} {
+				var err error
+				if inspection {
+					_, _, err = LoadForInspection(filename, true)
+				} else {
+					_, err = Load(filename)
+				}
+				if err == nil || !strings.Contains(err.Error(), managed) || strings.Contains(err.Error(), "private-credential") {
+					t.Errorf("inspection=%v: want a redacted managed file error, got %v", inspection, err)
+				}
+			}
+			got, err := os.ReadFile(managed)
+			if err != nil || string(got) != raw {
+				t.Fatal("invalid managed file was rewritten")
+			}
+		})
+	}
+}
+
+func TestManagedConfigurationFileAvailability(t *testing.T) {
+	for _, kind := range []string{"missing", "comments", "empty mapping", "directory", "symlink", "unreadable"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HISTER_DATA_DIR", dir)
+			filename := filepath.Join(dir, "config.yml")
+			if err := os.WriteFile(filename, []byte("{}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			managed := filepath.Join(dir, "config.web.yml")
+			switch kind {
+			case "comments":
+				if err := os.WriteFile(managed, []byte("# no selections\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "empty mapping":
+				if err := os.WriteFile(managed, []byte("{app: {}, server: {}, extractors: {ytdlp: {options: {}}}}\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "directory":
+				if err := os.Mkdir(managed, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.Symlink(filepath.Join(dir, "absent.yml"), managed); err != nil {
+					t.Fatal(err)
+				}
+			case "unreadable":
+				if err := os.WriteFile(managed, []byte("{}\n"), 0); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := os.ReadFile(managed); err == nil {
+					t.Skip("process can read mode 000 files")
+				}
+			}
+			c, _, err := LoadForInspection(filename, true)
+			if kind == "directory" || kind == "symlink" || kind == "unreadable" {
+				if err == nil || !strings.Contains(err.Error(), managed) {
+					t.Fatalf("want managed file error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.App.Title != "Hister" || c.Source("app.title").Kind != "default" || c.Source("extractors.ytdlp.enable").Locked {
+				t.Fatal("empty managed file selected settings")
+			}
+			if kind == "missing" {
+				if _, err := os.Stat(managed); !os.IsNotExist(err) {
+					t.Fatal("loading created a managed file")
+				}
+			}
+		})
+	}
+}
+
+func TestManagedConfigurationDiscoversAuthoritativeDirectory(t *testing.T) {
+	for level, source := range []string{"default", "file", "environment", "special environment", "flag"} {
+		t.Run(source, func(t *testing.T) {
+			if level == 0 && runtime.GOOS == "darwin" {
+				t.Skip("the macOS default data directory has no environment override")
+			}
+			dir := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", dir)
+			t.Setenv("LOCALAPPDATA", dir)
+			directories := []string{filepath.Join(dir, "hister"), filepath.Join(dir, "file"), filepath.Join(dir, "env"), filepath.Join(dir, "special"), filepath.Join(dir, "flag")}
+			for i, directory := range directories {
+				if err := os.MkdirAll(directory, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(directory, "config.web.yml"), fmt.Appendf(nil, "app:\n  title: Selection %d\n", i), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			filename := filepath.Join(dir, "config.yml")
+			main := "# no selections\n"
+			if level >= 1 {
+				main = fmt.Sprintf("app:\n  directory: %q\n", directories[1])
+			}
+			if err := os.WriteFile(filename, []byte(main), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if level >= 2 {
+				t.Setenv("HISTER__APP__DIRECTORY", directories[2])
+			}
+			if level >= 3 {
+				t.Setenv("HISTER_DATA_DIR", directories[3])
+			}
+			var overrides []Override
+			if level >= 4 {
+				overrides = append(overrides, Override{Path: "app.directory", Value: directories[4], Source: ValueSource{Kind: "flag", Name: "--directory"}})
+			}
+			c, _, err := LoadForInspection(filename, true, overrides...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.App.Title != fmt.Sprintf("Selection %d", level) || c.App.Directory != directories[level] {
+				t.Fatalf("selected wrong managed directory: %q, %q", c.App.Title, c.App.Directory)
+			}
+		})
+	}
+}
+
+func TestManagedConfigurationPreservesAuthoritativeValues(t *testing.T) {
+	for _, source := range []string{"file", "environment", "flag"} {
+		t.Run(source, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HISTER_DATA_DIR", dir)
+			filename := filepath.Join(dir, "config.yml")
+			main := "{}\n"
+			if source == "file" {
+				main = "app:\n  title: ''\n  show_suggestions: false\ncrawler:\n  delay: 0\n"
+			}
+			if err := os.WriteFile(filename, []byte(main), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.web.yml"), []byte("app:\n  title: Web\n  show_suggestions: true\ncrawler:\n  delay: 12\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var overrides []Override
+			if source == "environment" {
+				t.Setenv("HISTER__APP__TITLE", "")
+				t.Setenv("HISTER__APP__SHOW_SUGGESTIONS", "false")
+				t.Setenv("HISTER__CRAWLER__DELAY", "0")
+			}
+			if source == "flag" {
+				for path, value := range map[string]any{"app.title": "", "app.show_suggestions": false, "crawler.delay": 0} {
+					overrides = append(overrides, Override{Path: path, Value: value, Source: ValueSource{Kind: "flag", Name: "--test"}})
+				}
+			}
+			c, _, err := LoadForInspection(filename, true, overrides...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.App.Title != "" || c.App.ShowSuggestions || c.Crawler.Delay != 0 {
+				t.Fatal("web selections overrode authoritative values")
+			}
+			for _, path := range []string{"app.title", "app.show_suggestions", "crawler.delay"} {
+				got := c.Source(path)
+				if got.Kind != source || !got.Locked || !got.WebSelected {
+					t.Fatalf("source for %s = %+v", path, got)
+				}
 			}
 		})
 	}

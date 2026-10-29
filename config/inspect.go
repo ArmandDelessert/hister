@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -44,8 +45,8 @@ func ResolvePath(filename string, explicit bool) (string, error) {
 	return "", nil
 }
 
-// LoadForInspection decodes defaults, YAML, environment variables, and explicit
-// overrides without creating runtime files or opening databases. Call Validate
+// LoadForInspection composes defaults, managed YAML, main YAML, environment, and
+// explicit overrides without creating runtime files or opening databases. Call Validate
 // on the result. Rules and the separate TUI config are not loaded.
 func LoadForInspection(filename string, explicit bool, overrides ...Override) (*Config, string, error) {
 	name, err := ResolvePath(filename, explicit)
@@ -88,6 +89,16 @@ func loadSelected(name string, strict bool, overrides ...Override) (*Config, err
 			return nil, err
 		}
 	}
+	if err := c.normalize(); err != nil {
+		return nil, err
+	}
+	if err := inputs.loadManaged(c.App.Directory); err != nil {
+		return nil, err
+	}
+	c, err = inputs.decode(strict)
+	if err != nil {
+		return nil, err
+	}
 	c.fname = name
 	return c, c.normalize()
 }
@@ -102,6 +113,7 @@ func decodeConfig(raw []byte, name string, strict bool) (*Config, error) {
 
 func (inputs *configInputs) decode(strict bool) (*Config, error) {
 	c := CreateDefaultConfig()
+	inputs.clearWebDefaults(reflect.ValueOf(c).Elem(), "")
 	c.sources = maps.Clone(inputs.sources)
 	var metadata mapstructure.Metadata
 	if err := inputs.values.Unmarshal(c, func(dc *mapstructure.DecoderConfig) { dc.Metadata = &metadata }); err != nil {
@@ -114,6 +126,12 @@ func (inputs *configInputs) decode(strict bool) (*Config, error) {
 	if strict && len(metadata.Unused) > 0 {
 		slices.Sort(metadata.Unused)
 		return nil, fmt.Errorf("unknown configuration keys: %s", strings.Join(metadata.Unused, ", "))
+	}
+	for name, extractor := range c.Extractors {
+		if extractor != nil {
+			_, explicit := inputs.sources["extractors."+name+".enable"]
+			extractor.enableOmitted = !explicit
+		}
 	}
 	return c, nil
 }

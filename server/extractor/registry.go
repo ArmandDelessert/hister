@@ -193,7 +193,7 @@ func (r *Registry) Init(cfgs map[string]*config.Extractor) error {
 		}
 		maps.Copy(merged.Options, defaults.Options)
 		if user, ok := cfgs[strings.ToLower(candidate.Name())]; ok && user != nil {
-			merged.Enable = user.Enable
+			merged.Enable = user.Enabled(defaults.Enable)
 			maps.Copy(merged.Options, user.Options)
 		}
 		if err := candidate.SetConfig(merged); err != nil {

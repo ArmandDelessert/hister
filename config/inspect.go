@@ -3,6 +3,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"maps"
@@ -94,6 +95,7 @@ func loadSelected(name string, strict bool, overrides ...Override) (*Config, err
 		return nil, err
 	}
 	composition := &configComposition{
+		mainDigest:    sha256.Sum256(raw),
 		defaults:      inputs.defaults,
 		authoritative: cloneInputValue(reflect.ValueOf(inputs.values.AllSettings())).Interface().(map[string]any),
 		sources:       maps.Clone(inputs.sources),
@@ -107,6 +109,7 @@ func loadSelected(name string, strict bool, overrides ...Override) (*Config, err
 	}
 	c.fname = name
 	composition.managed = inputs.managed
+	composition.managedDigest = inputs.managedDigest
 	c.composition = composition
 	return c, c.normalize()
 }

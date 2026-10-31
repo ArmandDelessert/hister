@@ -166,6 +166,31 @@ func (r *Registry) List() []ExtractorInfo {
 	return infos
 }
 
+// ListForDisplay hides secrets, URLs, and options without explicit metadata.
+// Raw options remain available internally through List for runtime consumers.
+func (r *Registry) ListForDisplay() []ExtractorInfo {
+	infos := r.List()
+	schemas := make(map[string]config.SettingSchema)
+	for _, field := range r.ConfigurationFields(nil) {
+		schemas[field.Path] = field.Schema
+	}
+	for i := range infos {
+		info := &infos[i]
+		options := make(map[string]any, len(info.Options))
+		for key, value := range info.Options {
+			options[key] = "[REDACTED]"
+			schema := schemas["extractors."+strings.ToLower(info.Name)+".options."+key]
+			if schema.Sensitivity == "none" {
+				if normalized, message := schema.ValidateValue(value); message == "" {
+					options[key] = normalized
+				}
+			}
+		}
+		info.Options = options
+	}
+	return infos
+}
+
 // Init applies user-supplied extractor configurations on top of each
 // extractor's defaults. It must be called before Extract or Preview.
 // cfgs is keyed by lowercased extractor name (as Viper lowercases YAML keys).

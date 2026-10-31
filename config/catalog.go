@@ -55,9 +55,12 @@ type FieldState struct {
 
 // FieldStates contains only described values and safe displays of secrets.
 // It does not expose the main configuration or managed selections wholesale.
-func (c *Config) FieldStates() []FieldState {
+func (c *Config) FieldStates(fields ...FieldMetadata) []FieldState {
+	if len(fields) == 0 {
+		fields = FieldCatalog()
+	}
 	var states []FieldState
-	for _, field := range FieldCatalog() {
+	for _, field := range fields {
 		source := c.fieldSource(field.Path)
 		state := FieldState{Path: field.Path, Value: settingValue(c, field.Path), Source: source, Editable: !source.Locked && field.ReadOnlyReason == "", Reason: field.ReadOnlyReason}
 		if source.Locked {
@@ -628,6 +631,16 @@ func settingHasValue(value any) bool {
 func settingValue(c *Config, path string) any {
 	value := reflect.ValueOf(c).Elem()
 	for key := range strings.SplitSeq(path, ".") {
+		for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+			value = value.Elem()
+		}
+		if !value.IsValid() {
+			return nil
+		}
+		if value.Kind() == reflect.Map && value.Type().Key().Kind() == reflect.String {
+			value = value.MapIndex(reflect.ValueOf(key))
+			continue
+		}
 		if value.Kind() != reflect.Struct {
 			return nil
 		}
@@ -642,6 +655,9 @@ func settingValue(c *Config, path string) any {
 		if !found {
 			return nil
 		}
+	}
+	if !value.IsValid() {
+		return nil
 	}
 	return value.Interface()
 }

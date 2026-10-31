@@ -44,7 +44,7 @@ func TestRegistryOptionMetadataControlsValidationAndExposure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fields := r.ConfigurationFields()
+	fields := r.ConfigurationFields(nil)
 	encoded, err := json.Marshal(fields)
 	if err != nil || strings.Contains(string(encoded), "private-credential") || strings.Contains(string(encoded), "hidden-credential") {
 		t.Fatal("extractor metadata leaked values")
@@ -64,6 +64,17 @@ func TestRegistryOptionMetadataControlsValidationAndExposure(t *testing.T) {
 	if !foundLegacy {
 		t.Fatal("undocumented option was not identified as read only")
 	}
+	display := r.ListForDisplay()
+	encoded, err = json.Marshal(display)
+	if err != nil || strings.Contains(string(encoded), "private-credential") || strings.Contains(string(encoded), "hidden-credential") {
+		t.Fatal("extractor display leaked option values")
+	}
+	if labels, ok := display[0].Options["labels"].([]any); !ok || len(labels) != 1 || labels[0] != "default" {
+		t.Fatal("extractor display hid an explicitly described safe option")
+	}
+	if e.GetConfig().Options["credential"] != "private-credential" || e.GetConfig().Options["legacy"] != "hidden-credential" {
+		t.Fatal("redacting display values changed the active extractor")
+	}
 	if err := r.Init(map[string]*config.Extractor{"custom": {Enable: true, Options: map[string]any{"labels": []any{42}}}}); err == nil {
 		t.Fatal("accepted a value incompatible with the declared item type")
 	}
@@ -73,7 +84,7 @@ func TestRegistryOptionMetadataControlsValidationAndExposure(t *testing.T) {
 	if err := r.Init(map[string]*config.Extractor{"custom": {Enable: false}}); err != nil {
 		t.Fatal(err)
 	}
-	if field := r.ConfigurationFields()[0]; field.Default != true {
+	if field := r.ConfigurationFields(nil)[0]; field.Default != true {
 		t.Fatalf("applied settings replaced static enable default: %+v", field)
 	}
 	if labels := e.GetConfig().Options["labels"].([]any); len(labels) != 0 {

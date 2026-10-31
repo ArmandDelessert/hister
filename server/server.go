@@ -337,6 +337,13 @@ func canWrite(c *webContext) bool {
 	return !c.Config.App.Public
 }
 
+func canConfigure(c *webContext) bool {
+	if c.Config.App.UserHandling {
+		return c.UserID > 0 && c.IsAdmin
+	}
+	return canWrite(c)
+}
+
 func targetUserID(c *webContext) uint {
 	uid := c.UserID
 	if c.Config.App.UserHandling && c.IsAdmin {

@@ -76,12 +76,14 @@ func TestOAuthAdminGroupsSync(t *testing.T) {
 		}
 		// Both existing browser sessions and API tokens must use the new role.
 		for _, existing := range cookies {
-			req := httptest.NewRequest(http.MethodGet, "/hister/api/users", nil)
-			req.AddCookie(existing)
-			result := httptest.NewRecorder()
-			handler.ServeHTTP(result, req)
-			if result.Code != wantStatus {
-				t.Fatalf("session admin access = %d, want %d", result.Code, wantStatus)
+			for _, path := range []string{"/hister/api/users", "/hister/api/settings"} {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.AddCookie(existing)
+				result := httptest.NewRecorder()
+				handler.ServeHTTP(result, req)
+				if result.Code != wantStatus {
+					t.Fatalf("session admin access = %d, want %d", result.Code, wantStatus)
+				}
 			}
 		}
 		result := testutil.ServeHTTP(t, handler, http.MethodGet, "/hister/api/users", nil, map[string]string{"Authorization": "Bearer " + user.Token})

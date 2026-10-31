@@ -14,12 +14,12 @@ import (
 // ValueSource describes a setting's origin without retaining its value.
 // It is separate from the field catalog and contains no credentials.
 type ValueSource struct {
-	Kind        string
-	Name        string
-	Locked      bool
-	Reason      string
-	DerivedFrom string
-	WebSelected bool
+	Kind        string `json:"kind"`
+	Name        string `json:"name,omitempty"`
+	Locked      bool   `json:"locked"`
+	Reason      string `json:"reason,omitempty"`
+	DerivedFrom string `json:"derived_from,omitempty"`
+	WebSelected bool   `json:"web_selected"`
 }
 
 // Override is an explicit setting assignment. Presence does not depend on
@@ -57,10 +57,11 @@ func (c *Config) Source(path string) ValueSource {
 // Read presence from YAML before decoding into defaults. Structural containers
 // do not select settings; lists and dictionaries select their whole collection.
 type configInputs struct {
-	values   *viper.Viper
-	sources  map[string]ValueSource
-	managed  map[string]any
-	defaults *Config
+	values        *viper.Viper
+	sources       map[string]ValueSource
+	managed       map[string]any
+	defaults      *Config
+	managedDigest [32]byte
 }
 
 func fileInputs(raw []byte, name string) (*configInputs, error) {

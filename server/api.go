@@ -50,6 +50,7 @@ type Endpoint struct {
 	NoAuth       bool
 	AdminOnly    bool
 	Public       bool
+	NoStore      bool
 	Handler      endpointHandler `json:"-"`
 	// BodyLimit overrides the default request body limit, using the active config.
 	BodyLimit   func(*config.Config) int64 `json:"-"`
@@ -118,7 +119,34 @@ func init() {
 			NoAuth:       true,
 			Public:       true,
 			Handler:      serveConfig,
-			Description:  "Return server configuration, search capabilities, authentication mode, and CSRF state. Includes the running Hister version in the version field only when server.expose_version is enabled.",
+			Description:  "Return public configuration, search capabilities, authentication mode, CSRF state, and canConfigure for settings navigation. Includes the running Hister version in the version field only when server.expose_version is enabled.",
+		},
+		{
+			Name:        "Settings",
+			Path:        "/api/settings",
+			Method:      GET,
+			AdminOnly:   true,
+			NoStore:     true,
+			Handler:     serveSettings,
+			Description: "Read configuration field descriptions, redacted active values, sources, editability, and an opaque revision. Requires administrative access. Does not save or apply settings.",
+		},
+		{
+			Name:         "ValidateSettings",
+			Path:         "/api/settings/validate",
+			Method:       POST,
+			AdminOnly:    true,
+			NoStore:      true,
+			CSRFRequired: true,
+			Handler:      serveValidateSettings,
+			Description:  "Validate a complete configuration candidate without saving or applying it. Accepts ordinary App edits only. Returns redacted candidate values on success, field errors with status 422, or status 409 when the revision or configuration sources have changed.",
+			JSONSchema: []*JSONSchemaField{
+				{Name: "revision", Type: "string", Required: true, Description: "Revision returned by GET /api/settings."},
+				{Name: "edits", Type: "array", Required: true, Description: "Explicit setting operations; an empty array validates the inherited configuration.", Fields: []*JSONSchemaField{
+					{Name: "path", Type: "string", Required: true, Description: "Stable setting path from the field catalog."},
+					{Name: "action", Type: "string", Required: true, Description: "set or reset. Each path may appear only once."},
+					{Name: "value", Type: "any", Description: "Typed value required for set and forbidden for reset."},
+				}},
+			},
 		},
 		{
 			Name:        "Search",

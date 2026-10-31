@@ -4,7 +4,20 @@ import (
 	"crypto/rand"
 	"errors"
 	"os"
+	"reflect"
 )
+
+// SourcesUnchanged checks the inputs of a loaded configuration without creating
+// runtime resources or reading rules and TUI preferences. Unreadable or invalid
+// sources also invalidate a draft. Raw file digests detect edits to shadowed
+// values and comments; the composition captures environment and startup flags.
+func (c *Config) SourcesUnchanged(overrides ...Override) bool {
+	if c.composition == nil {
+		return false
+	}
+	next, err := loadSelected(c.fname, true, overrides...)
+	return err == nil && reflect.DeepEqual(c.composition, next.composition)
+}
 
 // PrepareDataDirectory initializes storage files when a full reload switches
 // data directories. It does not change the main configuration or its overrides.

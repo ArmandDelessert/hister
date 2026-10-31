@@ -242,10 +242,11 @@ func (r *Registry) Init(cfgs map[string]*config.Extractor) error {
 	return nil
 }
 
-// ConfigurationFields returns static descriptions. Extractor editing remains
-// disabled until its category has controls and the secret preservation protocol.
-// Undescribed options are explicitly unknown; their values never become defaults.
-func (r *Registry) ConfigurationFields() []config.FieldMetadata {
+// ConfigurationFields describes defaults and configured option keys. Extractor
+// editing remains disabled until its category has controls and the secret
+// preservation protocol. Undescribed options are explicitly unknown; supplied
+// values never become defaults and no extractor is initialized here.
+func (r *Registry) ConfigurationFields(cfgs map[string]*config.Extractor) []config.FieldMetadata {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var fields []config.FieldMetadata
@@ -266,8 +267,16 @@ func (r *Registry) ConfigurationFields() []config.FieldMetadata {
 				fields = append(fields, field)
 			}
 		}
-		keys := slices.Sorted(maps.Keys(candidate.GetConfig().Options))
-		for _, key := range keys {
+		keys := make(map[string]struct{})
+		for key := range candidate.GetConfig().Options {
+			keys[key] = struct{}{}
+		}
+		if selected := cfgs[strings.ToLower(candidate.Name())]; selected != nil {
+			for key := range selected.Options {
+				keys[key] = struct{}{}
+			}
+		}
+		for _, key := range slices.Sorted(maps.Keys(keys)) {
 			if described[key] {
 				continue
 			}
@@ -275,6 +284,27 @@ func (r *Registry) ConfigurationFields() []config.FieldMetadata {
 		}
 	}
 	return fields
+}
+
+// ConfigurationStates combines extractor defaults with explicit selections
+// without configuring an extractor or modifying the supplied configuration.
+// The config owner handles source locks and metadata based redaction.
+func (r *Registry) ConfigurationStates(current *config.Config) []config.FieldState {
+	snapshot := *current
+	snapshot.Extractors = make(map[string]*config.Extractor)
+	for _, candidate := range r.Extractors() {
+		name := strings.ToLower(candidate.Name())
+		merged := candidate.GetConfig().Clone()
+		if selected := current.Extractors[name]; selected != nil {
+			merged.Enable = selected.Enabled(merged.Enable)
+			if merged.Options == nil {
+				merged.Options = make(map[string]any)
+			}
+			maps.Copy(merged.Options, selected.Clone().Options)
+		}
+		snapshot.Extractors[name] = merged
+	}
+	return snapshot.FieldStates(r.ConfigurationFields(current.Extractors)...)
 }
 
 // ValidateConfiguration uses fresh built in instances and reports only safe

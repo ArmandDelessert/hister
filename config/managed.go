@@ -4,6 +4,7 @@ package config
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,8 @@ type configComposition struct {
 	authoritative map[string]any
 	sources       map[string]ValueSource
 	managed       map[string]any
+	mainDigest    [32]byte
+	managedDigest [32]byte
 }
 
 // loadManaged adds sparse web selections only where no authoritative source
@@ -43,6 +46,7 @@ func (inputs *configInputs) loadManaged(directory string) error {
 	if err != nil {
 		return fmt.Errorf("read managed configuration %s: %w", name, err)
 	}
+	inputs.managedDigest = sha256.Sum256(raw)
 	if err := validateManagedYAML(raw); err != nil {
 		return fmt.Errorf("managed configuration %s: %w", name, err)
 	}
@@ -90,7 +94,7 @@ func (c *Config) composeDraft(selections map[string]any) (*Config, error) {
 		return nil, err
 	}
 	next.fname = c.fname
-	next.composition = &configComposition{defaults: c.composition.defaults, authoritative: c.composition.authoritative, sources: c.composition.sources, managed: inputs.managed}
+	next.composition = &configComposition{defaults: c.composition.defaults, authoritative: c.composition.authoritative, sources: c.composition.sources, managed: inputs.managed, mainDigest: c.composition.mainDigest, managedDigest: c.composition.managedDigest}
 	return next, next.normalize()
 }
 

@@ -1,6 +1,10 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"maps"
 	"net/http"
 	"sync"
@@ -9,9 +13,13 @@ import (
 	"github.com/asciimoo/hister/server/extractor"
 )
 
-func configurationCatalog() []config.FieldMetadata {
+func configurationCatalog(current *config.Config) []config.FieldMetadata {
 	fields := config.FieldCatalog()
-	return append(fields, extractor.NewDefaultRegistry().ConfigurationFields()...)
+	return append(fields, extractor.NewDefaultRegistry().ConfigurationFields(current.Extractors)...)
+}
+
+func configurationStates(current *config.Config) []config.FieldState {
+	return append(current.FieldStates(), extractor.NewDefaultRegistry().ConfigurationStates(current)...)
 }
 
 // prepareConfigurationDraft keeps extractor validation in the server layer.
@@ -28,6 +36,91 @@ type configReloader struct {
 	mu        sync.Mutex
 	current   *config.Config
 	overrides []config.Override
+	revision  string
+}
+
+func serveSettings(c *webContext) {
+	c.JSON(map[string]any{
+		"revision": c.reloader.revision,
+		"fields":   configurationCatalog(c.Config),
+		"values":   configurationStates(c.Config),
+		"pending":  nil,
+	})
+}
+
+func serveValidateSettings(c *webContext) {
+	var revision string
+	var rawEdits []json.RawMessage
+	if err := decodeSettingsObject(c.Request.Body, map[string]any{"revision": &revision, "edits": &rawEdits}); err != nil {
+		if !requestBodyTooLarge(c, err) {
+			c.JSONStatus(http.StatusBadRequest, map[string]string{"code": "invalid_request", "error": "Supply a settings revision and edits array."})
+		}
+		return
+	}
+	if revision == "" || rawEdits == nil {
+		c.JSONStatus(http.StatusBadRequest, map[string]string{"code": "invalid_request", "error": "Supply a settings revision and edits array."})
+		return
+	}
+	edits := make([]config.SettingEdit, 0, len(rawEdits))
+	for _, raw := range rawEdits {
+		var edit config.SettingEdit
+		if err := decodeSettingsObject(bytes.NewReader(raw), map[string]any{"path": &edit.Path, "action": &edit.Action, "value": &edit.Value}); err != nil || edit.Path == "" || edit.Action == "" {
+			c.JSONStatus(http.StatusBadRequest, map[string]string{"code": "invalid_request", "error": "Each edit requires a path, an action, and an optional value."})
+			return
+		}
+		edits = append(edits, edit)
+	}
+	if revision != c.reloader.revision {
+		c.JSONStatus(http.StatusConflict, map[string]string{"code": "stale_revision", "error": "Read the current settings before validating the draft."})
+		return
+	}
+	if !c.Config.SourcesUnchanged(c.reloader.overrides...) {
+		c.JSONStatus(http.StatusConflict, map[string]string{"code": "sources_changed", "error": "Configuration sources changed or cannot be read. Reload the server configuration and read settings again."})
+		return
+	}
+	candidate, fields := prepareConfigurationDraft(c.Config, edits)
+	if len(fields) > 0 {
+		c.JSONStatus(http.StatusUnprocessableEntity, map[string]any{"code": "invalid_settings", "errors": fields})
+		return
+	}
+	c.JSON(map[string]any{"revision": c.reloader.revision, "values": configurationStates(candidate)})
+}
+
+// Decode exact object keys once each. encoding/json's struct decoder accepts
+// duplicate keys and case aliases, which are ambiguous for edit operations.
+func decodeSettingsObject(reader io.Reader, fields map[string]any) error {
+	decoder := json.NewDecoder(reader)
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if token != json.Delim('{') {
+		return errors.New("expected an object")
+	}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := token.(string)
+		if !ok || fields[key] == nil {
+			return errors.New("unknown or duplicate field")
+		}
+		if err := decoder.Decode(fields[key]); err != nil {
+			return err
+		}
+		delete(fields, key)
+	}
+	if _, err := decoder.Token(); err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return errors.New("expected one object")
+	}
+	return nil
 }
 
 // beginRequest takes a snapshot for readers and serializes reloads with rule

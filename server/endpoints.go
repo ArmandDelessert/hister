@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
@@ -66,7 +67,7 @@ var ws = websocket.Upgrader{
 
 func registerEndpoints(cfg *config.Config, idx *indexer.Indexer, overrides ...config.Override) http.Handler {
 	mux := http.NewServeMux()
-	reloader := &configReloader{current: cfg, overrides: overrides}
+	reloader := &configReloader{current: cfg, overrides: overrides, revision: rand.Text()}
 	tokenAuth := cfg.App.AccessToken != ""
 	userHandling := cfg.App.UserHandling
 
@@ -84,6 +85,13 @@ func registerEndpoints(cfg *config.Config, idx *indexer.Indexer, overrides ...co
 				h = withAdminAuth(h)
 			} else {
 				h = withUserAuth(h)
+			}
+		}
+		if e.NoStore {
+			next := h
+			h = func(c *webContext) {
+				c.Response.Header().Set("Cache-Control", "no-store")
+				next(c)
 			}
 		}
 		mux.HandleFunc(e.Pattern(), createHandler(cfg, idx, h, reloader))
@@ -414,6 +422,7 @@ func serveConfig(c *webContext) {
 		DiagnosticsAvailable bool                      `json:"diagnosticsAvailable"`
 		Public               bool                      `json:"public"`
 		CanWrite             bool                      `json:"canWrite"`
+		CanConfigure         bool                      `json:"canConfigure"`
 		HistoryEnabled       bool                      `json:"historyEnabled"`
 		Username             string                    `json:"username,omitempty"`
 		UserID               uint                      `json:"userId,omitempty"`
@@ -459,6 +468,7 @@ func serveConfig(c *webContext) {
 		DiagnosticsAvailable: true,
 		Public:               c.Config.App.Public,
 		CanWrite:             canWrite(c),
+		CanConfigure:         canConfigure(c),
 		HistoryEnabled:       historyEnabled(c),
 		Username:             c.Username,
 		UserID:               c.UserID,
@@ -1782,7 +1792,7 @@ func serveExtractors(c *webContext) {
 		c.JSON(extractor.ListMatchingPreview(doc))
 		return
 	}
-	infos := extractor.List()
+	infos := extractor.DefaultRegistry().ListForDisplay()
 	if !c.Config.App.DisplayExtractorConfig {
 		for i := range infos {
 			infos[i].Options = nil

@@ -395,6 +395,17 @@ func submittedDocumentUserID(c *webContext) uint {
 	return targetUserID(c)
 }
 
+// A token must have authenticated the request itself. Cookie and browser
+// headers keep the request on the existing session and origin checks.
+func (c *webContext) isTokenOnlyRequest() bool {
+	h := c.Request.Header
+	return c.settingsActor.token != [32]byte{} &&
+		len(h.Values("Cookie")) == 0 &&
+		len(h.Values("Origin")) == 0 &&
+		len(h.Values("Referer")) == 0 &&
+		len(h.Values("Sec-Fetch-Site")) == 0
+}
+
 func withCSRF(handler endpointHandler) endpointHandler {
 	return func(c *webContext) {
 		// Allow requests coming from the command line
@@ -424,6 +435,10 @@ func withCSRF(handler endpointHandler) endpointHandler {
 		origin := c.Request.Header.Get("Origin")
 		safeRequest := c.Config.IsSameHost(origin) || origin == "same-origin"
 		if method != http.MethodGet && method != http.MethodHead && !safeRequest {
+			if c.isTokenOnlyRequest() {
+				handler(c)
+				return
+			}
 			sToken, ok := session.Values[tokName].(string)
 			if !ok {
 				http.Error(c.Response, errCSRFMismatch.Error(), http.StatusForbidden)

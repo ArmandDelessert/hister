@@ -1310,10 +1310,14 @@ Public mode exposes search, suggestions, document reads, previews, file serving,
 
 Only index content that is meant to be public. Local files, previews, and MCP search can expose indexed document content to anonymous visitors.
 
-For command-line usage with `curl` or similar tools, include the header in your requests:
+To add a document with curl, set `TOKEN` to your access token and send it in the
+`Authorization` header. Curl can make this request without cookies, an `Origin`
+header, or a CSRF token. Nogon also accepts `X-Access-Token`.
 
 ```bash
-curl -H "X-Access-Token: your-secret-token-here" http://localhost:4433/api/config
+curl -H "Authorization: Bearer $TOKEN" \
+  --json '{"url":"https://example.org","title":"Example","text":"An example document."}' \
+  http://localhost:4433/api/add
 ```
 
 **Security note**: API clients transmit the access token in plain text with each request, and the web UI transmits it during login. When exposing Nogon over the network, always use HTTPS through a reverse proxy to encrypt credentials and sessions in transit. The token provides basic access control but does not replace proper authentication systems for multiple user scenarios.

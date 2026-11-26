@@ -487,6 +487,12 @@ Authorization: Bearer <access-token>
 X-Access-Token: <access-token>
 ```
 
+For writes from curl, either token header is sufficient on its own. The server
+applies the usual CSRF checks when a request carries `Cookie`, `Origin`,
+`Referer`, or `Sec-Fetch-Site`, or authenticates through a trusted proxy
+identity. For a browser session that needs a CSRF token, use `GET /api/config`
+and send the returned `X-CSRF-Token` with the matching session cookie.
+
 ### Browser Session Authentication
 
 User sessions store the account's `user_id` and `user_session_version` at login.
@@ -570,7 +576,6 @@ in public mode. It cannot create the first administrator without authentication.
 ```http
 POST /api/users
 Authorization: Bearer <administrator-token>
-Origin: nogon://
 Content-Type: application/json
 
 {"username":"alice","password":"example-password","is_admin":false}
@@ -591,11 +596,6 @@ Success returns `201 Created` with the same account metadata as
 to that account's URL, including any configured base path. The response does not
 include the password or access token. An administrator can explicitly retrieve
 the generated token with `GET /api/users/{id}/token`.
-
-New clients can use `Origin: nogon://` with their administrator token, as shown
-above. The CLI retains `Origin: hister://` for older servers. Browser session
-requests follow the existing CSRF checks. Requests from a different origin must
-supply the session's `X-CSRF-Token`, available from `GET /api/config`.
 
 Errors use the same JSON `code` and `error` fields as the account read endpoints:
 
@@ -622,7 +622,6 @@ Read the account first, then send its current `revision` with at least one chang
 ```http
 PATCH /api/users/2
 Authorization: Bearer <administrator-token>
-Origin: nogon://
 Content-Type: application/json
 
 {"revision":1,"username":"alice-renamed","password":"replacement-password","is_admin":false,"regenerate_token":true}
@@ -680,7 +679,6 @@ can read another account's revision through `GET /api/users/{id}`.
 ```http
 POST /api/users/2/token
 Authorization: Bearer <current-user-token>
-Origin: nogon://
 Content-Type: application/json
 
 {"revision":1}

@@ -179,4 +179,12 @@ func TestProxyAuthPreservesTokenAuth(t *testing.T) {
 	if code, _ := serveProxyAuthProfile(t, handler, map[string]string{"X-Access-Token": "invalid"}); code != http.StatusForbidden {
 		t.Fatalf("invalid token status = %d, want %d", code, http.StatusForbidden)
 	}
+
+	// The proxy supplies the effective identity even when a valid token is present.
+	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/history", strings.NewReader(`{"query":"example"}`), map[string]string{
+		"Remote-User": "bob", "Authorization": "Bearer " + alice.Token, "Content-Type": "application/json",
+	})
+	if rec.Code != http.StatusForbidden || strings.TrimSpace(rec.Body.String()) != "CSRF token mismatch" {
+		t.Fatalf("proxy authenticated write without CSRF token: %d %s", rec.Code, rec.Body)
+	}
 }

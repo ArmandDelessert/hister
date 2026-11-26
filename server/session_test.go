@@ -168,6 +168,51 @@ func TestHeaderTokenDoesNotCreateBrowserSession(t *testing.T) {
 	}
 }
 
+func TestAddWithAccessToken(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	session := tokenLoginCookie(t, handler, nil)
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{"bearer", map[string]string{"Authorization": "Bearer secret"}, http.StatusCreated},
+		{"access token", map[string]string{"X-Access-Token": "secret"}, http.StatusCreated},
+		{"invalid token", map[string]string{"Authorization": "Bearer invalid"}, http.StatusForbidden},
+		{"missing token", nil, http.StatusForbidden},
+		{"session and token", map[string]string{"Cookie": session.Name + "=" + session.Value, "Authorization": "Bearer secret"}, http.StatusForbidden},
+		{"other origin", map[string]string{"Origin": "https://other.example", "Authorization": "Bearer secret"}, http.StatusForbidden},
+		{"web referrer", map[string]string{"Referer": "https://other.example/", "Authorization": "Bearer secret"}, http.StatusForbidden},
+		{"cross site fetch", map[string]string{"Sec-Fetch-Site": "cross-site", "Authorization": "Bearer secret"}, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/add", strings.NewReader(`{"url":"https://example.com/page","title":"Example","text":"Submitted from curl."}`))
+			req.Header.Set("Content-Type", "application/json")
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("POST /api/add status = %d, want %d: %s", rec.Code, tc.want, rec.Body)
+			}
+			if tc.want == http.StatusCreated && len(rec.Result().Cookies()) != 0 {
+				t.Fatal("token submission created a browser session")
+			}
+		})
+	}
+}
+
+func TestUnconfiguredAccessTokenStillRequiresCSRF(t *testing.T) {
+	_, handler := newConfigurationTestServer(t, "none", "")
+	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/nogon/api/history", strings.NewReader(`{"query":"example"}`), map[string]string{
+		"Authorization": "Bearer invalid", "Content-Type": "application/json",
+	})
+	if rec.Code != http.StatusForbidden || strings.TrimSpace(rec.Body.String()) != "CSRF token mismatch" {
+		t.Fatalf("write without a configured token: %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestTokenLoginAcceptsCSRFTokenFromConfigResponse(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)
 	origin := "https://proxy.example"
@@ -981,7 +1026,7 @@ func TestCreateUserAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 			response := testutil.ServeHTTP(t, handler, http.MethodPost, "/nogon/api/users", strings.NewReader(string(body)), map[string]string{
-				"Authorization": "Bearer " + admin.Token, "Origin": "nogon://", "Content-Type": "application/json",
+				"Authorization": "Bearer " + admin.Token, "Content-Type": "application/json",
 			})
 			if response.Code != http.StatusCreated {
 				t.Fatalf("create status = %d, want 201: %s", response.Code, response.Body)

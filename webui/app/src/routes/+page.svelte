@@ -191,11 +191,8 @@
   let searchInProgress = $state(false);
   let completedSearchMessage = $state('');
   let latestSearchRequest = 0;
-  let latestPageRequest = 0;
-  let accumulatedDocs = $state<SearchResult[]>([]);
-  let pageKey = $state('');
-  let hasMore = $state(false);
-  let loadingMoreForQuery = $state('');
+  let pendingPageRequest = 0;
+  const hasMore = $derived(!!lastResults?.page_key);
   let sentinelEl = $state<HTMLElement | undefined>();
   let highlightIdx = $state(0);
   const currentSort = $derived(sortValueFromQuery(query, config.search));
@@ -454,7 +451,7 @@
   });
 
   const mergedResults = $derived(
-    mergeSearchResults(accumulatedDocs, lastResults?.semantic_hits, {
+    mergeSearchResults(lastResults?.documents ?? [], lastResults?.semantic_hits, {
       semanticEnabled: semanticOn && config.semanticEnabled,
       weight: semanticWeight,
       sort: currentSort,
@@ -462,16 +459,6 @@
     }),
   );
 
-  const historyLen = $derived((lastResults?.history as any)?.length || 0);
-  const docsLen = $derived(mergedResults.length);
-  const totalResults = $derived(historyLen + docsLen);
-  const resultCount = $derived(Math.max(lastResults?.total ?? 0, totalResults));
-  const hasResults = $derived(!searchPending && totalResults > 0);
-  const showPreviewPanel = $derived(
-    hasResults &&
-      !disablePreviews &&
-      (previewState.fullscreen || (previewState.panelOpen && previewState.isDesktop)),
-  );
   const displayResults = $derived<DisplayResult[]>([
     ...(lastResults?.history ?? []).map((r): DisplayResult => ({
       ...r,
@@ -480,6 +467,14 @@
     })),
     ...mergedResults.map((r): DisplayResult => ({ ...r, isPinned: false, isHistoryResult: false })),
   ]);
+  const totalResults = $derived(displayResults.length);
+  const resultCount = $derived(Math.max(lastResults?.total ?? 0, totalResults));
+  const hasResults = $derived(!searchPending && totalResults > 0);
+  const showPreviewPanel = $derived(
+    hasResults &&
+      !disablePreviews &&
+      (previewState.fullscreen || (previewState.panelOpen && previewState.isDesktop)),
+  );
   const panelResult = $derived(
     displayResults.find(
       (result) =>
@@ -752,18 +747,15 @@
 
   function sendQuery(q: string) {
     searchInProgress = true;
-    latestPageRequest = 0;
-    loadingMoreForQuery = '';
-    pageKey = '';
-    hasMore = false;
+    pendingPageRequest = 0;
     latestSearchRequest =
       wsManager?.send(JSON.stringify(buildSearchQuery(q, searchQueryOpts()))) ?? 0;
   }
 
   function loadMoreResults() {
-    if (searchPending || !pageKey || !hasMore || loadingMoreForQuery) return;
-    loadingMoreForQuery = query;
-    latestPageRequest =
+    const pageKey = lastResults?.page_key;
+    if (searchPending || !pageKey || pendingPageRequest) return;
+    pendingPageRequest =
       wsManager?.sendImmediate(JSON.stringify(buildSearchQuery(query, searchQueryOpts(pageKey)))) ??
       0;
   }
@@ -835,29 +827,25 @@
 
   function renderResults(event: MessageEvent, request: WebSocketRequest) {
     if (!query) return;
-    const isLoadMore =
-      request.id === latestPageRequest && !searchPending && loadingMoreForQuery === query;
-    if (
-      !isLoadMore &&
-      (request.id !== latestSearchRequest || request.message !== currentSearchMessage)
-    )
+    if (request.id === pendingPageRequest && !searchPending && lastResults) {
+      const page = parseSearchResults(event.data);
+      lastResults = {
+        ...lastResults,
+        ...page,
+        documents: [...(lastResults.documents ?? []), ...(page.documents ?? [])],
+        page_key: page.page_key,
+      };
+      pendingPageRequest = 0;
       return;
-    const res = parseSearchResults(event.data);
-    loadingMoreForQuery = '';
-    if (isLoadMore) {
-      accumulatedDocs = [...accumulatedDocs, ...(res.documents ?? [])];
-      lastResults = { ...lastResults!, ...res, documents: accumulatedDocs };
-    } else {
-      searchInProgress = false;
-      completedSearchMessage = request.message;
-      accumulatedDocs = res.documents ?? [];
-      lastResults = res;
-      autocomplete = (query && res.query_suggestion) || '';
-      highlightIdx = 0;
-      if (!isComposing) resultsShown = true;
     }
-    hasMore = !!res.page_key;
-    pageKey = res.page_key ?? '';
+    if (request.id !== latestSearchRequest || request.message !== currentSearchMessage) return;
+    const res = parseSearchResults(event.data);
+    lastResults = { ...res, documents: res.documents ?? [] };
+    searchInProgress = false;
+    completedSearchMessage = request.message;
+    autocomplete = res.query_suggestion || '';
+    highlightIdx = 0;
+    if (!isComposing) resultsShown = true;
   }
 
   function openResult(url: string, title: string, newWindow = false, sourceUrl = url) {
@@ -1037,16 +1025,13 @@
 
   function removeMatchingResults(matches: (doc: SearchResult) => boolean) {
     if (!lastResults) return;
-    lastResults = removeSearchResults({ ...lastResults, documents: accumulatedDocs }, matches);
-    accumulatedDocs = lastResults.documents ?? [];
+    lastResults = removeSearchResults(lastResults, matches);
     highlightIdx = Math.min(highlightIdx, Math.max(0, totalResults - 1));
     facetsCache = new Map();
     // Discard a page fetched before deletion so it cannot restore stale results.
-    latestPageRequest = 0;
-    loadingMoreForQuery = '';
+    pendingPageRequest = 0;
     if (lastResults.total === 0 && totalResults === 0) {
-      hasMore = false;
-      pageKey = '';
+      lastResults.page_key = undefined;
     }
   }
 
@@ -1509,13 +1494,9 @@
       searchInProgress = false;
       completedSearchMessage = '';
       latestSearchRequest = 0;
-      latestPageRequest = 0;
+      pendingPageRequest = 0;
       autocomplete = '';
       lastResults = null;
-      accumulatedDocs = [];
-      pageKey = '';
-      hasMore = false;
-      loadingMoreForQuery = '';
     }
   });
   // Persist and react to semantic setting changes.
@@ -1569,9 +1550,7 @@
     if (!el) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMoreForQuery) {
-          loadMoreResults();
-        }
+        if (entries[0].isIntersecting) loadMoreResults();
       },
       { rootMargin: '200px' },
     );
@@ -2384,8 +2363,7 @@
                               variant="outline"
                               size="sm"
                               class="border-nogon-indigo text-nogon-indigo hover:bg-nogon-indigo/10 h-7 border-[2px] text-xs"
-                              onclick={() =>
-                                exportJSON({ ...lastResults!, documents: accumulatedDocs })}
+                              onclick={() => exportJSON(lastResults!)}
                             >
                               JSON
                             </Button>
@@ -2393,8 +2371,7 @@
                               variant="outline"
                               size="sm"
                               class="border-nogon-indigo text-nogon-indigo hover:bg-nogon-indigo/10 h-7 border-[2px] text-xs"
-                              onclick={() =>
-                                exportCSV({ ...lastResults!, documents: accumulatedDocs }, query)}
+                              onclick={() => exportCSV(lastResults!, query)}
                             >
                               CSV
                             </Button>
@@ -2402,8 +2379,7 @@
                               variant="outline"
                               size="sm"
                               class="border-nogon-indigo text-nogon-indigo hover:bg-nogon-indigo/10 h-7 border-[2px] text-xs"
-                              onclick={() =>
-                                exportRSS({ ...lastResults!, documents: accumulatedDocs }, query)}
+                              onclick={() => exportRSS(lastResults!, query)}
                             >
                               RSS
                             </Button>
@@ -2670,7 +2646,7 @@
                 </div>
               </section>
             {/if}
-            {#if !searchPending && (hasMore || loadingMoreForQuery)}
+            {#if !searchPending && hasMore}
               <div bind:this={sentinelEl} class="flex items-center justify-center py-4">
                 <span class="font-inter text-text-brand-muted text-sm">Loading more…</span>
               </div>

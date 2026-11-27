@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { mockAPI, original, preview, previewPath } from './fixtures';
 import { emptySearchCapabilities } from '../../src/lib/search-schema';
 
@@ -592,21 +593,66 @@ for (const [query, deletionQuery] of [
   });
 }
 
-test('the mobile delete action removes the selected result', async ({ page, isMobile }) => {
-  test.skip(!isMobile, 'Mobile actions');
+test('JSON export includes all loaded pages and drops the cursor after the last page', async ({
+  page,
+}) => {
   await mockAPI(page);
+  const first = { url: original, title: 'First article', domain: 'example.com' };
+  const second = { ...first, url: original + '/two', title: 'Second article' };
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage((message) => {
+      const { page_key } = JSON.parse(String(message));
+      const response =
+        page_key === 'next'
+          ? { documents: [second] }
+          : { documents: [first], total: 2, page_key: 'next' };
+      socket.send(JSON.stringify(response));
+    });
+  });
+  await page.goto('/?q=article');
+  await expect(page.locator('[data-result]')).toHaveCount(2);
+  await expect(page.getByText('Loading more…')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Actions', exact: true }).click();
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'JSON', exact: true }).click();
+  const download = await downloaded;
+  const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
+  expect(exported.documents).toEqual([first, second]);
+  expect(exported.total).toBe(2);
+  expect(exported.page_key).toBeUndefined();
+});
+
+test('the delete action removes the selected result even when a page arrives late', async ({
+  page,
+  isMobile,
+}) => {
+  await mockAPI(page);
+  const doc = { url: original, title: preview.title, domain: 'example.com' };
+  let sendLatePage: (() => void) | undefined;
+  await page.routeWebSocket('**/search', (socket) => {
+    socket.onMessage((message) => {
+      if (JSON.parse(String(message)).page_key === 'next') {
+        sendLatePage = () => socket.send(JSON.stringify({ documents: [doc], total: 1 }));
+      } else {
+        socket.send(JSON.stringify({ documents: [doc], total: 1, page_key: 'next' }));
+      }
+    });
+  });
   const requests: unknown[] = [];
   await page.route('**/api/delete', async (route) => {
     requests.push(route.request().postDataJSON());
     await route.fulfill({ json: { deleted: 1 } });
   });
   await page.goto('/?q=article');
+  await expect.poll(() => !!sendLatePage).toBe(true);
   await openActions(page);
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Delete result', exact: true })
-    .click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const actions = page.getByRole(isMobile ? 'dialog' : 'menu');
+  await actions.getByRole('button', { name: 'Delete result', exact: true }).click();
+  await expect(actions).toHaveCount(0);
+  await expect(page.locator('[data-result]')).toHaveCount(0);
+  sendLatePage!();
+  await page.getByRole('button', { name: 'Actions', exact: true }).click();
+  await expect(page.getByText('0 results', { exact: true })).toBeVisible();
   await expect(page.locator('[data-result]')).toHaveCount(0);
   expect(requests).toEqual([{ query: `url:"${original}"` }]);
 });

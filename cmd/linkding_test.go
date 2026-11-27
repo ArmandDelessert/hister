@@ -134,7 +134,7 @@ func TestImportLinkdingPaginatesAndMapsBookmarks(t *testing.T) {
 	})}
 	target := client.New("http://nogon.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
 
-	stats, err := importLinkding(
+	stats, err := importService(
 		context.Background(),
 		source,
 		target,

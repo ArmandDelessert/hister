@@ -360,20 +360,20 @@ func runZIMImport(ctx context.Context, cmd *cobra.Command, filename string) (ser
 	}
 	clientOpts = append(clientOpts, client.WithHTTPClient(httpClient))
 	skip, _ := cmd.Flags().GetBool("skip-existing")
-	buffer, err := newServiceImportBuffer("kiwix", newClient(clientOpts...), nil, nil, serviceImportOptions{
+	importer, err := newDocumentImporter("kiwix", newClient(clientOpts...), nil, nil, serviceImportOptions{
 		BatchSize: batchSize, SkipExisting: skip, StartDate: dates.From, EndDate: dates.To, Label: newDocumentLabelOverride(cmd),
 	})
 	if err != nil {
 		return stats, err
 	}
-	err = importZIMArchive(ctx, cmd, archive, buffer, resolver, maxSize)
+	err = importZIMArchive(ctx, cmd, archive, importer, resolver, maxSize)
 	if ctx.Err() != nil {
 		err = ctx.Err()
 	}
-	return buffer.stats, err
+	return importer.stats, err
 }
 
-func importZIMArchive(ctx context.Context, cmd *cobra.Command, reader *zim.Archive, buffer *serviceImportBuffer, resolver *zimURLResolver, maxSize int64) error {
+func importZIMArchive(ctx context.Context, cmd *cobra.Command, reader *zim.Archive, importer *documentImporter, resolver *zimURLResolver, maxSize int64) error {
 	metadata := make(map[string]string)
 	for _, name := range []string{"Name", "Date"} {
 		if err := ctx.Err(); err != nil {
@@ -399,7 +399,7 @@ func importZIMArchive(ctx context.Context, cmd *cobra.Command, reader *zim.Archi
 	}
 	defer func() {
 		if ctx.Err() == nil {
-			buffer.Flush()
+			importer.Flush()
 		}
 	}()
 	namespace := byte('C')
@@ -408,7 +408,7 @@ func importZIMArchive(ctx context.Context, cmd *cobra.Command, reader *zim.Archi
 		resolver.prefix = "A/"
 	}
 	reportError := func(path string, err error) error {
-		buffer.stats.Errors++
+		importer.stats.Errors++
 		_, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "ZIM entry %q: %v\n", path, err)
 		return writeErr
 	}
@@ -424,20 +424,20 @@ func importZIMArchive(ctx context.Context, cmd *cobra.Command, reader *zim.Archi
 			return fmt.Errorf("read ZIM directory entry %d: %w", index, err)
 		}
 		if item.Namespace() != namespace {
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			continue
 		}
 		if item.IsRedirect() {
 			if target, err := item.RedirectTarget(); err == nil && target.Namespace() == namespace {
 				resolver.redirects[item.Path()] = target.Path()
 			}
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			continue
 		}
 		mime, _, _ := strings.Cut(item.MIMEType(), ";")
 		mime = strings.ToLower(strings.TrimSpace(mime))
 		if mime != "text/html" && mime != "application/xhtml+xml" && mime != "text/plain" {
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			continue
 		}
 		entry, err := readZIMArticle(item, maxSize)
@@ -449,7 +449,7 @@ func importZIMArchive(ctx context.Context, cmd *cobra.Command, reader *zim.Archi
 		}
 		original := resolver.resolve(entry)
 		if original == "" {
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: Skipping ZIM entry %q: original URL could not be identified. Supply --base-url if archive paths match the original website.\n", entry.Path); err != nil {
 				return err
 			}
@@ -489,7 +489,7 @@ func importZIMArchive(ctx context.Context, cmd *cobra.Command, reader *zim.Archi
 				continue
 			}
 		}
-		buffer.Add(ctx, d, nil)
+		importer.Add(ctx, d, nil)
 	}
 	return nil
 }

@@ -126,7 +126,7 @@ func TestImportLinkwardenPaginatesAndMapsDocuments(t *testing.T) {
 	})}
 	target := client.New("http://nogon.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
 
-	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 2})
+	stats, err := importService(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestImportLinkwardenDownloadsMissingURLContent(t *testing.T) {
 	})}
 	target := client.New("http://nogon.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
 
-	stats, err := importLinkwarden(
+	stats, err := importService(
 		context.Background(),
 		source,
 		target,
@@ -344,7 +344,7 @@ func TestImportLinkwardenSkipsExistingNormalizedURL(t *testing.T) {
 	})}
 	target := client.New("http://nogon.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
 
-	stats, err := importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{
+	stats, err := importService(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{
 		BatchSize:    10,
 		SkipExisting: true,
 	})
@@ -358,16 +358,40 @@ func TestImportLinkwardenSkipsExistingNormalizedURL(t *testing.T) {
 
 func TestImportLinkwardenRejectsRepeatedCursor(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Get("cursor") == "" {
+			return jsonHTTPResponse(req, http.StatusOK, `{"data":{"nextCursor":7,"links":[
+				{"url":"https://example.com/accepted","textContent":"one"},
+				{"url":"https://example.com/rejected","textContent":"two"}
+			]}}`), nil
+		}
 		return jsonHTTPResponse(req, http.StatusOK, `{"data":{"nextCursor":7,"links":[]}}`), nil
 	})}
 	source, err := newLinkwardenClient("https://links.example", "token", httpClient)
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := client.New("http://nogon.example")
-	_, err = importLinkwarden(context.Background(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 10})
+	var submitted []string
+	target := client.New("http://nogon.example", client.WithMaxBatchBodyBytes(40<<20), client.WithHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			var batch struct{ Ops []client.Document }
+			if err := json.NewDecoder(req.Body).Decode(&batch); err != nil {
+				return nil, err
+			}
+			for _, op := range batch.Ops {
+				submitted = append(submitted, op.URL)
+			}
+			return jsonHTTPResponse(req, http.StatusOK, `{"results":[{"status":201},{"status":422}]}`), nil
+		}),
+	}))
+	stats, err := importService(t.Context(), source, target, document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 10})
 	if err == nil || !strings.Contains(err.Error(), "repeated pagination cursor 7") {
 		t.Fatalf("import error = %v, want repeated cursor error", err)
+	}
+	if want := []string{"https://example.com/accepted", "https://example.com/rejected"}; !reflect.DeepEqual(submitted, want) {
+		t.Errorf("submitted URLs = %v, want %v", submitted, want)
+	}
+	if want := (serviceImportStats{Imported: 1, Errors: 1}); stats != want {
+		t.Errorf("stats = %+v, want %+v", stats, want)
 	}
 }
 

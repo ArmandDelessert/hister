@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/nogon/client"
 	"github.com/asciimoo/nogon/server/document"
 
 	"github.com/rs/zerolog/log"
@@ -76,7 +75,7 @@ The global --token flag remains the access token for the destination Nogon serve
 	},
 	RunE: serviceImportRunE(
 		"Shaarli", shaarliSecretEnv, "API secret",
-		newShaarliClient, importShaarli,
+		newShaarliClient,
 		func(source *shaarliClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
 	),
 }
@@ -216,41 +215,21 @@ func (c *shaarliClient) walkChangedLinks(ctx context.Context, visit func(shaarli
 	return nil
 }
 
-func importShaarli(
-	ctx context.Context,
-	source *shaarliClient,
-	target *client.Client,
-	languageDetector document.LanguageDetector,
-	contentFetcher serviceContentFetcher,
-	options serviceImportOptions,
-) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(
-		shaarliSourceMetadataValue,
-		target,
-		languageDetector,
-		contentFetcher,
-		options,
-	)
-	if err != nil {
-		return serviceImportStats{}, err
-	}
-
-	err = source.walkLinks(ctx, func(link shaarliLink) {
-		d, contentRequest, err := source.document(link, languageDetector)
+func (c *shaarliClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
+	return c.walkLinks(ctx, func(link shaarliLink) {
+		d, contentRequest, err := c.document(link, importer.languageDetector)
 		if errors.Is(err, errShaarliMissingURL) {
 			log.Debug().Int64("shaarli_id", link.ID).Msg("Skipping Shaarli record without a URL or short URL")
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			return
 		}
 		if err != nil {
 			log.Warn().Err(err).Int64("shaarli_id", link.ID).Msg("Failed to convert Shaarli record, skipping")
-			buffer.stats.Errors++
+			importer.stats.Errors++
 			return
 		}
-		buffer.Add(ctx, d, contentRequest)
+		importer.Add(ctx, d, contentRequest)
 	})
-	buffer.Flush()
-	return buffer.stats, err
 }
 
 func (c *shaarliClient) document(

@@ -243,6 +243,14 @@ func (c *serviceImportClosingCrawler) Close() error {
 	return nil
 }
 
+type serviceImportTestSource func(context.Context, *documentImporter) error
+
+func (serviceImportTestSource) importName() string { return "linkding" }
+
+func (read serviceImportTestSource) collectDocuments(ctx context.Context, importer *documentImporter) error {
+	return read(ctx, importer)
+}
+
 func TestServiceImportCommandFinishesAndClosesCrawler(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -270,14 +278,16 @@ func TestServiceImportCommandFinishesAndClosesCrawler(t *testing.T) {
 			var output bytes.Buffer
 			command.SetOut(&output)
 			backend := &serviceImportClosingCrawler{}
-			run := serviceImportRunE("Linkding", linkdingTokenEnv, "API token", newLinkdingClient,
-				func(gotCtx context.Context, _ *linkdingClient, _ *client.Client, _ document.LanguageDetector, fetcher serviceContentFetcher, _ serviceImportOptions) (serviceImportStats, error) {
-					if gotCtx != ctx {
-						t.Error("import did not receive the command context")
-					}
-					fetcher.(*crawlerServiceContentFetcher).crawler = backend
-					return tc.stats, tc.runErr
-				}, nil)
+			source := serviceImportTestSource(func(gotCtx context.Context, importer *documentImporter) error {
+				if gotCtx != ctx {
+					t.Error("import did not receive the command context")
+				}
+				importer.contentFetcher.(*crawlerServiceContentFetcher).crawler = backend
+				importer.stats = tc.stats
+				return tc.runErr
+			})
+			run := serviceImportRunE("Linkding", linkdingTokenEnv, "API token",
+				func(string, string, *http.Client) (serviceImportTestSource, error) { return source, nil }, nil)
 			err := run(command, []string{"https://source.example"})
 			if ExitCode(err) != tc.wantExit || (tc.runErr != nil && !errors.Is(err, tc.runErr)) {
 				t.Errorf("result = %v, exit = %d, want %d with cause %v", err, ExitCode(err), tc.wantExit, tc.runErr)
@@ -293,7 +303,7 @@ func TestServiceImportCommandFinishesAndClosesCrawler(t *testing.T) {
 	}
 }
 
-func TestServiceImportBufferDownloadsMissingFavicon(t *testing.T) {
+func TestDocumentImporterDownloadsMissingFavicon(t *testing.T) {
 	var received *document.Document
 	faviconDownloads := 0
 	targetHTTPClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -312,7 +322,7 @@ func TestServiceImportBufferDownloadsMissingFavicon(t *testing.T) {
 		return jsonHTTPResponse(req, http.StatusOK, `{"results":[{"status":201}]}`), nil
 	})}
 	target := client.New("http://nogon.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
-	buffer, err := newServiceImportBuffer(
+	importer, err := newDocumentImporter(
 		"test",
 		target,
 		document.NewNullLanguageDetector(),
@@ -335,7 +345,7 @@ func TestServiceImportBufferDownloadsMissingFavicon(t *testing.T) {
 		Text:      "Contents",
 		Processed: true,
 	}
-	buffer.Add(context.Background(), d, nil)
+	importer.Add(context.Background(), d, nil)
 
 	if received == nil {
 		t.Fatal("no document was submitted")
@@ -346,8 +356,8 @@ func TestServiceImportBufferDownloadsMissingFavicon(t *testing.T) {
 	if faviconDownloads != 1 {
 		t.Errorf("favicon downloads = %d, want one", faviconDownloads)
 	}
-	if buffer.stats.Imported != 1 || buffer.stats.Errors != 0 {
-		t.Errorf("stats = %+v, want one import without errors", buffer.stats)
+	if importer.stats.Imported != 1 || importer.stats.Errors != 0 {
+		t.Errorf("stats = %+v, want one import without errors", importer.stats)
 	}
 }
 

@@ -80,45 +80,41 @@ func importRaindropCSV(
 	if err != nil {
 		return serviceImportStats{}, err
 	}
-	buffer, err := newServiceImportBuffer(raindropSourceMetadataValue, target, languageDetector, contentFetcher, options)
-	if err != nil {
-		return serviceImportStats{}, err
-	}
+	return importService(ctx, source, target, languageDetector, contentFetcher, options)
+}
 
+func (*raindropCSVReader) importName() string { return raindropSourceMetadataValue }
+
+func (r *raindropCSVReader) collectDocuments(ctx context.Context, importer *documentImporter) error {
 	for record := 2; ; record++ {
-		if err = ctx.Err(); err != nil {
-			break
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		var bookmark map[string]string
-		bookmark, err = source.Read()
+		bookmark, err := r.Read()
 		if errors.Is(err, io.EOF) {
-			err = nil
-			break
+			return nil
 		}
 		if errors.Is(err, csv.ErrFieldCount) {
 			log.Warn().Err(err).Int("record", record).Msg("Skipping Raindrop CSV record with an incorrect number of fields")
-			buffer.stats.Errors++
+			importer.stats.Errors++
 			continue
 		}
 		if err != nil {
-			err = fmt.Errorf("read CSV record %d: %w", record, err)
-			break
+			return fmt.Errorf("read CSV record %d: %w", record, err)
 		}
 		if bookmark["url"] == "" {
 			log.Debug().Int("record", record).Msg("Skipping Raindrop bookmark without a URL")
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			continue
 		}
-		d, request, conversionErr := raindropDocument(raindropCSVBookmark(bookmark), languageDetector)
+		d, request, conversionErr := raindropDocument(raindropCSVBookmark(bookmark), importer.languageDetector)
 		if conversionErr != nil {
 			log.Warn().Err(conversionErr).Int("record", record).Msg("Failed to convert Raindrop bookmark, skipping")
-			buffer.stats.Errors++
+			importer.stats.Errors++
 			continue
 		}
-		buffer.Add(ctx, d, request)
+		importer.Add(ctx, d, request)
 	}
-	buffer.Flush()
-	return buffer.stats, err
 }
 
 func raindropCSVBookmark(record map[string]string) raindropBookmark {

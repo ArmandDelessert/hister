@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/nogon/client"
 	"github.com/asciimoo/nogon/server/document"
 
 	"github.com/rs/zerolog/log"
@@ -114,7 +113,7 @@ The global --token flag remains the access token for the destination Nogon serve
 	},
 	RunE: serviceImportRunE(
 		"Readeck", readeckTokenEnv, "API token",
-		newReadeckClient, importReadeck,
+		newReadeckClient,
 		func(source *readeckClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
 	),
 }
@@ -308,58 +307,39 @@ func (c *readeckClient) syncBookmarks(
 	return bookmarks, missing, nil
 }
 
-func importReadeck(
-	ctx context.Context,
-	source *readeckClient,
-	target *client.Client,
-	languageDetector document.LanguageDetector,
-	contentFetcher serviceContentFetcher,
-	options serviceImportOptions,
-) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(
-		readeckSourceMetadataValue,
-		target,
-		languageDetector,
-		contentFetcher,
-		options,
-	)
+func (c *readeckClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
+	ids, err := c.changedBookmarkIDs(ctx)
 	if err != nil {
-		return serviceImportStats{}, err
+		return err
 	}
-
-	ids, err := source.changedBookmarkIDs(ctx)
-	if err != nil {
-		return buffer.stats, err
-	}
-	for start := 0; start < len(ids); start += options.BatchSize {
-		end := min(start+options.BatchSize, len(ids))
-		bookmarks, missing, err := source.syncBookmarks(ctx, ids[start:end])
+	for start := 0; start < len(ids); start += importer.options.BatchSize {
+		end := min(start+importer.options.BatchSize, len(ids))
+		bookmarks, missing, err := c.syncBookmarks(ctx, ids[start:end])
 		if err != nil {
-			buffer.Flush()
-			return buffer.stats, err
+			return err
 		}
-		buffer.stats.Skipped += missing
+		importer.stats.Skipped += missing
 		for _, synced := range bookmarks {
 			if synced.Bookmark.IsDeleted {
-				buffer.stats.Skipped++
+				importer.stats.Skipped++
 				continue
 			}
-			d, contentRequest, err := source.document(synced, languageDetector)
+			d, contentRequest, err := c.document(synced, importer.languageDetector)
 			if errors.Is(err, errReadeckMissingURL) {
 				log.Debug().Str("readeck_id", synced.Bookmark.ID).Msg("Skipping Readeck bookmark without a URL")
-				buffer.stats.Skipped++
+				importer.stats.Skipped++
 				continue
 			}
 			if err != nil {
 				log.Warn().Err(err).Str("readeck_id", synced.Bookmark.ID).Msg("Failed to convert Readeck bookmark, skipping")
-				buffer.stats.Errors++
+				importer.stats.Errors++
 				continue
 			}
-			buffer.Add(ctx, d, contentRequest)
+			importer.Add(ctx, d, contentRequest)
 		}
 	}
-	buffer.Flush()
-	return buffer.stats, nil
+
+	return nil
 }
 
 func (c *readeckClient) document(

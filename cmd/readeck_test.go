@@ -184,7 +184,7 @@ func TestImportReadeckUsesIncrementalSyncAndMapsStoredContent(t *testing.T) {
 	})}
 	target := client.New("http://nogon.example", client.WithHTTPClient(targetHTTPClient), client.WithMaxBatchBodyBytes(40<<20))
 
-	stats, err := importReadeck(
+	stats, err := importService(
 		context.Background(),
 		source,
 		target,

@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asciimoo/nogon/client"
 	"github.com/asciimoo/nogon/server/document"
 
 	"github.com/rs/zerolog/log"
@@ -130,7 +129,7 @@ The global --token flag remains the access token for the destination Nogon serve
 	},
 	RunE: serviceImportRunE(
 		"wallabag", wallabagTokenEnv, "API access token",
-		newWallabagClient, importWallabag,
+		newWallabagClient,
 		func(source *wallabagClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
 	),
 }
@@ -194,53 +193,32 @@ func (c *wallabagClient) entries(ctx context.Context, page int) (*wallabagEntrie
 	return &response, nil
 }
 
-func importWallabag(
-	ctx context.Context,
-	source *wallabagClient,
-	target *client.Client,
-	languageDetector document.LanguageDetector,
-	contentFetcher serviceContentFetcher,
-	options serviceImportOptions,
-) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(
-		wallabagSourceMetadataValue,
-		target,
-		languageDetector,
-		contentFetcher,
-		options,
-	)
-	if err != nil {
-		return serviceImportStats{}, err
-	}
-
+func (c *wallabagClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
 	for pageNumber := 1; ; pageNumber++ {
-		page, err := source.entries(ctx, pageNumber)
+		page, err := c.entries(ctx, pageNumber)
 		if err != nil {
-			buffer.Flush()
-			return buffer.stats, err
+			return err
 		}
 		for _, entry := range page.Embedded.Items {
-			d, contentRequest, err := wallabagDocument(entry, languageDetector)
+			d, contentRequest, err := wallabagDocument(entry, importer.languageDetector)
 			if errors.Is(err, errWallabagMissingURL) {
 				log.Debug().Int64("wallabag_id", entry.ID).Msg("Skipping wallabag entry without a URL")
-				buffer.stats.Skipped++
+				importer.stats.Skipped++
 				continue
 			}
 			if err != nil {
 				log.Warn().Err(err).Int64("wallabag_id", entry.ID).Msg("Failed to convert wallabag entry, skipping")
-				buffer.stats.Errors++
+				importer.stats.Errors++
 				continue
 			}
-			buffer.Add(ctx, d, contentRequest)
+			importer.Add(ctx, d, contentRequest)
 		}
 
-		if (page.Pages > 0 && page.Page >= page.Pages) || (page.Pages == 0 && len(page.Embedded.Items) < source.pageSize) {
-			buffer.Flush()
-			return buffer.stats, nil
+		if (page.Pages > 0 && page.Page >= page.Pages) || (page.Pages == 0 && len(page.Embedded.Items) < c.pageSize) {
+			return nil
 		}
 		if pageNumber == int(^uint(0)>>1) {
-			buffer.Flush()
-			return buffer.stats, errors.New("wallabag pagination did not advance")
+			return errors.New("wallabag pagination did not advance")
 		}
 	}
 }

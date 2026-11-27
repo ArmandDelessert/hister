@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/nogon/client"
 	"github.com/asciimoo/nogon/server/document"
 
 	"github.com/rs/zerolog/log"
@@ -82,7 +81,7 @@ The global --token flag remains the access token for the destination Nogon serve
 	},
 	RunE: serviceImportRunE(
 		"Linkwarden", linkwardenTokenEnv, "API token",
-		newLinkwardenClient, importLinkwarden,
+		newLinkwardenClient,
 		func(source *linkwardenClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
 	),
 }
@@ -119,44 +118,26 @@ func (c *linkwardenClient) search(ctx context.Context, cursor *int) (*linkwarden
 	return response.Data, nil
 }
 
-func importLinkwarden(
-	ctx context.Context,
-	source *linkwardenClient,
-	target *client.Client,
-	languageDetector document.LanguageDetector,
-	contentFetcher serviceContentFetcher,
-	options serviceImportOptions,
-) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(
-		linkwardenSourceMetadataValue,
-		target,
-		languageDetector,
-		contentFetcher,
-		options,
-	)
-	if err != nil {
-		return serviceImportStats{}, err
-	}
+func (c *linkwardenClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
 	var cursor *int
 	seenCursors := make(map[int]struct{})
 
 	for {
-		page, err := source.search(ctx, cursor)
+		page, err := c.search(ctx, cursor)
 		if err != nil {
-			buffer.Flush()
-			return buffer.stats, err
+			return err
 		}
 
 		for _, link := range page.Links {
-			d, err := linkwardenDocument(link, languageDetector)
+			d, err := linkwardenDocument(link, importer.languageDetector)
 			if errors.Is(err, errLinkwardenMissingURL) {
 				log.Debug().Int64("linkwarden_id", link.ID).Msg("Skipping Linkwarden record without a URL")
-				buffer.stats.Skipped++
+				importer.stats.Skipped++
 				continue
 			}
 			if err != nil {
 				log.Warn().Err(err).Int64("linkwarden_id", link.ID).Msg("Failed to convert Linkwarden record, skipping")
-				buffer.stats.Errors++
+				importer.stats.Errors++
 				continue
 			}
 			var contentRequest *serviceContentRequest
@@ -167,16 +148,14 @@ func importLinkwarden(
 					SourceTitle: strings.TrimSpace(link.Name),
 				}
 			}
-			buffer.Add(ctx, d, contentRequest)
+			importer.Add(ctx, d, contentRequest)
 		}
 
 		if page.NextCursor == nil {
-			buffer.Flush()
-			return buffer.stats, nil
+			return nil
 		}
 		if _, seen := seenCursors[*page.NextCursor]; seen {
-			buffer.Flush()
-			return buffer.stats, fmt.Errorf("linkwarden returned the repeated pagination cursor %d", *page.NextCursor)
+			return fmt.Errorf("linkwarden returned the repeated pagination cursor %d", *page.NextCursor)
 		}
 		seenCursors[*page.NextCursor] = struct{}{}
 		cursor = page.NextCursor

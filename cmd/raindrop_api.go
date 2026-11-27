@@ -167,13 +167,17 @@ func importRaindrop(
 	contentFetcher serviceContentFetcher,
 	options serviceImportOptions,
 ) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(raindropSourceMetadataValue, target, languageDetector, contentFetcher, options)
-	if err != nil {
-		return serviceImportStats{}, err
+	stats, err := importService(ctx, source, target, languageDetector, contentFetcher, options)
+	if err == nil {
+		err = ctx.Err()
 	}
-	collections, err := source.collections(ctx)
+	return stats, err
+}
+
+func (c *raindropClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
+	collections, err := c.collections(ctx)
 	if err != nil {
-		return buffer.stats, err
+		return err
 	}
 	type pendingItem struct {
 		raindropItem
@@ -182,14 +186,14 @@ func importRaindrop(
 	var items []pendingItem
 	seen := make(map[int64]bool)
 	for pageNumber := 0; ; pageNumber++ {
-		page, err := source.bookmarks(ctx, pageNumber)
+		page, err := c.bookmarks(ctx, pageNumber)
 		if err != nil {
-			return buffer.stats, err
+			return err
 		}
 		newItems := 0
 		for _, item := range page {
 			if item.ID <= 0 {
-				return buffer.stats, errors.New("raindrop returned a bookmark without a valid ID")
+				return errors.New("raindrop returned a bookmark without a valid ID")
 			}
 			if seen[item.ID] {
 				continue
@@ -200,9 +204,9 @@ func importRaindrop(
 			items = append(items, pendingItem{raindropItem: item, updated: updated})
 		}
 		if len(page) > 0 && newItems == 0 {
-			return buffer.stats, fmt.Errorf("raindrop pagination did not advance on page %d", pageNumber)
+			return fmt.Errorf("raindrop pagination did not advance on page %d", pageNumber)
 		}
-		if len(page) < source.pageSize {
+		if len(page) < c.pageSize {
 			break
 		}
 	}
@@ -213,21 +217,20 @@ func importRaindrop(
 	})
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
-			buffer.Flush()
-			return buffer.stats, err
+			return err
 		}
 		if strings.TrimSpace(item.URL) == "" {
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			continue
 		}
-		d, request, err := raindropDocument(item.bookmark(collections), languageDetector)
+		d, request, err := raindropDocument(item.bookmark(collections), importer.languageDetector)
 		if err != nil {
 			log.Warn().Err(err).Int64("raindrop_id", item.ID).Msg("Failed to convert Raindrop bookmark, skipping")
-			buffer.stats.Errors++
+			importer.stats.Errors++
 			continue
 		}
-		buffer.Add(ctx, d, request)
+		importer.Add(ctx, d, request)
 	}
-	buffer.Flush()
-	return buffer.stats, ctx.Err()
+
+	return nil
 }

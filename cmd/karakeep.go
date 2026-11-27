@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/nogon/client"
 	"github.com/asciimoo/nogon/server/document"
 
 	"github.com/rs/zerolog/log"
@@ -117,7 +116,7 @@ The global --token flag remains the access token for the destination Nogon serve
 	},
 	RunE: serviceImportRunE(
 		"Karakeep", karakeepTokenEnv, "API token",
-		newKarakeepClient, importKarakeep,
+		newKarakeepClient,
 		func(source *karakeepClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
 	),
 }
@@ -157,55 +156,35 @@ func (c *karakeepClient) bookmarks(ctx context.Context, cursor *string) (*karake
 	return &page, nil
 }
 
-func importKarakeep(
-	ctx context.Context,
-	source *karakeepClient,
-	target *client.Client,
-	languageDetector document.LanguageDetector,
-	contentFetcher serviceContentFetcher,
-	options serviceImportOptions,
-) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(
-		karakeepSourceMetadataValue,
-		target,
-		languageDetector,
-		contentFetcher,
-		options,
-	)
-	if err != nil {
-		return serviceImportStats{}, err
-	}
+func (c *karakeepClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
 	var cursor *string
 	seenCursors := make(map[string]struct{})
 
 	for {
-		page, err := source.bookmarks(ctx, cursor)
+		page, err := c.bookmarks(ctx, cursor)
 		if err != nil {
-			buffer.Flush()
-			return buffer.stats, err
+			return err
 		}
 		for _, bookmark := range page.Bookmarks {
-			d, contentRequest, err := karakeepDocument(bookmark, languageDetector)
+			d, contentRequest, err := karakeepDocument(bookmark, importer.languageDetector)
 			if errors.Is(err, errKarakeepMissingURL) {
 				log.Debug().Str("karakeep_id", bookmark.ID).Str("type", bookmark.Content.Type).Msg("Skipping Karakeep bookmark without a URL")
-				buffer.stats.Skipped++
+				importer.stats.Skipped++
 				continue
 			}
 			if err != nil {
 				log.Warn().Err(err).Str("karakeep_id", bookmark.ID).Msg("Failed to convert Karakeep bookmark, skipping")
-				buffer.stats.Errors++
+				importer.stats.Errors++
 				continue
 			}
-			buffer.Add(ctx, d, contentRequest)
+			importer.Add(ctx, d, contentRequest)
 		}
 
 		if page.NextCursor == nil {
-			buffer.Flush()
-			return buffer.stats, nil
+			return nil
 		}
 		if _, seen := seenCursors[*page.NextCursor]; seen {
-			buffer.Flush()
-			return buffer.stats, fmt.Errorf("karakeep returned the repeated pagination cursor %q", *page.NextCursor)
+			return fmt.Errorf("karakeep returned the repeated pagination cursor %q", *page.NextCursor)
 		}
 		seenCursors[*page.NextCursor] = struct{}{}
 		cursor = page.NextCursor

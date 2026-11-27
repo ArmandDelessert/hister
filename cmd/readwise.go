@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/nogon/client"
 	"github.com/asciimoo/nogon/server/document"
 
 	"github.com/rs/zerolog/log"
@@ -84,7 +83,7 @@ The global --token flag remains the access token for the destination Nogon serve
 		"Readwise", readwiseTokenEnv, "API token",
 		func(_ string, token string, httpClient *http.Client) (*readwiseClient, error) {
 			return newReadwiseClient(token, httpClient)
-		}, importReadwise,
+		},
 		nil,
 	),
 }
@@ -115,39 +114,26 @@ func (c *readwiseClient) documents(ctx context.Context, cursor string) (*readwis
 	return &page, nil
 }
 
-func importReadwise(
-	ctx context.Context,
-	source *readwiseClient,
-	target *client.Client,
-	languageDetector document.LanguageDetector,
-	contentFetcher serviceContentFetcher,
-	options serviceImportOptions,
-) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(readwiseSourceMetadataValue, target, languageDetector, contentFetcher, options)
-	if err != nil {
-		return serviceImportStats{}, err
-	}
-	err = source.walkDocuments(ctx, func(item readwiseItem) {
+func (c *readwiseClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
+	return c.walkDocuments(ctx, func(item readwiseItem) {
 		// Child records can share their parent's source URL. Importing them as
 		// documents would replace the parent's full content with a short passage.
 		if item.ParentID != "" || item.Category == "highlight" || item.Category == "note" {
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			return
 		}
-		d, request, err := readwiseDocument(item, languageDetector)
+		d, request, err := readwiseDocument(item, importer.languageDetector)
 		if errors.Is(err, errReadwiseMissingURL) {
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			return
 		}
 		if err != nil {
 			log.Warn().Err(err).Str("readwise_id", item.ID).Msg("Failed to convert Readwise document, skipping")
-			buffer.stats.Errors++
+			importer.stats.Errors++
 			return
 		}
-		buffer.Add(ctx, d, request)
+		importer.Add(ctx, d, request)
 	})
-	buffer.Flush()
-	return buffer.stats, err
 }
 
 func (c *readwiseClient) walkDocuments(ctx context.Context, visit func(readwiseItem)) error {

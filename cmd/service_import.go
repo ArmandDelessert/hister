@@ -38,6 +38,8 @@ type serviceAPIClient struct {
 	httpClient          *http.Client
 }
 
+func (c *serviceAPIClient) importName() string { return c.name }
+
 type serviceAPIError struct {
 	StatusCode int
 	Header     http.Header
@@ -285,12 +287,34 @@ type serviceImportRuntime struct {
 	options          serviceImportOptions
 }
 
+type serviceImportSource interface {
+	importName() string
+	collectDocuments(context.Context, *documentImporter) error
+}
+
+func importService(
+	ctx context.Context,
+	source serviceImportSource,
+	target *client.Client,
+	languageDetector document.LanguageDetector,
+	contentFetcher serviceContentFetcher,
+	options serviceImportOptions,
+) (serviceImportStats, error) {
+	importer, err := newDocumentImporter(source.importName(), target, languageDetector, contentFetcher, options)
+	if err != nil {
+		return serviceImportStats{}, err
+	}
+	err = source.collectDocuments(ctx, importer)
+	// Submit documents collected before a source error and include their results in the totals.
+	importer.Flush()
+	return importer.stats, err
+}
+
 // serviceImportRunE shares the command lifecycle while keeping source protocols
 // in their own clients. A nil setUpdatedAfter selects a full library import.
-func serviceImportRunE[T any](
+func serviceImportRunE[T serviceImportSource](
 	name, tokenEnv, credential string,
 	newSource func(string, string, *http.Client) (T, error),
-	importSource func(context.Context, T, *client.Client, document.LanguageDetector, serviceContentFetcher, serviceImportOptions) (serviceImportStats, error),
 	setUpdatedAfter func(T, int64),
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
@@ -317,13 +341,13 @@ func serviceImportRunE[T any](
 			return err
 		}
 		if setUpdatedAfter != nil {
-			updatedAfter, err := latestServiceUpdated(runtime.target, strings.ToLower(name))
+			updatedAfter, err := latestServiceUpdated(runtime.target, source.importName())
 			if err != nil {
 				return fmt.Errorf("failed to find the latest %s import: %w", name, err)
 			}
 			setUpdatedAfter(source, updatedAfter)
 		}
-		stats, err := importSource(cmd.Context(), source, runtime.target, runtime.languageDetector, runtime.contentFetcher, runtime.options)
+		stats, err := importService(cmd.Context(), source, runtime.target, runtime.languageDetector, runtime.contentFetcher, runtime.options)
 		if err != nil {
 			err = fmt.Errorf("import from %s failed: %w", name, err)
 		}
@@ -386,7 +410,7 @@ type serviceContentRequest struct {
 	StoredOnly  bool
 }
 
-type serviceImportBuffer struct {
+type documentImporter struct {
 	source           string
 	target           *client.Client
 	languageDetector document.LanguageDetector
@@ -396,17 +420,17 @@ type serviceImportBuffer struct {
 	documents        []*document.Document
 }
 
-func newServiceImportBuffer(
+func newDocumentImporter(
 	source string,
 	target *client.Client,
 	languageDetector document.LanguageDetector,
 	contentFetcher serviceContentFetcher,
 	options serviceImportOptions,
-) (*serviceImportBuffer, error) {
+) (*documentImporter, error) {
 	if options.BatchSize < 1 || options.BatchSize > maxImportBatchSize {
 		return nil, fmt.Errorf("batch size must be between 1 and %d", maxImportBatchSize)
 	}
-	return &serviceImportBuffer{
+	return &documentImporter{
 		source:           source,
 		target:           target,
 		languageDetector: languageDetector,
@@ -416,52 +440,52 @@ func newServiceImportBuffer(
 	}, nil
 }
 
-func (b *serviceImportBuffer) Add(ctx context.Context, d *document.Document, contentRequest *serviceContentRequest) {
-	if (b.options.StartDate != 0 && d.Added < b.options.StartDate) || (b.options.EndDate != 0 && d.Added > b.options.EndDate) {
-		log.Debug().Str("source", b.source).Str("url", d.URL).Int64("added", d.Added).Msg("Skipping service record outside of date range")
-		b.stats.Skipped++
+func (imp *documentImporter) Add(ctx context.Context, d *document.Document, contentRequest *serviceContentRequest) {
+	if (imp.options.StartDate != 0 && d.Added < imp.options.StartDate) || (imp.options.EndDate != 0 && d.Added > imp.options.EndDate) {
+		log.Debug().Str("source", imp.source).Str("url", d.URL).Int64("added", d.Added).Msg("Skipping service record outside of date range")
+		imp.stats.Skipped++
 		return
 	}
-	if b.options.SkipExisting {
-		exists, err := b.target.DocumentExists(d.URL)
+	if imp.options.SkipExisting {
+		exists, err := imp.target.DocumentExists(d.URL)
 		if err != nil {
-			log.Warn().Err(err).Str("source", b.source).Str("url", d.URL).Msg("Failed to check if document exists, skipping")
-			b.stats.Errors++
+			log.Warn().Err(err).Str("source", imp.source).Str("url", d.URL).Msg("Failed to check if document exists, skipping")
+			imp.stats.Errors++
 			return
 		}
 		if exists {
-			log.Debug().Str("source", b.source).Str("url", d.URL).Msg("Document already exists, skipping")
-			b.stats.Skipped++
+			log.Debug().Str("source", imp.source).Str("url", d.URL).Msg("Document already exists, skipping")
+			imp.stats.Skipped++
 			return
 		}
 	}
 	if contentRequest != nil {
-		if err := loadServiceContent(ctx, b.contentFetcher, d, *contentRequest, b.languageDetector); err != nil {
-			log.Warn().Err(err).Str("source", b.source).Str("url", d.URL).Msg("Failed to load service content, importing bookmark metadata only")
-			b.stats.Errors++
+		if err := loadServiceContent(ctx, imp.contentFetcher, d, *contentRequest, imp.languageDetector); err != nil {
+			log.Warn().Err(err).Str("source", imp.source).Str("url", d.URL).Msg("Failed to load service content, importing bookmark metadata only")
+			imp.stats.Errors++
 		}
 	}
-	if d.Favicon == "" && b.options.FaviconDownloader != nil {
-		if err := b.options.FaviconDownloader(d); err != nil {
-			log.Debug().Err(err).Str("source", b.source).Str("url", d.URL).Msg("Failed to download service import favicon")
+	if d.Favicon == "" && imp.options.FaviconDownloader != nil {
+		if err := imp.options.FaviconDownloader(d); err != nil {
+			log.Debug().Err(err).Str("source", imp.source).Str("url", d.URL).Msg("Failed to download service import favicon")
 		}
 	}
-	b.options.Label.apply(d, b.source)
+	imp.options.Label.apply(d, imp.source)
 
-	b.documents = append(b.documents, d)
-	if len(b.documents) == b.options.BatchSize {
-		b.Flush()
+	imp.documents = append(imp.documents, d)
+	if len(imp.documents) == imp.options.BatchSize {
+		imp.Flush()
 	}
 }
 
-func (b *serviceImportBuffer) Flush() {
-	if len(b.documents) == 0 {
+func (imp *documentImporter) Flush() {
+	if len(imp.documents) == 0 {
 		return
 	}
-	imported, errCount := addDocumentBatch(b.target, b.documents)
-	b.stats.Imported += imported
-	b.stats.Errors += errCount
-	b.documents = b.documents[:0]
+	imported, errCount := addDocumentBatch(imp.target, imp.documents)
+	imp.stats.Imported += imported
+	imp.stats.Errors += errCount
+	imp.documents = imp.documents[:0]
 }
 
 func combineImportText(values ...string) string {

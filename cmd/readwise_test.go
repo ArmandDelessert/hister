@@ -92,7 +92,7 @@ func TestImportReadwisePaginatesAndPreservesContent(t *testing.T) {
 		return &document.Document{URL: rawURL, HTML: "<html><head><title>Video title</title></head><body>Video transcript.</body></html>"}, nil
 	})
 	var batches [][]*document.Document
-	stats, err := importReadwise(context.Background(), source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), fetcher, serviceImportOptions{BatchSize: 3})
+	stats, err := importService(context.Background(), source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), fetcher, serviceImportOptions{BatchSize: 3})
 	if err != nil || stats != (serviceImportStats{Imported: 4, Skipped: 2}) {
 		t.Fatalf("stats = %+v, error = %v", stats, err)
 	}
@@ -169,7 +169,7 @@ func TestImportReadwiseFiltersBeforeFetching(t *testing.T) {
 		fetched = append(fetched, rawURL)
 		return &document.Document{URL: rawURL, Text: "Fetched text"}, nil
 	})
-	stats, err := importReadwise(context.Background(), source, target, document.NewNullLanguageDetector(), fetcher, serviceImportOptions{
+	stats, err := importService(context.Background(), source, target, document.NewNullLanguageDetector(), fetcher, serviceImportOptions{
 		BatchSize: 10, SkipExisting: true, StartDate: mustUnixTime(t, "2024-01-01T00:00:00Z"), EndDate: mustUnixTime(t, "2024-12-31T23:59:59Z"),
 		Label: documentLabelOverride{set: true, value: "library"},
 	})
@@ -214,7 +214,7 @@ func TestImportReadwiseRetainsMetadataWhenContentIsUnavailable(t *testing.T) {
 		return nil, errors.New("source unavailable")
 	})
 	var batches [][]*document.Document
-	stats, err := importReadwise(context.Background(), source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), fetcher, serviceImportOptions{BatchSize: 10})
+	stats, err := importService(context.Background(), source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), fetcher, serviceImportOptions{BatchSize: 10})
 	if err != nil || stats != (serviceImportStats{Imported: 3, Errors: 3}) {
 		t.Fatalf("stats = %+v, error = %v", stats, err)
 	}
@@ -236,7 +236,7 @@ func TestImportReadwisePaginationErrorsFlushPendingDocuments(t *testing.T) {
 				return jsonHTTPResponse(req, http.StatusOK, body), nil
 			})
 			var batches [][]*document.Document
-			stats, err := importReadwise(context.Background(), source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 10})
+			stats, err := importService(context.Background(), source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), nil, serviceImportOptions{BatchSize: 10})
 			if err == nil || requests != 2 || stats.Imported != 1 || len(batches) != 1 {
 				t.Fatalf("error = %v, requests = %d, stats = %+v", err, requests, stats)
 			}
@@ -291,7 +291,7 @@ func TestReadwiseRateLimitRecovery(t *testing.T) {
 		return jsonHTTPResponse(req, http.StatusOK, `{"results":[],"nextPageCursor":""}`), nil
 	})
 	source.wait = func(_ context.Context, _ time.Duration) error { return nil }
-	stats, err := importReadwise(context.Background(), source, nil, nil, nil, serviceImportOptions{BatchSize: 10})
+	stats, err := importService(context.Background(), source, nil, nil, nil, serviceImportOptions{BatchSize: 10})
 	if err != nil || requests != 2 || stats != (serviceImportStats{}) {
 		t.Fatalf("requests = %d, stats = %+v, error = %v", requests, stats, err)
 	}
@@ -329,7 +329,7 @@ func TestImportReadwiseCancellation(t *testing.T) {
 		return &document.Document{URL: rawURL, Text: "Fetched content"}, nil
 	})
 	var batches [][]*document.Document
-	stats, err := importReadwise(ctx, source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), fetcher, serviceImportOptions{BatchSize: 10})
+	stats, err := importService(ctx, source, raindropTestClient(t, &batches), document.NewNullLanguageDetector(), fetcher, serviceImportOptions{BatchSize: 10})
 	if !errors.Is(err, context.Canceled) || stats.Imported != 1 {
 		t.Fatalf("stats = %+v, error = %v", stats, err)
 	}

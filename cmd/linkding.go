@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoo/nogon/client"
 	"github.com/asciimoo/nogon/server/document"
 
 	"github.com/rs/zerolog/log"
@@ -76,7 +75,7 @@ The global --token flag remains the access token for the destination Nogon serve
 	},
 	RunE: serviceImportRunE(
 		"Linkding", linkdingTokenEnv, "API token",
-		newLinkdingClient, importLinkding,
+		newLinkdingClient,
 		func(source *linkdingClient, updatedAfter int64) { source.updatedAfter = updatedAfter },
 	),
 }
@@ -183,41 +182,21 @@ func (c *linkdingClient) walkBookmarks(ctx context.Context, visit func(linkdingB
 	return nil
 }
 
-func importLinkding(
-	ctx context.Context,
-	source *linkdingClient,
-	target *client.Client,
-	languageDetector document.LanguageDetector,
-	contentFetcher serviceContentFetcher,
-	options serviceImportOptions,
-) (serviceImportStats, error) {
-	buffer, err := newServiceImportBuffer(
-		linkdingSourceMetadataValue,
-		target,
-		languageDetector,
-		contentFetcher,
-		options,
-	)
-	if err != nil {
-		return serviceImportStats{}, err
-	}
-
-	err = source.walkBookmarks(ctx, func(bookmark linkdingBookmark) {
-		d, contentRequest, err := source.document(bookmark, languageDetector)
+func (c *linkdingClient) collectDocuments(ctx context.Context, importer *documentImporter) error {
+	return c.walkBookmarks(ctx, func(bookmark linkdingBookmark) {
+		d, contentRequest, err := c.document(bookmark, importer.languageDetector)
 		if errors.Is(err, errLinkdingMissingURL) {
 			log.Debug().Int64("linkding_id", bookmark.ID).Msg("Skipping Linkding bookmark without a URL")
-			buffer.stats.Skipped++
+			importer.stats.Skipped++
 			return
 		}
 		if err != nil {
 			log.Warn().Err(err).Int64("linkding_id", bookmark.ID).Msg("Failed to convert Linkding bookmark, skipping")
-			buffer.stats.Errors++
+			importer.stats.Errors++
 			return
 		}
-		buffer.Add(ctx, d, contentRequest)
+		importer.Add(ctx, d, contentRequest)
 	})
-	buffer.Flush()
-	return buffer.stats, err
 }
 
 func (c *linkdingClient) document(

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,6 +16,65 @@ import (
 	"github.com/asciimoo/nogon/server/model"
 	"github.com/asciimoo/nogon/server/testutil"
 )
+
+func TestFailedRuleWritesKeepActiveRules(t *testing.T) {
+	cfg, handler := newTokenTestServer(t, false)
+	cfg.Rules.Skip.ReStrs = []string{"old-skip"}
+	cfg.Rules.Aliases["existing"] = "old-value"
+	if err := cfg.SaveRules(); err != nil {
+		t.Fatal(err)
+	}
+	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "X-Access-Token": "secret"}
+	readRules := func() string {
+		t.Helper()
+		resp := testutil.ServeHTTP(t, handler, http.MethodGet, "/api/rules", nil, headers)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("read rules: %d %s", resp.Code, resp.Body)
+		}
+		return resp.Body.String()
+	}
+	cfg.App.Directory = filepath.Join(cfg.App.Directory, "missing")
+	for _, tc := range []struct {
+		path string
+		form url.Values
+	}{
+		{"/api/rules", url.Values{"skip": {"new-skip"}}},
+		{"/api/add_alias", url.Values{"alias-keyword": {"new"}, "alias-value": {"new-value"}}},
+		{"/api/delete_alias", url.Values{"alias": {"existing"}}},
+	} {
+		before := readRules()
+		resp := testutil.ServeHTTP(t, handler, http.MethodPost, tc.path, strings.NewReader(tc.form.Encode()), headers)
+		if resp.Code != http.StatusInternalServerError {
+			t.Fatalf("POST %s: status %d, want 500", tc.path, resp.Code)
+		}
+		if got := readRules(); got != before {
+			t.Errorf("POST %s changed active rules after a failed save: %s", tc.path, got)
+		}
+	}
+}
+
+func TestRuleEditRequiresReadableUserRules(t *testing.T) {
+	cfg, handler := newConfigurationTestServer(t, "user", "")
+	cfg.Rules.Aliases["instance"] = "instance-value"
+	user := testutil.CreateUser(t, "alice")
+	const invalid = "{"
+	if err := model.DB.Model(user).Update("rules_json", invalid).Error; err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"alias-keyword": {"new"}, "alias-value": {"new-value"}}
+	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "X-Access-Token": user.Token}
+	resp := testutil.ServeHTTP(t, handler, http.MethodPost, "/nogon/api/add_alias", strings.NewReader(form.Encode()), headers)
+	if resp.Code != http.StatusInternalServerError {
+		t.Errorf("add alias with unreadable user rules: status %d, want 500", resp.Code)
+	}
+	saved, err := model.GetUserByID(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.RulesJSON != invalid || len(cfg.Rules.Aliases) != 1 {
+		t.Errorf("failed edit changed user or instance rules: %q, %v", saved.RulesJSON, cfg.Rules.Aliases)
+	}
+}
 
 func TestSaveRulesPreservesOmittedRuleGroups(t *testing.T) {
 	cfg, handler := newTokenTestServer(t, false)

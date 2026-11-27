@@ -1282,8 +1282,8 @@ func validatePatterns(patterns []string) error {
 
 func serveRules(c *webContext) {
 	m := c.Request.Method
-	rules := c.effectiveRules()
 	if m == http.MethodGet {
+		rules := c.effectiveRules()
 		type rulesResponse struct {
 			Allow      []string          `json:"allow"`
 			Skip       []string          `json:"skip"`
@@ -1321,55 +1321,53 @@ func serveRules(c *webContext) {
 	if !parseRequestForm(c) {
 		return
 	}
-	f := c.Request.PostForm
-	type ruleUpdate struct {
-		patterns []string
-		target   **config.Rule
-	}
-	updates := make([]ruleUpdate, 0, 4)
-	for _, field := range []struct {
-		label  string
-		target **config.Rule
-	}{
-		{label: "allow", target: &rules.Allow},
-		{label: "skip", target: &rules.Skip},
-		{label: "priority", target: &rules.Priority},
-		{label: "versioning", target: &rules.Versioning},
-	} {
-		if !f.Has(field.label) {
-			continue
+	c.updateRules(func(rules *config.Rules) bool {
+		for _, field := range []struct {
+			name   string
+			target **config.Rule
+		}{
+			{"allow", &rules.Allow},
+			{"skip", &rules.Skip},
+			{"priority", &rules.Priority},
+			{"versioning", &rules.Versioning},
+		} {
+			if !c.Request.PostForm.Has(field.name) {
+				continue
+			}
+			patterns := uniqueStrings(strings.Fields(c.Request.PostForm.Get(field.name)))
+			if err := validatePatterns(patterns); err != nil {
+				http.Error(c.Response, fmt.Sprintf("%s: %v", field.name, err), http.StatusBadRequest)
+				return false
+			}
+			*field.target = &config.Rule{ReStrs: patterns}
 		}
-		patterns := uniqueStrings(strings.Fields(f.Get(field.label)))
-		if err := validatePatterns(patterns); err != nil {
-			http.Error(c.Response, fmt.Sprintf("%s: %s", field.label, err.Error()), http.StatusBadRequest)
-			return
+		return true
+	})
+}
+
+// Rule writes hold the reloader lock from user lookup through publication.
+// The edit returns false if it has already sent an error to the caller.
+func (c *webContext) updateRules(edit func(*config.Rules) bool) {
+	current := c.Config.Rules
+	save := c.Config.SetRules
+	if c.Config.App.UserHandling {
+		current = c.userRules
+		save = func(next *config.Rules) error {
+			return model.SaveUserRules(c.UserID, next)
 		}
-		updates = append(updates, ruleUpdate{patterns: patterns, target: field.target})
 	}
-	for _, update := range updates {
-		if *update.target == nil {
-			*update.target = &config.Rule{ReStrs: make([]string, 0)}
-		}
-		(*update.target).ReStrs = update.patterns
-	}
-	if err := rules.Compile(); err != nil {
-		log.Error().Err(err).Msg("failed to compile rules")
+	if current == nil {
 		serve500(c)
 		return
 	}
-	if c.Config.App.UserHandling {
-		if err := model.SaveUserRules(c.UserID, rules); err != nil {
-			log.Error().Err(err).Msg("failed to save user rules")
-			serve500(c)
-			return
-		}
-		c.userRules = rules
-	} else {
-		if err := c.Config.SaveRules(); err != nil {
-			log.Error().Err(err).Msg("failed to save rules")
-			serve500(c)
-			return
-		}
+	next := cloneRules(current)
+	if !edit(next) {
+		return
+	}
+	if err := save(next); err != nil {
+		log.Error().Err(err).Msg("failed to save rules")
+		serve500(c)
+		return
 	}
 	serve200(c)
 }
@@ -1933,51 +1931,25 @@ func serveAddAlias(c *webContext) {
 		serve200(c)
 		return
 	}
-	rules := c.effectiveRules()
-	rules.Aliases[keyword] = value
-	if c.Config.App.UserHandling {
-		if err := model.SaveUserRules(c.UserID, rules); err != nil {
-			log.Error().Err(err).Msg("failed to save user rules")
-			serve500(c)
-			return
-		}
-		c.userRules = rules
-	} else {
-		if err := c.Config.SaveRules(); err != nil {
-			log.Error().Err(err).Msg("failed to save rules")
-			serve500(c)
-			return
-		}
-	}
-	serve200(c)
+	c.updateRules(func(rules *config.Rules) bool {
+		rules.Aliases[keyword] = value
+		return true
+	})
 }
 
 func serveDeleteAlias(c *webContext) {
 	if !parseRequestForm(c) {
 		return
 	}
-	a := c.Request.PostForm.Get("alias")
-	rules := c.effectiveRules()
-	if _, ok := rules.Aliases[a]; !ok {
-		serve500(c)
-		return
-	}
-	delete(rules.Aliases, a)
-	if c.Config.App.UserHandling {
-		if err := model.SaveUserRules(c.UserID, rules); err != nil {
-			log.Error().Err(err).Msg("failed to save user rules")
+	alias := c.Request.PostForm.Get("alias")
+	c.updateRules(func(rules *config.Rules) bool {
+		if _, ok := rules.Aliases[alias]; !ok {
 			serve500(c)
-			return
+			return false
 		}
-		c.userRules = rules
-	} else {
-		if err := c.Config.SaveRules(); err != nil {
-			log.Error().Err(err).Msg("failed to save rules")
-			serve500(c)
-			return
-		}
-	}
-	serve200(c)
+		delete(rules.Aliases, alias)
+		return true
+	})
 }
 
 func serveDelete(c *webContext) {

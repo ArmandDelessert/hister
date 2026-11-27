@@ -11,6 +11,30 @@ import (
 	"github.com/asciimoo/nogon/server/testutil"
 )
 
+func TestSaveUserRulesRequiresExistingOwner(t *testing.T) {
+	testutil.InitModel(t)
+	if err := model.SaveUserRules(42, &config.Rules{}); !errors.Is(err, model.ErrUserNotFound) {
+		t.Fatalf("save rules for missing user: got %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestInvalidUserRulesPreserveLastSave(t *testing.T) {
+	testutil.InitModel(t)
+	user := testutil.CreateUser(t, "alice")
+	rules := &config.Rules{Skip: &config.Rule{ReStrs: []string{"private"}}}
+	if err := model.SaveUserRules(user.ID, rules); err != nil {
+		t.Fatal(err)
+	}
+	rules.Skip.ReStrs = []string{"["}
+	if err := model.SaveUserRules(user.ID, rules); err == nil {
+		t.Error("invalid rules accepted")
+	}
+	saved, err := model.GetUserRules(user.ID)
+	if err != nil || !saved.IsSkip("private") {
+		t.Fatalf("last successful skip rule was lost: %v", err)
+	}
+}
+
 func TestOIDCWarnsAboutMissingRecoveryAdministrator(t *testing.T) {
 	cfg := testutil.Config(t)
 	cfg.App.UserHandling = true

@@ -266,37 +266,11 @@ func updateUser(actorID, userID uint, revision uint64, changes UserChanges, allo
 }
 
 func (u *User) ParseRules() (*config.Rules, error) {
-	r := &config.Rules{
-		Allow:      &config.Rule{ReStrs: []string{}},
-		Skip:       &config.Rule{ReStrs: []string{}},
-		Priority:   &config.Rule{ReStrs: []string{}},
-		Versioning: &config.Rule{ReStrs: []string{}},
-		Aliases:    make(config.Aliases),
+	raw := u.RulesJSON
+	if raw == "" {
+		raw = "{}"
 	}
-	if u.RulesJSON != "" && u.RulesJSON != "{}" {
-		if err := json.Unmarshal([]byte(u.RulesJSON), r); err != nil {
-			return nil, err
-		}
-		if r.Skip == nil {
-			r.Skip = &config.Rule{ReStrs: []string{}}
-		}
-		if r.Allow == nil {
-			r.Allow = &config.Rule{ReStrs: []string{}}
-		}
-		if r.Priority == nil {
-			r.Priority = &config.Rule{ReStrs: []string{}}
-		}
-		if r.Versioning == nil {
-			r.Versioning = &config.Rule{ReStrs: []string{}}
-		}
-		if r.Aliases == nil {
-			r.Aliases = make(config.Aliases)
-		}
-	}
-	if err := r.Compile(); err != nil {
-		return nil, err
-	}
-	return r, nil
+	return config.ParseRules([]byte(raw))
 }
 
 func GetUserRules(userID uint) (*config.Rules, error) {
@@ -308,11 +282,23 @@ func GetUserRules(userID uint) (*config.Rules, error) {
 }
 
 func SaveUserRules(userID uint, rules *config.Rules) error {
+	if rules != nil {
+		if err := rules.Compile(); err != nil {
+			return err
+		}
+	}
 	b, err := json.Marshal(rules)
 	if err != nil {
 		return err
 	}
-	return DB.Model(&User{}).Where("id = ?", userID).Update("rules_json", string(b)).Error
+	result := DB.Model(&User{}).Where("id = ?", userID).Update("rules_json", string(b))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 func CreateUser(username, password string, isAdmin bool) (*User, error) {

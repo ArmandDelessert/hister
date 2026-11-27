@@ -1278,6 +1278,62 @@ func TestAllowAndSkipRules(t *testing.T) {
 	}
 }
 
+func TestInvalidRulesSavePreservesFile(t *testing.T) {
+	cfg := &Config{App: App{Directory: t.TempDir()}}
+	if err := cfg.LoadRules(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Rules.Skip.ReStrs = []string{"private"}
+	if err := cfg.SaveRules(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Rules.Skip.ReStrs = []string{"["}
+	if err := cfg.SaveRules(); err == nil {
+		t.Fatal("invalid rules saved")
+	}
+	if err := cfg.ReadRules(); err != nil {
+		t.Fatalf("could not reload last successful save: %v", err)
+	}
+	if !cfg.Rules.IsSkip("private") {
+		t.Error("last successful skip rule was lost")
+	}
+}
+
+func TestSaveRulesThroughSymlink(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			cfg := &Config{App: App{Directory: t.TempDir()}}
+			target := filepath.Join(cfg.App.Directory, "shared.json")
+			if existing {
+				if err := os.WriteFile(target, []byte("{}"), 0o640); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink(filepath.Base(target), cfg.RulesPath()); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			if err := cfg.LoadRules(); err != nil {
+				t.Fatal(err)
+			}
+			cfg.Rules.Aliases["docs"] = "documentation"
+			if err := cfg.SaveRules(); err != nil {
+				t.Fatal(err)
+			}
+			if dest, err := os.Readlink(cfg.RulesPath()); err != nil || dest != filepath.Base(target) {
+				t.Fatalf("rules link = %q, %v", dest, err)
+			}
+			data, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var saved Rules
+			if err := json.Unmarshal(data, &saved); err != nil || saved.Aliases["docs"] != "documentation" {
+				t.Fatalf("saved rules = %s, %v", data, err)
+			}
+		})
+	}
+}
+
 func TestAllowRulesLoadAndSave(t *testing.T) {
 	for _, content := range []string{`{}`, `{"allow":null}`, `{"skip":["private"]}`, `{"allow":["example.com"]}`} {
 		t.Run(content, func(t *testing.T) {

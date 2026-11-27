@@ -516,7 +516,7 @@ func cloneRules(rules *config.Rules) *config.Rules {
 	for _, field := range []**config.Rule{&copy.Allow, &copy.Skip, &copy.Priority, &copy.Versioning} {
 		if *field != nil {
 			rule := **field
-			rule.ReStrs = append([]string(nil), rule.ReStrs...)
+			rule.ReStrs = slices.Clone(rule.ReStrs)
 			*field = &rule
 		}
 	}

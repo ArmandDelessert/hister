@@ -1546,70 +1546,115 @@ func (c *Config) baseURLParsed() (*url.URL, error) {
 }
 
 func (c *Config) LoadRules() error {
-	b, err := os.ReadFile(c.RulesPath())
-	if err != nil {
-		err = c.SaveRules()
-		if err != nil {
-			return err
-		}
-		b, err = os.ReadFile(c.RulesPath())
-		if err != nil {
-			return err
-		}
+	err := c.ReadRules()
+	if errors.Is(err, os.ErrNotExist) {
+		return c.SaveRules()
 	}
-	return c.parseRules(b)
+	return err
 }
 
-func (c *Config) parseRules(b []byte) error {
-	err := json.Unmarshal(b, &c.Rules)
-	if err != nil {
-		return err
+// ParseRules decodes stored rules and compiles their patterns for matching.
+func ParseRules(b []byte) (*Rules, error) {
+	rules := &Rules{}
+	if err := json.Unmarshal(b, rules); err != nil {
+		return nil, err
 	}
-	if c.Rules == nil {
-		c.Rules = &Rules{}
+	if err := rules.prepare(); err != nil {
+		return nil, err
 	}
-	if c.Rules.Allow == nil {
-		c.Rules.Allow = &Rule{ReStrs: make([]string, 0)}
+	return rules, nil
+}
+
+func (r *Rules) prepare() error {
+	for _, field := range []**Rule{&r.Allow, &r.Skip, &r.Priority, &r.Versioning} {
+		if *field == nil || (*field).ReStrs == nil {
+			*field = &Rule{ReStrs: []string{}}
+		}
 	}
-	if c.Rules.Skip == nil {
-		c.Rules.Skip = &Rule{ReStrs: make([]string, 0)}
+	if r.Aliases == nil {
+		r.Aliases = make(Aliases)
 	}
-	if c.Rules.Priority == nil {
-		c.Rules.Priority = &Rule{ReStrs: make([]string, 0)}
-	}
-	if c.Rules.Versioning == nil {
-		c.Rules.Versioning = &Rule{ReStrs: make([]string, 0)}
-	}
-	if c.Rules.Aliases == nil {
-		c.Rules.Aliases = make(Aliases)
-	}
-	return c.Rules.Compile()
+	return r.Compile()
 }
 
 func (c *Config) SaveRules() error {
-	f, err := os.OpenFile(c.RulesPath(), os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
+	return c.SetRules(c.Rules)
+}
+
+// SetRules validates and persists the candidate before making it active.
+func (c *Config) SetRules(rules *Rules) error {
+	if rules == nil {
+		rules = &Rules{}
+	}
+	if err := rules.prepare(); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(rules, "", "  ")
 	if err != nil {
 		return err
 	}
-	if c.Rules == nil {
-		c.Rules = &Rules{
-			Allow:      &Rule{ReStrs: make([]string, 0)},
-			Skip:       &Rule{ReStrs: make([]string, 0)},
-			Priority:   &Rule{ReStrs: make([]string, 0)},
-			Versioning: &Rule{ReStrs: make([]string, 0)},
-			Aliases:    make(Aliases),
+	if err := writeRulesFile(c.RulesPath(), append(data, '\n')); err != nil {
+		return err
+	}
+	c.Rules = rules
+	return nil
+}
+
+func writeRulesFile(path string, data []byte) error {
+	mode := os.FileMode(0o600)
+	dir, _ := filepath.Split(path)
+	// Follow the final symlink, including a link to a file that has yet to
+	// be created. Replacing the link itself would disconnect the user's files.
+	for links := 0; ; links++ {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			break
 		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if links >= 255 {
+				return errors.New("too many symlinks resolving rules file")
+			}
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			if !filepath.IsAbs(target) {
+				// Preserve .. after symlinked directories in a relative target.
+				target = dir + target
+			}
+			path = target
+			dir, _ = filepath.Split(path)
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("rules must be stored in a regular file")
+		}
+		// Check the existing file's write permissions before replacing it.
+		f, err := os.OpenFile(path, os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+		mode = info.Mode().Perm()
+		break
 	}
-	e := json.NewEncoder(f)
-	e.SetIndent("", "  ")
-	if err = e.Encode(c.Rules); err != nil {
-		_ = f.Close()
+	if dir == "" {
+		dir = "."
+	}
+	staged, err := stageManagedFile(dir, ".nogon-rules-*", data)
+	if err != nil {
 		return err
 	}
-	if err = f.Close(); err != nil {
+	defer func() { _ = os.Remove(staged) }()
+	if err := os.Chmod(staged, mode); err != nil {
 		return err
 	}
-	return c.LoadRules()
+	return replaceManagedFile(staged, path)
 }
 
 func (r *Rules) IsPriority(s string) bool {

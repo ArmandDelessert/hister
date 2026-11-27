@@ -75,8 +75,11 @@ func (c *Config) ReadRules() error {
 	if err != nil {
 		return err
 	}
-	c.Rules = nil
-	return c.parseRules(raw)
+	rules, err := ParseRules(raw)
+	if err == nil {
+		c.Rules = rules
+	}
+	return err
 }
 
 // Reload reads the original main configuration and rules without creating or
@@ -96,7 +99,8 @@ func (c *Config) Reload(overrides ...Override) (*Config, error) {
 	if err != nil {
 		return nil, errors.New("cannot read rules.json; active configuration retained")
 	}
-	if err := next.parseRules(raw); err != nil {
+	next.Rules, err = ParseRules(raw)
+	if err != nil {
 		return nil, errors.New("invalid rules.json; active configuration retained")
 	}
 	// These belong to the existing session store and terminal clients.

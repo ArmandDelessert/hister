@@ -27,6 +27,7 @@ import (
 	"github.com/asciimoo/nogon/server/languages"
 	"github.com/asciimoo/nogon/server/metrics"
 	"github.com/asciimoo/nogon/server/model"
+	"github.com/asciimoo/nogon/server/types"
 	"github.com/asciimoo/nogon/server/vectorstore"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -168,33 +169,12 @@ func (q *Query) ScopeToUser(userID uint) {
 	q.userScoped = true
 }
 
-// TermCount and RangeCount are the shape of facet buckets returned by Search
-// when Query.Facets is true.
-type TermCount struct {
-	Term  string `json:"term"`
-	Count int    `json:"count"`
-	Label string `json:"label,omitempty"`
-}
-
-type RangeCount struct {
-	Name  string `json:"name"`
-	Count int    `json:"count"`
-}
-
-// TermFacet holds the top-N terms for one named facet together with the count
-// of documents that matched terms outside the top-N (Other).
-type TermFacet struct {
-	Terms []TermCount `json:"terms,omitempty"`
-	Other int         `json:"other,omitempty"`
-}
-
-type FacetsResult struct {
-	// Terms maps each term-facet name (e.g. "domains", "languages") to its
-	// result. Adding a new term facet only requires a new AddFacet call; no
-	// struct change is needed.
-	Terms         map[string]TermFacet `json:"terms,omitempty"`
-	DateHistogram []RangeCount         `json:"date_histogram,omitempty"`
-}
+type (
+	TermCount    = types.TermCount
+	RangeCount   = types.RangeCount
+	TermFacet    = types.TermFacet
+	FacetsResult = types.FacetsResult
+)
 
 func addFacets(req *bleve.SearchRequest, sizes map[string]int) {
 	facetSize := func(definition searchschema.FacetDefinition) int {

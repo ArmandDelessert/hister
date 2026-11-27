@@ -2,6 +2,8 @@
 
 package client
 
+import "github.com/asciimoo/nogon/server/types"
+
 // SearchQuery contains parameters for the search API.
 type SearchQuery struct {
 	Text              string  `json:"text"`
@@ -29,30 +31,12 @@ type SearchQuery struct {
 	PriorityPatterns []string `json:"priority_patterns,omitempty"`
 }
 
-// TermCount and RangeCount describe facet buckets returned when Facets is true.
-type TermCount struct {
-	Term  string `json:"term"`
-	Count int    `json:"count"`
-	Label string `json:"label,omitempty"`
-}
-
-type RangeCount struct {
-	Name  string `json:"name"`
-	Count int    `json:"count"`
-}
-
-// TermFacet holds the most common terms for one facet. Other counts documents
-// matching terms outside this list.
-type TermFacet struct {
-	Terms []TermCount `json:"terms,omitempty"`
-	Other int         `json:"other,omitempty"`
-}
-
-type FacetsResult struct {
-	// Terms maps facet names, such as "domains" and "languages", to results.
-	Terms         map[string]TermFacet `json:"terms,omitempty"`
-	DateHistogram []RangeCount         `json:"date_histogram,omitempty"`
-}
+type (
+	TermCount    = types.TermCount
+	RangeCount   = types.RangeCount
+	TermFacet    = types.TermFacet
+	FacetsResult = types.FacetsResult
+)
 
 // SemanticHit represents a document found via vector similarity search.
 type SemanticHit struct {

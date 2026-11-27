@@ -98,6 +98,27 @@ func TestClientSearchJSONContract(t *testing.T) {
 	}
 }
 
+func TestClientFacetsJSONContract(t *testing.T) {
+	facets := indexer.FacetsResult{
+		Terms: map[string]client.TermFacet{
+			"domains":   {Terms: []indexer.TermCount{{Term: "example.com", Count: 2}}, Other: 1},
+			"visits":    {Terms: []indexer.TermCount{{Term: "once", Count: 1, Label: "Visited once"}}},
+			"languages": {},
+		},
+		DateHistogram: []client.RangeCount{{Name: "today", Count: 0}},
+	}
+	result := client.SearchResults{Facets: &facets}
+	assertContractJSON(t, contractJSON(t, result.Facets), []byte(`{
+		"terms": {
+			"domains": {"terms": [{"term": "example.com", "count": 2}], "other": 1},
+			"visits": {"terms": [{"term": "once", "count": 1, "label": "Visited once"}]},
+			"languages": {}
+		},
+		"date_histogram": [{"name": "today", "count": 0}]
+	}`))
+	assertContractJSON(t, contractJSON(t, client.FacetsResult{}), []byte(`{}`))
+}
+
 func TestClientDocumentSubmissionJSONContract(t *testing.T) {
 	for _, doc := range []*document.Document{nil, {}, contractDocument()} {
 		payload := contractJSON(t, doc)
